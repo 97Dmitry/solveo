@@ -1,0 +1,43 @@
+import type { Snapshot } from "./state";
+export function snapshotFixture(): Snapshot {
+  return {
+    revision: 1,
+    active_chat_id: "first",
+    title: "Новый чат",
+    provider_id: "codex",
+    config: {
+      context: "",
+      instructions: "",
+      response_language: "Русский",
+      code_language: "auto",
+      detail: "brief",
+      model: "",
+      reasoning: "",
+    },
+    config_revision: 1,
+    messages: [],
+    queue: [],
+    images: [],
+    draft: { text: "", revision: 0 },
+    operation: { id: "", kind: "", phase: "idle", message: "" },
+    controls: {
+      can_submit: true,
+      can_capture: true,
+      can_edit_config: true,
+      can_cancel: false,
+      can_switch: true,
+      can_retry: false,
+      can_discard: false,
+    },
+    settings: { ui_scale: 100, theme: "dark", font_size: 17, always_on_top: false },
+    provider: {
+      id: "codex",
+      label: "Codex CLI",
+      capabilities: { images: true, streaming: false, reasoning: true },
+    },
+    history: [],
+    error: "",
+    log: "",
+    uncertain: false,
+  };
+}

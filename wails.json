@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Solveo",
+  "outputfilename": "Solveo.exe",
+  "frontend:dir": "frontend",
+  "frontend:install": "vp install --frozen-lockfile",
+  "frontend:build": "vp run build",
+  "frontend:dev:watcher": "vp dev --host 127.0.0.1",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "frontend",
+  "author": {
+    "name": "97Dmitry"
+  },
+  "info": {
+    "companyName": "97Dmitry",
+    "productName": "Solveo",
+    "productVersion": "0.1.0",
+    "copyright": "",
+    "comments": "Solveo desktop assistant"
+  }
+}

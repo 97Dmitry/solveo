@@ -1,0 +1,15 @@
+# Solveo engineering notes
+
+- Windows x64 desktop application: Go + Wails v2, React/TypeScript frontend generated with Vite+ (`vp`). Use pnpm only; preserve `frontend/pnpm-lock.yaml`.
+- Work in this checkout. No commits, pushes or releases unless explicitly requested. Source project `/home/dmitry/my_projects/screen-codex` is read-only during the port.
+- Read `docs/specs/solveo-design.md` before changing architecture. The initial implementation plan is under `docs/superpowers/plans/`; execution evidence is under `.superpowers/sdd/`.
+- Create and maintain a local `AGENTS.md` for every module or directory that contains complex logic. Use these files to separate context: keep project-wide rules here and put module responsibilities, invariants, constraints and relevant validation commands in the owning directory's instructions. Read the applicable local instructions before changing that module.
+- Whenever creating an `AGENTS.md`, create an adjacent `CLAUDE.md` containing `@AGENTS.md` to import the same instructions. Keep `AGENTS.md` as the single source of truth; do not duplicate its contents in `CLAUDE.md`.
+- Keep local instructions concise and current. Do not repeat parent instructions, document obvious directory structure or create instruction files in trivial folders solely for coverage. Update the owning module's instructions when its important behavior or constraints change.
+- Scope guides: [frontend](frontend/AGENTS.md), [Go backend](internal/AGENTS.md), [native Windows host](internal/platform/windows/AGENTS.md).
+- Go owns business state. Wails owns the main UI thread; Win32 helper windows run on a separate locked host thread. Workers never access native windows directly.
+- `make bindings` runs the headless host-native entrypoint; never apply Windows GOOS to it. Generated bindings stay in `frontend/wailsjs`; do not edit them by hand.
+- Main Wails window starts hidden. DOM/native readiness and renderer handshake precede the first show; reloads and pin changes never show it. Apply capture affinity before showing any top-level window and preserve a usable exit path.
+- Codex is the only implemented LLM adapter. Do not add placeholder provider/audio controls. Preserve the provider boundary when adding real adapters.
+- `make check` regenerates bindings, checks frontend formatting/lint/types/tests, runs Go tests and Windows vet, and builds `build/bin/Solveo.exe`. It does not verify Windows UI or recorder behavior; use `docs/windows-acceptance.md` for native runtime acceptance.
+- Tests must not issue real provider requests; use fake CLI scripts. User-facing documentation should describe actual setup, use, data storage and limitations.

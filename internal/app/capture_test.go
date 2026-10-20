@@ -1,0 +1,98 @@
+package app
+
+import (
+	"errors"
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/platform"
+	"image"
+	"os"
+	"testing"
+	"time"
+)
+
+type fakeCapture struct{}
+
+func (fakeCapture) SavePrimary(p string) error { return os.WriteFile(p, []byte("png"), 0600) }
+func (fakeCapture) SaveRegion(p string, _ image.Rectangle) error {
+	return os.WriteFile(p, []byte("png"), 0600)
+}
+
+type fakeHost struct {
+	selections int
+	rebindErr  error
+}
+
+func (h *fakeHost) BeginSelection(string) error              { h.selections++; return nil }
+func (*fakeHost) ShowLog() error                             { return nil }
+func (*fakeHost) ShowImages([]platform.ViewImage, int) error { return nil }
+func (*fakeHost) CloseImages() error                         { return nil }
+func (*fakeHost) SetTheme(bool) error                        { return nil }
+func (*fakeHost) SetLog(string) error                        { return nil }
+func TestQuickFailureWithNineteenAttachments(t *testing.T) {
+	c, f, _ := setup(t)
+	c.deps.Capturer = fakeCapture{}
+	snap := c.Snapshot()
+	for i := 0; i < 19; i++ {
+		p := c.deps.TempDir + "/" + chat.ID() + ".png"
+		os.WriteFile(p, []byte("png"), 0600)
+		c.queues[snap.ActiveChatID] = append(c.queues[snap.ActiveChatID], queued{ID: chat.ID(), Path: p})
+	}
+	c.SetDraft(DraftInput{ChatID: snap.ActiveChatID, Text: "draft stays", Revision: 1})
+	if e := c.BeginCapture("quick-full"); e != nil {
+		t.Fatal(e)
+	}
+	r := <-f.started
+	if len(r.Images) != 1 || r.Turn.Text != "" {
+		t.Fatal("quick shot included unrelated input")
+	}
+	f.finish <- errors.New("offline")
+	waitIdle(t, c)
+	snap = c.Snapshot()
+	if len(snap.Queue) != 20 || snap.Draft.Text != "draft stays" {
+		t.Fatal(snap)
+	}
+}
+func TestFullQueueRejectsBeforeSelection(t *testing.T) {
+	c, _, _ := setup(t)
+	host := &fakeHost{}
+	c.deps.NativeHost = host
+	for i := 0; i < 20; i++ {
+		c.queues[c.active.ID] = append(c.queues[c.active.ID], queued{ID: chat.ID()})
+	}
+	if e := c.BeginCapture("quick-region"); !errors.Is(e, ErrQueueFull) {
+		t.Fatal(e)
+	}
+	if host.selections != 0 {
+		t.Fatal("selector started with full queue")
+	}
+}
+func TestSubmitIntentExpires(t *testing.T) {
+	c, f, _ := setup(t)
+	now := time.Now()
+	c.deps.Now = func() time.Time { return now }
+	intent, e := c.RequestSubmit()
+	if e != nil {
+		t.Fatal(e)
+	}
+	now = now.Add(5 * time.Second)
+	_, e = c.Submit(SubmitInput{RequestID: chat.ID(), IntentID: intent.ID, ChatID: intent.ChatID, Text: "stale"})
+	if !errors.Is(e, ErrStale) || f.calls != 0 {
+		t.Fatal(e)
+	}
+}
+func TestDraftIsolation(t *testing.T) {
+	c, _, _ := setup(t)
+	old := c.Snapshot().ActiveChatID
+	c.SetDraft(DraftInput{ChatID: old, Text: "old", Revision: 2})
+	c.SetDraft(DraftInput{ChatID: old, Text: "stale", Revision: 1})
+	c.NewChat()
+	if c.Snapshot().Draft.Text != "" {
+		t.Fatal("draft leaked")
+	}
+	c.OpenChat(old)
+	if c.Snapshot().Draft.Text != "old" {
+		t.Fatal("draft lost")
+	}
+}
+
+func (h *fakeHost) RebindImages(map[string]string) error { return h.rebindErr }
