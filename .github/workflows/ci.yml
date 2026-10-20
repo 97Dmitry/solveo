@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Frontend and Go checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Vite+, Node and pnpm
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          working-directory: frontend
+          node-version: '24'
+          cache: true
+          run-install: false
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: vp install --frozen-lockfile
+
+      - name: Check frontend formatting, lint and types
+        run: make frontend-check
+
+      - name: Test frontend
+        run: make frontend-test
+
+      - name: Test Go with race detector
+        run: go test -race ./internal/...
+
+      - name: Vet portable Go packages
+        run: go vet ./internal/...
+
+  windows:
+    name: Windows tests and build
+    needs: checks
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Vite+, Node and pnpm
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          working-directory: frontend
+          node-version: '24'
+          cache: true
+          run-install: false
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: vp install --frozen-lockfile
+
+      - name: Test Go on Windows
+        run: go test ./internal/...
+
+      - name: Generate Wails bindings
+        run: go run -tags bindings .
+
+      - name: Build frontend
+        working-directory: frontend
+        run: vp run build
+
+      - name: Vet Windows application
+        run: go vet ./...
+
+      # Use the same pinned CLI and flags as Makefile without requiring Make on Windows.
+      - name: Build Windows x64 application
+        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.17.0 build -platform windows/amd64 -skipbindings -s -o Solveo.exe
+
+      - name: Upload Windows application
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Solveo-windows-x64-${{ github.sha }}
+          path: build/bin/Solveo.exe
+          if-no-files-found: error
+          retention-days: 14
