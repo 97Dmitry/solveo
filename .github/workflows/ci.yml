@@ -99,11 +99,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # Separate cache key: the Wails CLI (pinned in Makefile) and its build objects are large
+      # and only needed here; sharing the key would make the checks job restore them too.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            Makefile
 
       - name: Set up Vite+, Node and pnpm
         uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
