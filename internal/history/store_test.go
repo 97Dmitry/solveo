@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
 )
@@ -168,5 +169,29 @@ func TestAttachmentPathValidatesInMemoryMetadata(t *testing.T) {
 		if _, err := s.AttachmentPath(chatID, bad); err == nil {
 			t.Fatalf("accepted %q for chat %s", bad.Path, chatID)
 		}
+	}
+}
+
+func TestLoadNormalizesTimesToUTC(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	id := "12345678-1234-1234-1234-123456789abd"
+	data := `{"version":1,"thread_id":"` + id + `","created_at":"2026-10-21T04:30:00+06:00","updated_at":"2026-10-21T05:00:00+06:00","messages":[]}`
+	if err := os.WriteFile(filepath.Join(s.Dir, "chats", id+".json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 20, 22, 30, 0, 0, time.UTC)
+	if c.CreatedAt.Location() != time.UTC || !c.CreatedAt.Equal(want) || c.UpdatedAt.Location() != time.UTC {
+		t.Fatalf("times not normalized to UTC: %v %v", c.CreatedAt, c.UpdatedAt)
+	}
+	saved, err := s.Save(SaveInput{Chat: c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.UpdatedAt.Location() != time.UTC {
+		t.Fatalf("saved time is not UTC: %v", saved.UpdatedAt)
 	}
 }

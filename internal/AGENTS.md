@@ -8,3 +8,4 @@
 - `llm.Provider` is application-owned; Codex-specific state stays in its adapter. Pass CLI arguments separately without shell interpolation, preserve read-only sandboxing and ignore user config. Retain partial state on uncertain outcomes; never silently restart a failed resume.
 - Windows cancellation terminates the launcher process tree using `taskkill /T`, including `codex.cmd` children. Connection checks are explicit, bounded and independent of chat/queue state.
 - After state/persistence/provider changes run `go test -race ./internal/app ./internal/history ./internal/settings ./internal/llm/...`. Portable suite: `go test ./internal/...`. Fake CLIs only. Windows vet/build: `make check`; this does not verify native runtime behavior.
+- Times are UTC everywhere in Go: use `chat.Now()`, normalize loaded archives with `.UTC()` and send RFC 3339 UTC strings. Only the frontend converts to local time for display.

@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestCloneSharesNoMutableData(t *testing.T) {
 	src := New()
-	// JSON cloning drops the monotonic clock reading and the *time.Location
-	// identity (Local vs UTC), neither of which is chat data.
-	src.CreatedAt, src.UpdatedAt = src.CreatedAt.UTC().Round(0), src.UpdatedAt.UTC().Round(0)
 	src.ProviderState = json.RawMessage(`{"version":1}`)
 	src.Attachments = []Attachment{{ID: "a1", Path: "images/x/a1.png"}}
 	src.Messages = []Message{{
@@ -35,5 +33,12 @@ func TestCloneSharesNoMutableData(t *testing.T) {
 	got.Messages = append(got.Messages, Message{ID: "m2"})
 	if !reflect.DeepEqual(want, src) {
 		t.Fatalf("mutating a clone changed the source: %+v", src)
+	}
+}
+
+func TestNewChatUsesUTC(t *testing.T) {
+	c := New()
+	if c.CreatedAt.Location() != time.UTC || c.UpdatedAt.Location() != time.UTC {
+		t.Fatalf("chat times are not UTC: %v %v", c.CreatedAt, c.UpdatedAt)
 	}
 }
