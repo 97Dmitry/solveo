@@ -40,9 +40,7 @@ const (
 var (
 	dwmapi                    = syscall.NewLazyDLL("dwmapi.dll")
 	ntdll                     = syscall.NewLazyDLL("ntdll.dll")
-	uxtheme                   = syscall.NewLazyDLL("uxtheme.dll")
 	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
-	procSetWindowTheme        = uxtheme.NewProc("SetWindowTheme")
 	procCreateSolidBrush      = gdi32.NewProc("CreateSolidBrush")
 	procSetTextColor          = gdi32.NewProc("SetTextColor")
 	procSetBkColor            = gdi32.NewProc("SetBkColor")
@@ -136,16 +134,6 @@ func setTitleBarTheme(hwnd uintptr, dark bool) {
 	}
 	// Unsupported Windows versions leave the normal system title bar in place.
 	procDwmSetWindowAttribute.Call(hwnd, 20, uintptr(unsafe.Pointer(&enabled)), unsafe.Sizeof(enabled))
-}
-
-func setControlTheme(hwnd uintptr, dark bool) {
-	// Native combo boxes and scrollbars use this theme when Windows supports it.
-	if dark {
-		name := utf16("DarkMode_Explorer")
-		procSetWindowTheme.Call(hwnd, uintptr(unsafe.Pointer(name)), 0)
-	} else {
-		procSetWindowTheme.Call(hwnd, 0, 0)
-	}
 }
 
 func controlColor(msg uint32, hdc, control, logEdit uintptr, dark bool) uintptr {

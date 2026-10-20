@@ -50,18 +50,6 @@ type imageViewer struct {
 	anchor   point
 }
 
-func (w *Window) closeViewerFor(path string) {
-	if w.viewer == nil || w.viewer.hwnd == 0 {
-		return
-	}
-	for _, shown := range w.viewer.paths {
-		if shown == path {
-			procDestroyWindow.Call(w.viewer.hwnd)
-			return
-		}
-	}
-}
-
 func (v *imageViewer) ownsControl(hwnd uintptr) bool {
 	if v.hwnd == 0 {
 		return false

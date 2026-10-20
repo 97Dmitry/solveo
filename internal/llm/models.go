@@ -26,7 +26,9 @@ func ValidReasoning(value string) bool {
 		return false
 	}
 	for _, c := range value {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_', c == '-':
+		default:
 			return false
 		}
 	}

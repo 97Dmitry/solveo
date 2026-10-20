@@ -11,58 +11,7 @@ import (
 	"time"
 )
 
-func TestAnalyzeWithFakeCodex(t *testing.T) {
-	dir := t.TempDir()
-	fake := filepath.Join(dir, "codex")
-	const fakeScript = `#!/bin/sh
-out=""
-images=0
-prev=""
-for arg in "$@"; do
-  if [ "$prev" = "--output-last-message" ]; then out="$arg"; fi
-  if [ "$prev" = "--image" ]; then
-    [ -f "$arg" ] || exit 2
-    images=$((images + 1))
-  fi
-  prev="$arg"
-done
-[ "$images" -eq 2 ] || exit 2
-[ -n "$out" ] || exit 3
-read -r line || exit 4
-[ -n "$line" ] || exit 5
-grep -q 'Язык программирования для решения и кода: Go.' || exit 6
-printf 'Тестовый ответ на задачу' > "$out"
-`
-	if err := os.WriteFile(fake, []byte(fakeScript), 0700); err != nil {
-		t.Fatal(err)
-	}
-	first := filepath.Join(dir, "first screenshot.png")
-	if err := os.WriteFile(first, []byte("first image"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	second := filepath.Join(dir, "second screenshot.png")
-	if err := os.WriteFile(second, []byte("second image"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	client := Client{Binary: fake, Timeout: 2 * time.Second, Language: "Go"}
-	answer, err := client.AnalyzeImages(context.Background(), []string{first, second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(answer, "Тестовый ответ") {
-		t.Fatalf("unexpected response: %q", answer)
-	}
-}
-
-func TestAnalyzeImagesRejectsEmptyList(t *testing.T) {
-	_, err := (Client{}).AnalyzeImages(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error for empty screenshot list")
-	}
-}
-
-func TestAnalyzeStreamsProgressBeforeAnswer(t *testing.T) {
+func TestCheckConnectionStreamsProgressBeforeAnswer(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "codex")
 	script := `#!/bin/sh
@@ -79,10 +28,6 @@ printf 'ready' > "$out"
 	if err := os.WriteFile(fake, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	image := filepath.Join(dir, "image.png")
-	if err := os.WriteFile(image, []byte("image"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	progress := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
@@ -91,7 +36,7 @@ printf 'ready' > "$out"
 			case progress <- s:
 			default:
 			}
-		}}).Analyze(context.Background(), image)
+		}}).CheckConnection(context.Background())
 		done <- err
 	}()
 	select {
@@ -133,12 +78,5 @@ printf 'OK' > "$out"
 	}
 	if answer != "OK" {
 		t.Fatalf("unexpected check response: %q", answer)
-	}
-}
-
-func TestAnalyzeFailsOnMissingImage(t *testing.T) {
-	_, err := (Client{}).Analyze(context.Background(), filepath.Join(t.TempDir(), "missing.png"))
-	if err == nil {
-		t.Fatal("expected error for a missing image")
 	}
 }

@@ -67,7 +67,9 @@ func (w *Window) trayData() notifyIconData {
 		callbackMessage: wmAppTray,
 	}
 	data.icon = w.icon
-	copy(data.tip[:], syscall.StringToUTF16("Solveo — двойной щелчок: открыть"))
+	// The tip is a constant without NUL characters, so conversion cannot fail.
+	tip, _ := syscall.UTF16FromString("Solveo — двойной щелчок: открыть")
+	copy(data.tip[:], tip)
 	return data
 }
 
@@ -101,8 +103,6 @@ func (w *Window) removeTrayIcon() {
 	w.trayAdded = false
 }
 
-func (w *Window) showWindow()   { w.emit("show") }
-func (w *Window) toggleWindow() { w.emit("toggle") }
 func (w *Window) trayMenu() {
 	menu, _, _ := procCreatePopupMenu.Call()
 	if menu == 0 {

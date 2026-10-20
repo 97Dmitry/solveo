@@ -6,20 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	core "github.com/97Dmitry/solveo/internal/app"
-	"github.com/97Dmitry/solveo/internal/capture"
-	"github.com/97Dmitry/solveo/internal/config"
-	"github.com/97Dmitry/solveo/internal/history"
-	"github.com/97Dmitry/solveo/internal/instance"
-	"github.com/97Dmitry/solveo/internal/llm/codex"
-	"github.com/97Dmitry/solveo/internal/platform"
-	native "github.com/97Dmitry/solveo/internal/platform/windows"
-	"github.com/97Dmitry/solveo/internal/settings"
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"image"
 	"log"
 	"net/http"
@@ -29,6 +15,22 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/capture"
+	"github.com/97Dmitry/solveo/internal/config"
+	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/instance"
+	"github.com/97Dmitry/solveo/internal/llm/codex"
+	"github.com/97Dmitry/solveo/internal/platform"
+	native "github.com/97Dmitry/solveo/internal/platform/windows"
+	"github.com/97Dmitry/solveo/internal/settings"
 )
 
 type screenCapture struct{}
@@ -138,15 +140,24 @@ func run() error {
 	}); e != nil {
 		return e
 	}
-	defer host.Close()
-	controller, e := core.New(core.Dependencies{Store: store, SettingsStore: settings.Open(dir), Provider: codex.New(flags.Binary, flags.Prompt, flags.Timeout), Capturer: screenCapture{}, NativeHost: host, Window: window, TempDir: temp, Emit: func(name string, data interface{}) {
-		window.mu.Lock()
-		runtimeCtx := window.ctx
-		window.mu.Unlock()
-		if runtimeCtx != nil {
-			wruntime.EventsEmit(runtimeCtx, name, data)
-		}
-	}})
+	defer func() { _ = host.Close() }()
+	controller, e := core.New(core.Dependencies{
+		Store:         store,
+		SettingsStore: settings.Open(dir),
+		Provider:      codex.New(flags.Binary, flags.Prompt, flags.Timeout),
+		Capturer:      screenCapture{},
+		NativeHost:    host,
+		Window:        window,
+		TempDir:       temp,
+		Emit: func(name string, data interface{}) {
+			window.mu.Lock()
+			runtimeCtx := window.ctx
+			window.mu.Unlock()
+			if runtimeCtx != nil {
+				wruntime.EventsEmit(runtimeCtx, name, data)
+			}
+		},
+	})
 	if e != nil {
 		return e
 	}

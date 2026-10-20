@@ -33,11 +33,10 @@ export function snapshotFixture(): Snapshot {
     provider: {
       id: "codex",
       label: "Codex CLI",
-      capabilities: { images: true, streaming: false, reasoning: true },
+      capabilities: { images: true, reasoning: true },
     },
     history: [],
     error: "",
-    log: "",
     uncertain: false,
   };
 }

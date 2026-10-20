@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -39,7 +39,9 @@ function Code({
     </div>
   );
 }
-export function Markdown({
+// Snapshots arrive on every draft or operation change. Memoizing by text and stable
+// callbacks keeps long chats from re-parsing every answer on each update.
+export const Markdown = memo(function Markdown({
   text,
   onCopy,
   onOpenLink,
@@ -84,4 +86,4 @@ export function Markdown({
       {text}
     </ReactMarkdown>
   );
-}
+});

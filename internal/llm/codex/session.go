@@ -4,62 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/llm"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/llm"
 )
-
-// AnalyzeImagesSession starts a persistent Codex CLI session for subsequent
-// text-only questions. Unlike one-shot AnalyzeImages, it must not use --ephemeral.
-func (c Client) AnalyzeImagesSession(ctx context.Context, imagePaths []string) (answer, threadID string, err error) {
-	if len(imagePaths) == 0 {
-		return "", "", errors.New("no screenshots to analyze")
-	}
-	images := make([]string, len(imagePaths))
-	for i, path := range imagePaths {
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := os.Stat(absolute); err != nil {
-			return "", "", fmt.Errorf("image %d not found: %w", i+1, err)
-		}
-		images[i] = absolute
-	}
-	prompt := c.Prompt
-	if strings.TrimSpace(prompt) == "" {
-		prompt = DefaultPrompt
-	}
-	if c.Language != "" {
-		prompt += "\nЯзык программирования для решения и кода: " + c.Language + "."
-	}
-	return c.runSession(ctx, images, prompt, "")
-}
-
-// FollowUp sends only the user's text, without image flags, to the specified
-// conversation. A missing/wrong session ID must never silently start a new chat.
-func (c Client) FollowUp(ctx context.Context, threadID, question string) (string, error) {
-	if !validThreadID(threadID) {
-		return "", errors.New("invalid Codex session ID")
-	}
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return "", errors.New("empty follow-up question")
-	}
-	answer, returnedID, err := c.runSession(ctx, nil, question, threadID)
-	if err != nil {
-		return "", err
-	}
-	if returnedID != threadID {
-		return "", fmt.Errorf("Codex resumed a different session (%s); answer discarded", returnedID)
-	}
-	return answer, nil
-}
 
 func validThreadID(id string) bool {
 	// Codex emits a UUID in the thread.started JSON event.
@@ -73,7 +26,9 @@ func validThreadID(id string) bool {
 			}
 			continue
 		}
-		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+		switch {
+		case ch >= '0' && ch <= '9', ch >= 'a' && ch <= 'f', ch >= 'A' && ch <= 'F':
+		default:
 			return false
 		}
 	}
@@ -156,9 +111,9 @@ func (w *sessionEvents) handle(line []byte) {
 }
 
 func (c Client) runSession(ctx context.Context, images []string, prompt, resumeID string) (string, string, error) {
-	workdir, err := os.MkdirTemp("", "solveo-cli-*")
+	workdir, err := os.MkdirTemp("", "solveo-codex-*")
 	if err != nil {
-		return "", "", fmt.Errorf("temporary Codex directory: %w", err)
+		return "", "", fmt.Errorf("временная папка Codex: %w", err)
 	}
 	defer os.RemoveAll(workdir)
 	timeout := c.Timeout
@@ -184,7 +139,7 @@ func (c Client) runSession(ctx context.Context, images []string, prompt, resumeI
 	cmd.Stderr = &progressAndError{progress: c.Progress, errorLog: &stderr}
 
 	if err := cmd.Start(); err != nil {
-		return "", "", fmt.Errorf("start Codex: %w", err)
+		return "", "", fmt.Errorf("не удалось запустить Codex: %w", err)
 	}
 	runErr := cmd.Wait()
 	if len(events.pending) != 0 {
@@ -199,7 +154,7 @@ func (c Client) runSession(ctx context.Context, images []string, prompt, resumeI
 		if len(details) > 1200 {
 			details = details[len(details)-1200:]
 		}
-		return "", events.threadID, fmt.Errorf("%w: Codex failed: %w; %s", llm.ErrOutcomeUnknown, runErr, details)
+		return "", events.threadID, fmt.Errorf("%w: ошибка Codex: %w; %s", llm.ErrOutcomeUnknown, runErr, details)
 	}
 
 	// Some versions can output one final JSON event without a newline.
@@ -207,17 +162,17 @@ func (c Client) runSession(ctx context.Context, images []string, prompt, resumeI
 		events.handle(events.pending)
 	}
 	if events.threadID == "" {
-		return "", "", fmt.Errorf("%w: Codex returned no session ID (update Codex CLI to a version with --json)", llm.ErrOutcomeUnknown)
+		return "", "", fmt.Errorf("%w: Codex не вернул ID сессии (обновите Codex CLI до версии с --json)", llm.ErrOutcomeUnknown)
 	}
 	if !events.completed {
-		return "", events.threadID, fmt.Errorf("%w: Codex returned no final turn event", llm.ErrOutcomeUnknown)
+		return "", events.threadID, fmt.Errorf("%w: Codex не сообщил о завершении ответа", llm.ErrOutcomeUnknown)
 	}
 	answer, err := os.ReadFile(output)
 	if err != nil {
-		return "", events.threadID, fmt.Errorf("%w: Codex returned no final message: %w; stderr: %s", llm.ErrOutcomeUnknown, err, strings.TrimSpace(stderr.String()))
+		return "", events.threadID, fmt.Errorf("%w: Codex не вернул итоговый ответ: %w; stderr: %s", llm.ErrOutcomeUnknown, err, strings.TrimSpace(stderr.String()))
 	}
 	if strings.TrimSpace(string(answer)) == "" {
-		return "", events.threadID, fmt.Errorf("%w: Codex returned an empty answer", llm.ErrOutcomeUnknown)
+		return "", events.threadID, fmt.Errorf("%w: Codex вернул пустой ответ", llm.ErrOutcomeUnknown)
 	}
 	return string(answer), events.threadID, nil
 }

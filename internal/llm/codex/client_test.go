@@ -5,20 +5,6 @@ import (
 	"testing"
 )
 
-func TestArguments(t *testing.T) {
-	got := Arguments(`C:\some folder\screen.png`, `C:\temp\answer.md`)
-	want := []string{
-		"exec", "--ignore-user-config", "--skip-git-repo-check", "--ephemeral",
-		"--sandbox", "read-only",
-		"--image", `C:\some folder\screen.png`,
-		"--output-last-message", `C:\temp\answer.md`,
-		"-",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Arguments() = %#v, want %#v", got, want)
-	}
-}
-
 func TestArgumentsWithModelAndReasoning(t *testing.T) {
 	client := Client{Model: "gpt-6-astra", Reasoning: "high"}
 	got, err := client.arguments([]string{"first.png", "second.png"}, "answer.md")

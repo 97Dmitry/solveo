@@ -6,26 +6,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/llm"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/llm"
 )
 
 const DefaultTimeout = 10 * time.Minute
 const ConnectionTimeout = time.Minute
 
-const DefaultPrompt = `На приложенных скриншотах одна задача; читай их по порядку. Реши задачу с учётом всех видимых правил, ограничений и примеров.
-Ответ начни с полного кода на выбранном языке. Затем кратко объясни алгоритм и укажи сложность по времени и памяти. Если язык не указан отдельно, используй язык, выбранный на скриншоте.
-Не выполняй команды, не изменяй файлы и не обращайся к другим локальным данным.`
-
 type Client struct {
 	Binary    string
 	Timeout   time.Duration
 	Prompt    string
-	Language  string
 	Model     string
 	Reasoning string
 	Progress  func(string)
@@ -38,25 +34,6 @@ func (c Client) binary() string {
 	return c.Binary
 }
 
-// Arguments are separate OS arguments, NOT interpolated into a shell command.
-func Arguments(imagePath, outputPath string) []string {
-	return ArgumentsForImages([]string{imagePath}, outputPath)
-}
-
-func ArgumentsForImages(imagePaths []string, outputPath string) []string {
-	args := []string{
-		"exec",
-		"--ignore-user-config",
-		"--skip-git-repo-check",
-		"--ephemeral",
-		"--sandbox", "read-only",
-	}
-	for _, path := range imagePaths {
-		args = append(args, "--image", path)
-	}
-	return append(args, "--output-last-message", outputPath, "-")
-}
-
 func (c Client) arguments(imagePaths []string, outputPath string) ([]string, error) {
 	args := []string{"exec"}
 	if c.Model != "" {
@@ -64,61 +41,34 @@ func (c Client) arguments(imagePaths []string, outputPath string) ([]string, err
 	}
 	if c.Reasoning != "" {
 		if !llm.ValidReasoning(c.Reasoning) {
-			return nil, fmt.Errorf("invalid reasoning effort: %q", c.Reasoning)
+			return nil, fmt.Errorf("недопустимый уровень рассуждения: %q", c.Reasoning)
 		}
 		args = append(args, "-c", "model_reasoning_effort="+c.Reasoning)
 	}
-	return append(args, ArgumentsForImages(imagePaths, outputPath)[1:]...), nil
-}
-
-// Analyze sends one image to Codex and returns its final answer.
-func (c Client) Analyze(ctx context.Context, imagePath string) (string, error) {
-	return c.AnalyzeImages(ctx, []string{imagePath})
-}
-
-// AnalyzeImages sends the images to Codex in the supplied order.
-// The CLI uploads them to the Codex service.
-func (c Client) AnalyzeImages(ctx context.Context, imagePaths []string) (string, error) {
-	if len(imagePaths) == 0 {
-		return "", errors.New("no screenshots to analyze")
+	// Arguments stay separate OS arguments and are never interpolated into a shell command.
+	args = append(args,
+		"--ignore-user-config",
+		"--skip-git-repo-check",
+		"--ephemeral",
+		"--sandbox", "read-only",
+	)
+	for _, path := range imagePaths {
+		args = append(args, "--image", path)
 	}
-	images := make([]string, len(imagePaths))
-	for i, path := range imagePaths {
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return "", err
-		}
-		if _, err := os.Stat(absolute); err != nil {
-			return "", fmt.Errorf("image %d not found: %w", i+1, err)
-		}
-		images[i] = absolute
-	}
-
-	prompt := c.Prompt
-	if strings.TrimSpace(prompt) == "" {
-		prompt = DefaultPrompt
-	}
-	if c.Language != "" {
-		prompt += "\nЯзык программирования для решения и кода: " + c.Language + "."
-	}
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
-	return c.run(ctx, images, prompt, timeout)
+	return append(args, "--output-last-message", outputPath, "-"), nil
 }
 
 // CheckConnection makes a small authenticated request using the same CLI,
-// model and reasoning options as screenshot analysis. A non-empty reply proves
+// model and reasoning options as chat requests. A non-empty reply proves
 // that this path worked at the time of the check; it does not validate answers.
 func (c Client) CheckConnection(ctx context.Context) (string, error) {
 	return c.run(ctx, nil, "Ответь одним словом: OK.", ConnectionTimeout)
 }
 
 func (c Client) run(ctx context.Context, images []string, prompt string, timeout time.Duration) (string, error) {
-	workdir, err := os.MkdirTemp("", "screen-codex-cli-*")
+	workdir, err := os.MkdirTemp("", "solveo-codex-*")
 	if err != nil {
-		return "", fmt.Errorf("temporary Codex directory: %w", err)
+		return "", fmt.Errorf("временная папка Codex: %w", err)
 	}
 	defer os.RemoveAll(workdir)
 	output := filepath.Join(workdir, "answer.md")
@@ -143,7 +93,7 @@ func (c Client) run(ctx context.Context, images []string, prompt string, timeout
 	cmd.Stderr = &progressAndError{progress: c.Progress, errorLog: &stderr}
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("Codex exceeded timeout of %s", timeout)
+			return "", fmt.Errorf("Codex не ответил за %s", timeout)
 		}
 		if ctx.Err() != nil {
 			return "", ctx.Err()
@@ -152,15 +102,15 @@ func (c Client) run(ctx context.Context, images []string, prompt string, timeout
 		if len(details) > 1200 {
 			details = details[len(details)-1200:]
 		}
-		return "", fmt.Errorf("Codex failed: %w; %s", err, details)
+		return "", fmt.Errorf("ошибка Codex: %w; %s", err, details)
 	}
 
 	answer, err := os.ReadFile(output)
 	if err != nil {
-		return "", fmt.Errorf("Codex returned no final message: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("Codex не вернул итоговый ответ: %w; stderr: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	if strings.TrimSpace(string(answer)) == "" {
-		return "", errors.New("Codex returned an empty answer")
+		return "", errors.New("Codex вернул пустой ответ")
 	}
 	return string(answer), nil
 }

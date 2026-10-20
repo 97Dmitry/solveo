@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   Camera,
   ChevronDown,
@@ -30,6 +30,11 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>("closed");
   const [captureMenu, setCaptureMenu] = useState(false);
   const [notice, setNotice] = useState("");
+  const copy = useCallback(async (text: string) => {
+    const ok = await actions.copy(text);
+    if (!ok) setNotice("Не удалось скопировать в буфер обмена");
+    return ok;
+  }, []);
   useEffect(() => client.connect(), []);
   useEffect(() => {
     if (state.status === "ready") {
@@ -65,11 +70,6 @@ export default function App() {
   const lastAnswer = s.messages.findLast((m) => m.role === "assistant")?.text ?? "";
   const code = latestCode(lastAnswer);
   const error = state.error || s.error;
-  const copy = async (text: string) => {
-    const ok = await actions.copy(text);
-    if (!ok) setNotice("Не удалось скопировать в буфер обмена");
-    return ok;
-  };
   const panelTitle = {
     configuration: "Преднастройка чата",
     settings: "Настройки Solveo",

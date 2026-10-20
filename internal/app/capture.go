@@ -3,18 +3,19 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/platform"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/platform"
 )
 
 func (c *Controller) BeginCapture(mode string) error {
 	if mode != "quick-region" && mode != "queue-region" && mode != "quick-full" {
-		return errors.New("invalid capture mode")
+		return errors.New("неизвестный режим снимка")
 	}
 	c.mu.Lock()
 	if e := c.availableLocked(); e != nil {
@@ -27,14 +28,14 @@ func (c *Controller) BeginCapture(mode string) error {
 	}
 	if c.deps.Capturer == nil {
 		c.mu.Unlock()
-		return errors.New("screen capture unavailable")
+		return errors.New("снимок экрана недоступен")
 	}
 	if c.active.ProviderID != c.deps.Provider.Describe().ID {
 		c.mu.Unlock()
-		return errors.New("provider unavailable")
+		return errors.New("подключение LLM недоступно для этого чата")
 	}
 	id := chat.ID()
-	c.op = operation{Operation: Operation{ID: id, Kind: "capture", Phase: "selecting", Message: "Выберите область, Esc — отмена"}, chatID: c.active.ID}
+	c.op = operation{Operation: Operation{ID: id, Kind: kindCapture, Phase: phaseSelecting, Message: "Выберите область, Esc — отмена"}, chatID: c.active.ID}
 	c.selectionMode = mode
 	c.intent = nil
 	c.changedLocked()
@@ -45,8 +46,8 @@ func (c *Controller) BeginCapture(mode string) error {
 		return nil
 	}
 	if c.deps.NativeHost == nil {
-		c.captureError(id, errors.New("region selection unavailable"))
-		return errors.New("region selection unavailable")
+		c.captureError(id, errors.New("выбор области недоступен"))
+		return errors.New("выбор области недоступен")
 	}
 	if e := c.deps.NativeHost.BeginSelection(id); e != nil {
 		c.captureError(id, e)
@@ -57,7 +58,7 @@ func (c *Controller) BeginCapture(mode string) error {
 func (c *Controller) captureError(id string, e error) {
 	c.mu.Lock()
 	if c.op.ID == id {
-		c.op = operation{Operation: Operation{Phase: "idle"}}
+		c.op = operation{Operation: Operation{Phase: phaseIdle}}
 		if e != nil {
 			c.err = e.Error()
 		}
@@ -116,7 +117,7 @@ func (c *Controller) HandleNativeEvent(e platform.Event) {
 }
 func (c *Controller) finishSelection(e platform.Event) {
 	c.mu.Lock()
-	if c.op.ID != e.OperationID || c.op.Phase != "selecting" {
+	if c.op.ID != e.OperationID || c.op.Phase != phaseSelecting {
 		c.mu.Unlock()
 		return
 	}
@@ -127,7 +128,7 @@ func (c *Controller) finishSelection(e platform.Event) {
 	}
 	mode := c.selectionMode
 	chatID := c.op.chatID
-	c.op.Phase = "capturing"
+	c.op.Phase = phaseCapturing
 	c.op.Message = "Сохраняю снимок"
 	c.changedLocked()
 	c.workers.Add(1)
@@ -156,7 +157,7 @@ func (c *Controller) finishSelection(e platform.Event) {
 		}
 		c.queues[chatID] = append(c.queues[chatID], queued{ID: id, Path: p, Label: fmt.Sprintf("Снимок %d", len(c.queues[chatID])+1)})
 		if mode == "queue-region" {
-			c.op = operation{Operation: Operation{Phase: "idle"}}
+			c.op = operation{Operation: Operation{Phase: phaseIdle}}
 		}
 		c.changedLocked()
 		c.mu.Unlock()
@@ -221,6 +222,16 @@ func (c *Controller) ResolveImage(chatID, id string) (string, error) {
 			return p, nil
 		}
 	}
+	// Thumbnails of the active chat are resolved from memory instead of
+	// re-reading and validating the whole chat document for every image request.
+	if chatID == c.active.ID {
+		for _, a := range c.active.Attachments {
+			if a.ID == id && a.Path != "" {
+				c.mu.Unlock()
+				return c.deps.Store.AttachmentPath(chatID, a)
+			}
+		}
+	}
 	c.mu.Unlock()
 	return c.deps.Store.ImagePath(chatID, id)
 }
@@ -231,13 +242,13 @@ func (c *Controller) ResolveImageURL(raw string) (string, error) {
 	}
 	parts := strings.Split(strings.TrimPrefix(u.Path, "/attachments/"), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", errors.New("invalid image URL")
+		return "", errors.New("некорректный адрес снимка")
 	}
 	return c.ResolveImage(parts[0], parts[1])
 }
 func (c *Controller) OpenImage(chatID, id string) error {
 	if c.deps.NativeHost == nil {
-		return errors.New("image viewer unavailable")
+		return errors.New("просмотр снимков недоступен")
 	}
 	c.mu.Lock()
 	views := []platform.ViewImage{}
@@ -257,7 +268,7 @@ func (c *Controller) OpenImage(chatID, id string) error {
 			}
 		}
 		if !found {
-			p, e := c.deps.Store.ImagePath(chatID, a.ID)
+			p, e := c.deps.Store.AttachmentPath(chatID, a)
 			if e != nil {
 				return e
 			}
@@ -269,11 +280,11 @@ func (c *Controller) OpenImage(chatID, id string) error {
 			return c.deps.NativeHost.ShowImages(views, i)
 		}
 	}
-	return errors.New("image not found")
+	return errors.New("снимок не найден")
 }
 func (c *Controller) ShowLog() error {
 	if c.deps.NativeHost == nil {
-		return errors.New("log window unavailable")
+		return errors.New("окно лога недоступно")
 	}
 	return c.deps.NativeHost.ShowLog()
 }

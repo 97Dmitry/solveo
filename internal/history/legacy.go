@@ -5,8 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/chat"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
 )
 
 func legacyID(id, kind string, index int) string {
@@ -31,7 +32,7 @@ func readLegacy(data []byte) (chat.Chat, error) {
 		ID      string `json:"session_id"`
 	}{1, old.ID})
 	for i, m := range old.Messages {
-		c.Messages = append(c.Messages, chat.Message{ID: legacyID(c.ID, "message", i), Role: m.Role, Text: m.Text, Status: "complete", ConfigRevision: 1, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}})
+		c.Messages = append(c.Messages, chat.Message{ID: legacyID(c.ID, "message", i), Role: m.Role, Text: m.Text, Status: chat.StatusComplete, ConfigRevision: 1, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}})
 	}
 	for i, p := range old.Images {
 		c.Attachments = append(c.Attachments, chat.Attachment{ID: legacyID(c.ID, "image", i), Path: p})

@@ -4,21 +4,43 @@ package app
 import (
 	"context"
 	"errors"
+	"image"
+	"time"
+
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
 	"github.com/97Dmitry/solveo/internal/settings"
-	"image"
-	"time"
 )
 
 var (
-	ErrBusy        = errors.New("another operation is running")
-	ErrQueueFull   = errors.New("screenshot queue is full (20)")
-	ErrStale       = errors.New("state changed; refresh and try again")
-	ErrEmpty       = errors.New("enter a question or attach a screenshot")
-	ErrSavePending = errors.New("save the received result or explicitly discard it first")
+	ErrBusy        = errors.New("выполняется другая операция")
+	ErrQueueFull   = errors.New("очередь снимков заполнена (20)")
+	ErrStale       = errors.New("состояние изменилось, повторите действие")
+	ErrEmpty       = errors.New("введите вопрос или добавьте снимок")
+	ErrSavePending = errors.New("сначала сохраните полученный ответ или явно отбросьте его")
+)
+
+// Operation phases exposed to the frontend.
+const (
+	phaseIdle        = "idle"
+	phaseSelecting   = "selecting"
+	phaseCapturing   = "capturing"
+	phaseSaving      = "saving"
+	phaseRequesting  = "requesting"
+	phaseSavePending = "save-pending"
+)
+
+// Operation kinds.
+const (
+	kindSubmit  = "submit"
+	kindCapture = "capture"
+	kindCheck   = "check"
+	kindConfig  = "config"
+	kindOpen    = "open"
+	kindDelete  = "delete"
+	kindDiscard = "discard"
 )
 
 type Archive interface {
@@ -26,6 +48,7 @@ type Archive interface {
 	Load(string) (chat.Chat, error)
 	List() ([]history.Summary, error)
 	ImagePath(string, string) (string, error)
+	AttachmentPath(string, chat.Attachment) (string, error)
 	Delete(string) error
 }
 type SettingsStore interface {
@@ -136,7 +159,6 @@ type Snapshot struct {
 	Provider       llm.Descriptor   `json:"provider"`
 	History        []HistorySummary `json:"history"`
 	Error          string           `json:"error"`
-	Log            string           `json:"log"`
 	Uncertain      bool             `json:"uncertain"`
 }
 type queued struct{ ID, Path, Label string }

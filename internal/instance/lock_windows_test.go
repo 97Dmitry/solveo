@@ -10,7 +10,7 @@ import (
 )
 
 func TestArchiveHasOnlyOneRunningInstance(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "screen-codex-data")
+	dir := filepath.Join(t.TempDir(), "solveo-data")
 	release, err := Acquire(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +22,7 @@ func TestArchiveHasOnlyOneRunningInstance(t *testing.T) {
 		}
 		t.Fatalf("second instance accepted the same archive: %v", err)
 	}
-	other, err := Acquire(filepath.Join(t.TempDir(), "screen-codex-data"))
+	other, err := Acquire(filepath.Join(t.TempDir(), "solveo-data"))
 	if err != nil {
 		t.Fatal("independent archive blocked:", err)
 	}

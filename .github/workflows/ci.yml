@@ -53,6 +53,10 @@ jobs:
       - name: Vet portable Go packages
         run: go vet ./internal/...
 
+      # Uses the golangci-lint version pinned in Makefile; lints host and Windows builds.
+      - name: Lint Go
+        run: make lint
+
   windows:
     name: Windows tests and build
     needs: checks

@@ -2,11 +2,12 @@ package history
 
 import (
 	"encoding/json"
-	"github.com/97Dmitry/solveo/internal/chat"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/97Dmitry/solveo/internal/chat"
 )
 
 func TestPreparedChatWithoutSessionSurvivesRestart(t *testing.T) {
@@ -31,7 +32,9 @@ func TestLegacyImagesRemainChatLevel(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	id := "12345678-1234-1234-1234-123456789abc"
 	data := `{"version":1,"thread_id":"` + id + `","messages":[{"Role":"user","Text":"question"}],"images":["images/` + id + `/shot.png"]}`
-	os.WriteFile(filepath.Join(s.Dir, "chats", id+".json"), []byte(data), 0600)
+	if err := os.WriteFile(filepath.Join(s.Dir, "chats", id+".json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
 	c, e := s.Load(id)
 	if e != nil {
 		t.Fatal(e)
@@ -47,7 +50,9 @@ func TestLegacyImagesRemainChatLevel(t *testing.T) {
 		t.Fatal(c)
 	}
 	var state map[string]interface{}
-	json.Unmarshal(c.ProviderState, &state)
+	if err := json.Unmarshal(c.ProviderState, &state); err != nil {
+		t.Fatal(err)
+	}
 	if state["session_id"] != id {
 		t.Fatal(state)
 	}
@@ -55,10 +60,14 @@ func TestLegacyImagesRemainChatLevel(t *testing.T) {
 func TestFailedCopyPreservesOldDocument(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	c := chat.New()
-	s.Save(SaveInput{Chat: c})
+	if _, err := s.Save(SaveInput{Chat: c}); err != nil {
+		t.Fatal(err)
+	}
 	before, _ := os.ReadFile(filepath.Join(s.Dir, "chats", c.ID+".json"))
 	p := filepath.Join(t.TempDir(), "a.png")
-	os.WriteFile(p, []byte("png"), 0600)
+	if err := os.WriteFile(p, []byte("png"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	c.Attachments = []chat.Attachment{{ID: chat.ID()}, {ID: chat.ID()}}
 	_, e := s.Save(SaveInput{Chat: c, Sources: []Source{{c.Attachments[0].ID, p}, {c.Attachments[1].ID, p + "missing"}}})
 	if e == nil {
@@ -82,9 +91,13 @@ func TestUnsafeImagePaths(t *testing.T) {
 func TestSymlinkEscape(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	outside := t.TempDir()
-	os.WriteFile(filepath.Join(outside, "shot.png"), []byte("private"), 0600)
+	if err := os.WriteFile(filepath.Join(outside, "shot.png"), []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	c := chat.New()
-	os.Symlink(outside, filepath.Join(s.Dir, "images", c.ID))
+	if err := os.Symlink(outside, filepath.Join(s.Dir, "images", c.ID)); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
 	a := chat.Attachment{ID: chat.ID(), Path: "images/" + c.ID + "/shot.png"}
 	c.Attachments = []chat.Attachment{a}
 	if _, e := s.Save(SaveInput{Chat: c}); e == nil {
@@ -123,5 +136,37 @@ func TestImagePathThroughArchiveAlias(t *testing.T) {
 	data, err := os.ReadFile(got)
 	if err != nil || string(data) != "png" {
 		t.Fatalf("archived image unreadable: %q, %v", data, err)
+	}
+}
+
+func TestAttachmentPathValidatesInMemoryMetadata(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	source := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(source, []byte("png"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := chat.New()
+	a := chat.Attachment{ID: chat.ID()}
+	c.Attachments = []chat.Attachment{a}
+	saved, err := s.Save(SaveInput{Chat: c, Sources: []Source{{a.ID, source}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AttachmentPath(saved.ID, saved.Attachments[0]); err != nil {
+		t.Fatal(err)
+	}
+	other := chat.New()
+	for _, bad := range []chat.Attachment{
+		{ID: a.ID, Path: "../../secret.png"},
+		{ID: a.ID, Path: "images/" + saved.ID + "/missing.png"},
+		saved.Attachments[0],
+	} {
+		chatID := saved.ID
+		if bad == saved.Attachments[0] {
+			chatID = other.ID // a path belonging to another chat
+		}
+		if _, err := s.AttachmentPath(chatID, bad); err == nil {
+			t.Fatalf("accepted %q for chat %s", bad.Path, chatID)
+		}
 	}
 }

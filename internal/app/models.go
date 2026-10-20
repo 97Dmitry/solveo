@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+
 	"github.com/97Dmitry/solveo/internal/llm"
 )
 
@@ -11,12 +12,12 @@ func (c *Controller) ListModels() ([]llm.Model, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, errors.New("application is closed")
+		return nil, errors.New("приложение завершается")
 	}
 	provider, ok := c.deps.Provider.(llm.ModelCatalog)
 	if !ok {
 		c.mu.Unlock()
-		return nil, errors.New("provider does not support model discovery")
+		return nil, errors.New("подключение не поддерживает загрузку списка моделей")
 	}
 	c.workers.Add(1)
 	ctx := c.ctx

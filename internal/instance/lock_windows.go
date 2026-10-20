@@ -14,7 +14,7 @@ import (
 	"unsafe"
 )
 
-var ErrAlreadyRunning = errors.New("Screen Codex is already running for this archive")
+var ErrAlreadyRunning = errors.New("Solveo уже запущен с этим архивом")
 
 var createMutex = syscall.NewLazyDLL("kernel32.dll").NewProc("CreateMutexW")
 
@@ -27,15 +27,18 @@ func Acquire(dir string) (release func(), err error) {
 		return nil, err
 	}
 	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(absolute))))
-	name := syscall.StringToUTF16Ptr(fmt.Sprintf(`Local\ScreenCodexArchive-%x`, digest))
+	name, err := syscall.UTF16PtrFromString(fmt.Sprintf(`Local\SolveoArchive-%x`, digest))
+	if err != nil {
+		return nil, err
+	}
 	handle, _, callErr := createMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
 	if handle == 0 {
 		return nil, fmt.Errorf("CreateMutexW: %w", callErr)
 	}
 	if callErr == syscall.ERROR_ALREADY_EXISTS {
-		syscall.CloseHandle(syscall.Handle(handle))
+		_ = syscall.CloseHandle(syscall.Handle(handle))
 		return nil, ErrAlreadyRunning
 	}
 	var once sync.Once
-	return func() { once.Do(func() { syscall.CloseHandle(syscall.Handle(handle)) }) }, nil
+	return func() { once.Do(func() { _ = syscall.CloseHandle(syscall.Handle(handle)) }) }, nil
 }

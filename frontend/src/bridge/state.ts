@@ -66,7 +66,6 @@ export const settingsSchema = z.object({
 } satisfies Shape<settings.Config>);
 const capabilities = z.object({
   images: z.boolean(),
-  streaming: z.boolean(),
   reasoning: z.boolean(),
 } satisfies Shape<llm.Capabilities>);
 const providerSchema = z.object({
@@ -114,7 +113,6 @@ export const snapshotSchema = z.object({
   provider: providerSchema,
   history: z.array(summarySchema),
   error: z.string(),
-  log: z.string(),
   uncertain: z.boolean(),
 } satisfies Shape<app.Snapshot>);
 export const intentSchema = z.object({

@@ -57,7 +57,7 @@ func loadScreenshot(path string) ([]byte, int, int, error) {
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // read-only
 	config, err := png.DecodeConfig(file)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("read PNG: %w", err)

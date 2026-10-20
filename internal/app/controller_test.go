@@ -3,16 +3,17 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/history"
-	"github.com/97Dmitry/solveo/internal/llm"
-	"github.com/97Dmitry/solveo/internal/settings"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/settings"
 )
 
 type fakeProvider struct {
@@ -52,7 +53,7 @@ func setup(t *testing.T) (*Controller, *fakeProvider, *history.Store) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { c.DiscardUnsaved(); c.Close(context.Background()) })
+	t.Cleanup(func() { _, _ = c.DiscardUnsaved(); _ = c.Close(context.Background()) })
 	return c, f, s
 }
 func waitIdle(t *testing.T, c *Controller) {
@@ -111,8 +112,12 @@ func TestSaveFailureKeepsAnswerAndSources(t *testing.T) {
 	}
 	<-f.started
 	backup := filepath.Join(s.Dir, "chats-backup")
-	os.Rename(filepath.Join(s.Dir, "chats"), backup)
-	os.WriteFile(filepath.Join(s.Dir, "chats"), []byte("blocked"), 0600)
+	if err := os.Rename(filepath.Join(s.Dir, "chats"), backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir, "chats"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	f.finish <- nil
 	waitIdle(t, c)
 	snap = c.Snapshot()
@@ -123,7 +128,9 @@ func TestSaveFailureKeepsAnswerAndSources(t *testing.T) {
 		t.Fatal(e)
 	}
 	os.Remove(filepath.Join(s.Dir, "chats"))
-	os.Rename(backup, filepath.Join(s.Dir, "chats"))
+	if err := os.Rename(backup, filepath.Join(s.Dir, "chats")); err != nil {
+		t.Fatal(err)
+	}
 	if e = c.RetrySave(); e != nil {
 		t.Fatal(e)
 	}
@@ -136,7 +143,9 @@ func TestDuplicateRequestAndRetryUseOneUserTurn(t *testing.T) {
 	c, f, _ := setup(t)
 	s := c.Snapshot()
 	in := SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "question"}
-	c.Submit(in)
+	if _, err := c.Submit(in); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
 	f.finish <- errors.New("offline")
 	waitIdle(t, c)
@@ -145,7 +154,9 @@ func TestDuplicateRequestAndRetryUseOneUserTurn(t *testing.T) {
 	}
 	s = c.Snapshot()
 	id := s.Messages[0].ID
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, RetryMessageID: id})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, RetryMessageID: id}); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
 	f.finish <- nil
 	waitIdle(t, c)
@@ -187,22 +198,64 @@ func TestPinDoesNotShowWindow(t *testing.T) {
 }
 func TestBoundedLog(t *testing.T) {
 	c, _, _ := setup(t)
+	before := c.Snapshot().Revision
 	c.appendLog(strings.Repeat("x", 100<<10))
-	if len(c.Snapshot().Log) > 64<<10 {
+	c.mu.Lock()
+	size := len(c.logs)
+	c.mu.Unlock()
+	if size > 64<<10 {
 		t.Fatal("unbounded log")
+	}
+	if c.Snapshot().Revision != before {
+		t.Fatal("log output must not publish a new chat snapshot")
+	}
+}
+
+type logHost struct {
+	fakeHost
+	mu   sync.Mutex
+	logs []string
+}
+
+func (h *logHost) SetLog(text string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.logs = append(h.logs, text)
+	return nil
+}
+func TestLogUpdatesAreCoalesced(t *testing.T) {
+	c, _, _ := setup(t)
+	host := &logHost{}
+	c.deps.NativeHost = host
+	for i := 0; i < 100; i++ {
+		c.appendLog("x")
+	}
+	c.appendLog("end")
+	time.Sleep(3 * logFlushInterval)
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if len(host.logs) == 0 || len(host.logs) > 2 {
+		t.Fatalf("expected coalesced log updates, got %d", len(host.logs))
+	}
+	if last := host.logs[len(host.logs)-1]; !strings.HasSuffix(last, "end") || len(last) != 103 {
+		t.Fatalf("final log update is incomplete: %q", last)
 	}
 }
 func TestFastSubmitClearsAcknowledgedDraft(t *testing.T) {
 	c, f, _ := setup(t)
 	s := c.Snapshot()
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "fast question", DraftRevision: 1})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "fast question", DraftRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
 	f.finish <- nil
 	waitIdle(t, c)
 	if d := c.Snapshot().Draft; d.Text != "" || d.Revision != 2 {
 		t.Fatalf("submitted draft was not cleared: %+v", d)
 	}
-	c.SetDraft(DraftInput{ChatID: s.ActiveChatID, Text: "fast question", Revision: 1})
+	if err := c.SetDraft(DraftInput{ChatID: s.ActiveChatID, Text: "fast question", Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if c.Snapshot().Draft.Text != "" {
 		t.Fatal("late debounce restored submitted text")
 	}
@@ -210,9 +263,13 @@ func TestFastSubmitClearsAcknowledgedDraft(t *testing.T) {
 func TestNewTypingSurvivesCompletion(t *testing.T) {
 	c, f, _ := setup(t)
 	s := c.Snapshot()
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "first", DraftRevision: 1})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "first", DraftRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
-	c.SetDraft(DraftInput{ChatID: s.ActiveChatID, Text: "next", Revision: 2})
+	if err := c.SetDraft(DraftInput{ChatID: s.ActiveChatID, Text: "next", Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
 	f.finish <- nil
 	waitIdle(t, c)
 	if c.Snapshot().Draft.Text != "next" {
@@ -223,8 +280,12 @@ func TestDiscardUnsavedKeepsUnarchivedScreenshot(t *testing.T) {
 	c, f, store := setup(t)
 	c.deps.Capturer = fakeCapture{}
 	oldID := c.Snapshot().ActiveChatID
-	os.Rename(filepath.Join(store.Dir, "chats"), filepath.Join(store.Dir, "chats-old"))
-	os.WriteFile(filepath.Join(store.Dir, "chats"), []byte("blocked"), 0600)
+	if err := os.Rename(filepath.Join(store.Dir, "chats"), filepath.Join(store.Dir, "chats-old")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Dir, "chats"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if e := c.BeginCapture("quick-full"); e != nil {
 		t.Fatal(e)
 	}
@@ -248,10 +309,44 @@ func TestDiscardUnsavedKeepsUnarchivedScreenshot(t *testing.T) {
 		t.Fatal("recovery invoked provider")
 	}
 }
+func TestDiscardUnsavedPersistsReplacementChat(t *testing.T) {
+	c, _, store := setup(t)
+	c.deps.Capturer = fakeCapture{}
+	chats := filepath.Join(store.Dir, "chats")
+	if err := os.Rename(chats, chats+"-old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(chats, []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if e := c.BeginCapture("quick-full"); e != nil {
+		t.Fatal(e)
+	}
+	waitIdle(t, c)
+	if c.Snapshot().Operation.Phase != "save-pending" {
+		t.Fatal("expected pending save")
+	}
+	os.Remove(chats)
+	if err := os.Rename(chats+"-old", chats); err != nil {
+		t.Fatal(err)
+	}
+	next, e := c.DiscardUnsaved()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(next.History) == 0 || next.History[0].ID != next.ActiveChatID || len(next.Queue) != 1 {
+		t.Fatalf("replacement chat is not in history: %+v", next.History)
+	}
+	if _, e := store.Load(next.ActiveChatID); e != nil {
+		t.Fatal(e)
+	}
+}
 func TestFirstQuestionBecomesTitle(t *testing.T) {
 	c, f, _ := setup(t)
 	s := c.Snapshot()
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Explain Go interfaces"})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Explain Go interfaces"}); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
 	f.finish <- nil
 	waitIdle(t, c)
@@ -263,7 +358,9 @@ func TestViewerRebindFailureKeepsSourceUntilExit(t *testing.T) {
 	c, f, _ := setup(t)
 	c.deps.Capturer = fakeCapture{}
 	c.deps.NativeHost = &fakeHost{rebindErr: errors.New("host unavailable")}
-	c.BeginCapture("quick-full")
+	if err := c.BeginCapture("quick-full"); err != nil {
+		t.Fatal(err)
+	}
 	r := <-f.started
 	s := c.Snapshot()
 	source := c.queues[s.ActiveChatID][0].Path
@@ -275,5 +372,50 @@ func TestViewerRebindFailureKeepsSourceUntilExit(t *testing.T) {
 	c.workers.Wait()
 	if _, e := os.Stat(source); e != nil {
 		t.Fatal("source deleted before viewer rebind")
+	}
+}
+
+type gatedSettings struct {
+	SettingsStore
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedSettings) Save(cfg settings.Config) error {
+	if g.entered != nil {
+		close(g.entered)
+		g.entered = nil
+		<-g.release
+	}
+	return g.SettingsStore.Save(cfg)
+}
+func TestConcurrentPinDoesNotLoseSettingsUpdate(t *testing.T) {
+	c, _, _ := setup(t)
+	gate := &gatedSettings{SettingsStore: c.deps.SettingsStore, entered: make(chan struct{}), release: make(chan struct{})}
+	entered := gate.entered
+	c.deps.SettingsStore = gate
+	next := c.Snapshot().Settings
+	next.FontSize = 27
+	done := make(chan struct{}, 2)
+	go func() {
+		if _, err := c.UpdateSettings(next); err != nil {
+			t.Error(err)
+		}
+		done <- struct{}{}
+	}()
+	<-entered // UpdateSettings holds the settings lock and has not applied its value yet.
+	go func() {
+		if _, err := c.SetAlwaysOnTop(!next.AlwaysOnTop); err != nil {
+			t.Error(err)
+		}
+		done <- struct{}{}
+	}()
+	time.Sleep(50 * time.Millisecond) // let the pin update reach its read of current settings
+	close(gate.release)
+	<-done
+	<-done
+	got := c.Snapshot().Settings
+	if got.FontSize != 27 || got.AlwaysOnTop == next.AlwaysOnTop {
+		t.Fatalf("concurrent settings update lost: %+v", got)
 	}
 }

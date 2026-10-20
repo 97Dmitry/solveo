@@ -3,10 +3,11 @@ package app
 import (
 	"context"
 	"errors"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/platform"
 	"image"
 	"testing"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/platform"
 )
 
 func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
@@ -16,8 +17,12 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	s := c.Snapshot()
 	cfg := s.Config
 	cfg.Context = "Go interview"
-	c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Config: cfg, Title: "Interview", ExpectedRevision: s.ConfigRevision})
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Explain interfaces"})
+	if _, err := c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Config: cfg, Title: "Interview", ExpectedRevision: s.ConfigRevision}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Explain interfaces"}); err != nil {
+		t.Fatal(err)
+	}
 	r := <-f.started
 	if len(r.Images) != 0 || r.Config.Context != cfg.Context {
 		t.Fatal(r)
@@ -34,7 +39,9 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	}
 	s = c.Snapshot()
 	ids := []string{s.Queue[0].ID, s.Queue[1].ID}
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Solve these", AttachmentIDs: ids})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Solve these", AttachmentIDs: ids}); err != nil {
+		t.Fatal(err)
+	}
 	r = <-f.started
 	if len(r.Images) != 2 || r.Images[0].ID != ids[0] || r.Images[1].ID != ids[1] {
 		t.Fatal(r.Images)
@@ -44,8 +51,12 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	s = c.Snapshot()
 	cfg = s.Config
 	cfg.Instructions = "Explain complexity"
-	c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Title: s.Title, Config: cfg, ExpectedRevision: s.ConfigRevision})
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Next"})
+	if _, err := c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Title: s.Title, Config: cfg, ExpectedRevision: s.ConfigRevision}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, Text: "Next"}); err != nil {
+		t.Fatal(err)
+	}
 	r = <-f.started
 	if r.ConfigRevision != s.ConfigRevision+1 {
 		t.Fatal(r.ConfigRevision)
@@ -54,7 +65,9 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	waitIdle(t, c)
 	s = c.Snapshot()
 	last := s.Messages[len(s.Messages)-1]
-	c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, RetryMessageID: last.ID})
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: s.ActiveChatID, RetryMessageID: last.ID}); err != nil {
+		t.Fatal(err)
+	}
 	<-f.started
 	f.finish <- nil
 	waitIdle(t, c)
@@ -62,7 +75,7 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer reopened.Close(context.Background())
+	defer func() { _ = reopened.Close(context.Background()) }()
 	got := reopened.Snapshot()
 	if got.Title != "Interview" || len(got.Messages) != 6 || len(got.Images) != 2 || len(got.Messages[4].Attempts) != 2 {
 		t.Fatal(got)

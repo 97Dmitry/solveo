@@ -33,7 +33,7 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer stdin.Close()
+	defer func() { _ = stdin.Close() }()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -41,9 +41,9 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 	// Do not expose raw stderr, which may contain local/account information.
 	cmd.Stderr = io.Discard
 	if err = cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start Codex model discovery: %w", err)
+		return nil, fmt.Errorf("не удалось запустить загрузку моделей Codex: %w", err)
 	}
-	defer func() { cancel(); stdin.Close(); _ = cmd.Wait() }()
+	defer func() { cancel(); _ = stdin.Close(); _ = cmd.Wait() }()
 	scanner := bufio.NewScanner(io.LimitReader(stdout, 16<<20))
 	scanner.Buffer(make([]byte, 4096), 2<<20)
 	encoder := json.NewEncoder(stdin)
@@ -67,16 +67,16 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 				} `json:"error"`
 			}
 			if e := json.Unmarshal(scanner.Bytes(), &envelope); e != nil {
-				return errors.New("invalid Codex model catalog response")
+				return errors.New("некорректный ответ каталога моделей Codex")
 			}
 			if envelope.ID == nil || *envelope.ID != nextID {
 				continue
 			}
 			if envelope.Error != nil {
-				return fmt.Errorf("Codex catalog request %s failed (code %d)", method, envelope.Error.Code)
+				return fmt.Errorf("запрос каталога Codex %s завершился ошибкой (код %d)", method, envelope.Error.Code)
 			}
 			if len(envelope.Result) == 0 || string(envelope.Result) == "null" {
-				return errors.New("missing Codex catalog result")
+				return errors.New("каталог Codex не вернул результат")
 			}
 			return json.Unmarshal(envelope.Result, out)
 		}
@@ -86,7 +86,7 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 		if e := scanner.Err(); e != nil {
 			return e
 		}
-		return errors.New("Codex model discovery ended before a response; update Codex CLI and check sign-in")
+		return errors.New("загрузка моделей Codex прервалась до ответа; обновите Codex CLI и проверьте вход")
 	}
 	var initialized map[string]interface{}
 	if err = rpc("initialize", map[string]interface{}{"clientInfo": map[string]string{"name": "solveo", "title": "Solveo", "version": "0.1.0"}}, &initialized); err != nil {
@@ -124,7 +124,7 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 			return nil, err
 		}
 		if response.Data == nil {
-			return nil, errors.New("missing Codex model catalog data")
+			return nil, errors.New("каталог моделей Codex не вернул данные")
 		}
 		for _, entry := range response.Data {
 			if entry.Hidden {
@@ -132,7 +132,7 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 			}
 			id := strings.TrimSpace(entry.Model)
 			if id == "" || len(id) > 256 || strings.ContainsAny(id, "\x00\r\n") || strings.TrimSpace(entry.DisplayName) == "" {
-				return nil, errors.New("invalid Codex catalog model")
+				return nil, errors.New("некорректная модель в каталоге Codex")
 			}
 			if seenModels[id] {
 				continue
@@ -142,7 +142,7 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 			seenEfforts := map[string]bool{}
 			for _, effort := range entry.Efforts {
 				if effort.ID == "" || !llm.ValidReasoning(effort.ID) {
-					return nil, errors.New("invalid Codex catalog reasoning effort")
+					return nil, errors.New("некорректный уровень рассуждения в каталоге Codex")
 				}
 				if !seenEfforts[effort.ID] {
 					m.ReasoningEfforts = append(m.ReasoningEfforts, llm.ReasoningEffort{ID: effort.ID, Description: effort.Description})
@@ -150,21 +150,21 @@ func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
 				}
 			}
 			if m.DefaultReasoning != "" && !seenEfforts[m.DefaultReasoning] {
-				return nil, errors.New("invalid Codex catalog default reasoning effort")
+				return nil, errors.New("некорректный уровень рассуждения по умолчанию в каталоге Codex")
 			}
 			models = append(models, m)
 		}
 		if response.NextCursor == nil || *response.NextCursor == "" {
 			if len(models) == 0 {
-				return nil, errors.New("Codex returned no visible models; check sign-in")
+				return nil, errors.New("Codex не вернул доступных моделей; проверьте вход")
 			}
 			return models, nil
 		}
 		cursor = *response.NextCursor
 		if seenCursors[cursor] {
-			return nil, errors.New("Codex catalog repeated a pagination cursor")
+			return nil, errors.New("каталог Codex повторил курсор страницы")
 		}
 		seenCursors[cursor] = true
 	}
-	return nil, errors.New("Codex model catalog exceeds page limit")
+	return nil, errors.New("каталог моделей Codex превышает лимит страниц")
 }
