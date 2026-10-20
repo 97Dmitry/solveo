@@ -36,8 +36,12 @@ frontend-build: bindings
 test:
 	go test ./internal/...
 # Lint both the host build (portable tests) and the Windows application.
+# Build the linter with throwaway module/build caches so its dependencies do not bloat
+# the shared Go cache (CI restores that cache in every job).
+LINT_BUILD_ENV := GOMODCACHE="$(CURDIR)/.tools/build/mod" GOCACHE="$(CURDIR)/.tools/build/cache"
 $(GOLANGCI_LINT):
-	GOBIN="$(CURDIR)/$(GOLANGCI_LINT_DIR)" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	$(LINT_BUILD_ENV) GOBIN="$(CURDIR)/$(GOLANGCI_LINT_DIR)" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	$(LINT_BUILD_ENV) go clean -cache -modcache
 lint: frontend-build $(GOLANGCI_LINT)
 	"./$(GOLANGCI_LINT)" run ./...
 	$(WIN_ENV) "./$(GOLANGCI_LINT)" run ./...
