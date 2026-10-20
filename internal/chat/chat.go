@@ -69,6 +69,9 @@ type Chat struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
+// Now is the application clock. All persisted and displayed times are UTC.
+func Now() time.Time { return time.Now().UTC() }
+
 func ID() string {
 	var b [16]byte
 	if _, e := rand.Read(b[:]); e != nil {
@@ -77,7 +80,7 @@ func ID() string {
 	return hex.EncodeToString(b[:])
 }
 func New() Chat {
-	now := time.Now()
+	now := Now()
 	return Chat{
 		Version:        2,
 		ID:             ID(),

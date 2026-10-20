@@ -130,7 +130,7 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 		return input.Chat, e
 	}
 	c.Version = 2
-	c.UpdatedAt = time.Now()
+	c.UpdatedAt = chat.Now()
 	data, e := json.MarshalIndent(c, "", "  ")
 	if e != nil {
 		return input.Chat, e
@@ -194,6 +194,8 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	if e := validateDocument(c); e != nil {
 		return chat.Chat{}, e
 	}
+	// Older archives may carry local offsets; the application works in UTC only.
+	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
 	// A process can die after a CLI turn was accepted. Never infer success/retry.
 	for i, m := range c.Messages {
 		if m.Status == chat.StatusRequesting {

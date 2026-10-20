@@ -45,7 +45,7 @@ func New(d Dependencies) (*Controller, error) {
 		return nil, errors.New("не заданы зависимости приложения")
 	}
 	if d.Now == nil {
-		d.Now = time.Now
+		d.Now = chat.Now
 	}
 	if e := os.MkdirAll(d.TempDir, 0700); e != nil {
 		return nil, e
@@ -154,7 +154,7 @@ func (c *Controller) Snapshot() Snapshot {
 	}
 	summaries := []HistorySummary{}
 	for _, h := range c.summaries {
-		summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.Format(time.RFC3339Nano), Prepared: h.Prepared})
+		summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.UTC().Format(time.RFC3339Nano), Prepared: h.Prepared})
 	}
 	return Snapshot{
 		Revision:       c.revision,
