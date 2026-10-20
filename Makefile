@@ -9,7 +9,12 @@ else
 WIN_ENV := GOOS=windows GOARCH=amd64 CGO_ENABLED=0
 endif
 # Built for the host OS: `go run` would apply WIN_ENV to the linter binary itself.
-GOLANGCI_LINT := .tools/$(GOLANGCI_LINT_VERSION)/golangci-lint$(EXE)
+# The linter must be built with a Go at least as new as the analyzed standard library,
+# so the path is keyed by the host Go version and GOTOOLCHAIN=auto may pick a newer one.
+# Keep only the base version: build suffixes such as "-X:nodwarf5" break Make target names.
+GO_VERSION := $(firstword $(subst :, ,$(subst -, ,$(shell go env GOVERSION))))
+GOLANGCI_LINT_DIR := .tools/$(GOLANGCI_LINT_VERSION)-$(GO_VERSION)
+GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint$(EXE)
 .PHONY: help bindings frontend-check frontend-test frontend-build test lint vet build check dev
 help:
 	@echo make dev: Run desktop development on Windows
@@ -32,7 +37,7 @@ test:
 	go test ./internal/...
 # Lint both the host build (portable tests) and the Windows application.
 $(GOLANGCI_LINT):
-	GOBIN="$(CURDIR)/.tools/$(GOLANGCI_LINT_VERSION)" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	GOBIN="$(CURDIR)/$(GOLANGCI_LINT_DIR)" GOTOOLCHAIN=auto go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 lint: frontend-build $(GOLANGCI_LINT)
 	"./$(GOLANGCI_LINT)" run ./...
 	$(WIN_ENV) "./$(GOLANGCI_LINT)" run ./...
