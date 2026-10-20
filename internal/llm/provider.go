@@ -5,14 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/97Dmitry/solveo/internal/chat"
 )
 
-var ErrOutcomeUnknown = errors.New("external turn outcome is unknown")
+var ErrOutcomeUnknown = errors.New("исход запроса неизвестен")
 
 type Capabilities struct {
 	Images    bool `json:"images"`
-	Streaming bool `json:"streaming"`
 	Reasoning bool `json:"reasoning"`
 }
 type Descriptor struct {

@@ -1,11 +1,16 @@
 package codex
 
 import (
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/llm"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 )
 
 func TestPromptSeparatesContextAndUserText(t *testing.T) {
@@ -19,5 +24,13 @@ func TestPromptSeparatesContextAndUserText(t *testing.T) {
 	}
 	if strings.Contains(p, "Ответ начни с полного кода") {
 		t.Fatal("coding-first prompt")
+	}
+}
+
+func TestGenerateRejectsMissingImageBeforeLaunch(t *testing.T) {
+	c := New(filepath.Join(t.TempDir(), "codex-must-not-run"), "", time.Second)
+	r := llm.Request{Turn: chat.Message{Text: "task"}, ConfigRevision: 1, Images: []llm.Image{{Path: filepath.Join(t.TempDir(), "missing.png")}}}
+	if _, err := c.Generate(context.Background(), r, nil); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected missing image error, got %v", err)
 	}
 }

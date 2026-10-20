@@ -156,7 +156,7 @@ func SaveRegion(dst string, region image.Rectangle) error {
 		return fmt.Errorf("create PNG: %w", err)
 	}
 	if err := png.Encode(file, img); err != nil {
-		file.Close()
+		_ = file.Close()
 		os.Remove(dst)
 		return fmt.Errorf("encode PNG: %w", err)
 	}

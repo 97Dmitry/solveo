@@ -161,7 +161,6 @@ export namespace app {
 	    provider: llm.Descriptor;
 	    history: HistorySummary[];
 	    error: string;
-	    log: string;
 	    uncertain: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -186,7 +185,6 @@ export namespace app {
 	        this.provider = this.convertValues(source["provider"], llm.Descriptor);
 	        this.history = this.convertValues(source["history"], HistorySummary);
 	        this.error = source["error"];
-	        this.log = source["log"];
 	        this.uncertain = source["uncertain"];
 	    }
 	
@@ -346,7 +344,6 @@ export namespace llm {
 	
 	export class Capabilities {
 	    images: boolean;
-	    streaming: boolean;
 	    reasoning: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -356,7 +353,6 @@ export namespace llm {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.images = source["images"];
-	        this.streaming = source["streaming"];
 	        this.reasoning = source["reasoning"];
 	    }
 	}

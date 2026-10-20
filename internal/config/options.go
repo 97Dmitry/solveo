@@ -29,10 +29,10 @@ func Parse(args []string) (Options, error) {
 		return out, err
 	}
 	if f.NArg() != 0 {
-		return out, errors.New("unexpected positional arguments")
+		return out, errors.New("лишние аргументы командной строки")
 	}
 	if strings.TrimSpace(out.Binary) == "" {
-		return out, errors.New("empty Codex executable")
+		return out, errors.New("не указан исполняемый файл Codex")
 	}
 	if out.Timeout <= 0 {
 		out.Timeout = 10 * time.Minute
@@ -40,10 +40,10 @@ func Parse(args []string) (Options, error) {
 	if *promptFile != "" {
 		b, err := os.ReadFile(*promptFile)
 		if err != nil {
-			return out, fmt.Errorf("read prompt file: %w", err)
+			return out, fmt.Errorf("не удалось прочитать файл инструкции: %w", err)
 		}
 		if strings.TrimSpace(string(b)) == "" {
-			return out, errors.New("empty prompt file")
+			return out, errors.New("файл инструкции пуст")
 		}
 		out.Prompt = string(b)
 	}

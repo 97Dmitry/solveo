@@ -4,8 +4,9 @@ package windows
 
 import (
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/platform"
 	"unsafe"
+
+	"github.com/97Dmitry/solveo/internal/platform"
 )
 
 func setText(hwnd uintptr, text string) {

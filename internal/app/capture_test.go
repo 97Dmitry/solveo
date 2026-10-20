@@ -2,13 +2,14 @@ package app
 
 import (
 	"errors"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/llm"
-	"github.com/97Dmitry/solveo/internal/platform"
 	"image"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/platform"
 )
 
 type fakeCapture struct{}
@@ -35,10 +36,14 @@ func TestQuickFailureWithNineteenAttachments(t *testing.T) {
 	snap := c.Snapshot()
 	for i := 0; i < 19; i++ {
 		p := c.deps.TempDir + "/" + chat.ID() + ".png"
-		os.WriteFile(p, []byte("png"), 0600)
+		if err := os.WriteFile(p, []byte("png"), 0600); err != nil {
+			t.Fatal(err)
+		}
 		c.queues[snap.ActiveChatID] = append(c.queues[snap.ActiveChatID], queued{ID: chat.ID(), Path: p})
 	}
-	c.SetDraft(DraftInput{ChatID: snap.ActiveChatID, Text: "draft stays", Revision: 1})
+	if err := c.SetDraft(DraftInput{ChatID: snap.ActiveChatID, Text: "draft stays", Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if e := c.BeginCapture("quick-full"); e != nil {
 		t.Fatal(e)
 	}
@@ -89,13 +94,21 @@ func TestSubmitIntentExpires(t *testing.T) {
 func TestDraftIsolation(t *testing.T) {
 	c, _, _ := setup(t)
 	old := c.Snapshot().ActiveChatID
-	c.SetDraft(DraftInput{ChatID: old, Text: "old", Revision: 2})
-	c.SetDraft(DraftInput{ChatID: old, Text: "stale", Revision: 1})
-	c.NewChat()
+	if err := c.SetDraft(DraftInput{ChatID: old, Text: "old", Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetDraft(DraftInput{ChatID: old, Text: "stale", Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.NewChat(); err != nil {
+		t.Fatal(err)
+	}
 	if c.Snapshot().Draft.Text != "" {
 		t.Fatal("draft leaked")
 	}
-	c.OpenChat(old)
+	if _, err := c.OpenChat(old); err != nil {
+		t.Fatal(err)
+	}
 	if c.Snapshot().Draft.Text != "old" {
 		t.Fatal("draft lost")
 	}

@@ -32,7 +32,6 @@ const (
 
 var (
 	selectionGetMetrics      = user32.NewProc("GetSystemMetrics")
-	selectionDPIAware        = user32.NewProc("SetProcessDPIAware")
 	selectionSetLayered      = user32.NewProc("SetLayeredWindowAttributes")
 	selectionSetFocus        = user32.NewProc("SetFocus")
 	selectionSetCapture      = user32.NewProc("SetCapture")

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/llm"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 )
 
 type sessionState struct {
@@ -43,11 +44,11 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 	var state sessionState
 	if len(r.State) > 0 {
 		if e := json.Unmarshal(r.State, &state); e != nil || state.Version != 1 || !validThreadID(state.SessionID) {
-			return llm.Result{}, errors.New("invalid Codex provider state")
+			return llm.Result{}, errors.New("повреждено состояние сессии Codex")
 		}
 	}
 	if strings.TrimSpace(r.Turn.Text) == "" && len(r.Images) == 0 {
-		return llm.Result{}, errors.New("empty request")
+		return llm.Result{}, errors.New("пустой запрос")
 	}
 	images := make([]string, 0, len(r.Images))
 	for _, img := range r.Images {
@@ -60,7 +61,7 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 			return llm.Result{}, e
 		}
 		if !info.Mode().IsRegular() {
-			return llm.Result{}, errors.New("image is not a regular file")
+			return llm.Result{}, errors.New("снимок не является обычным файлом")
 		}
 		images = append(images, p)
 	}
@@ -76,7 +77,7 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 	result := llm.Result{}
 	if id != "" {
 		if state.SessionID != "" && state.SessionID != id {
-			return result, fmt.Errorf("%w: Codex resumed a different session; answer discarded", llm.ErrOutcomeUnknown)
+			return result, fmt.Errorf("%w: Codex продолжил другую сессию, ответ отброшен", llm.ErrOutcomeUnknown)
 		}
 		result.State, _ = json.Marshal(sessionState{1, id})
 	} else if len(r.State) > 0 {

@@ -8,6 +8,25 @@ import (
 	"time"
 )
 
+// DefaultTitle marks a chat whose title is still generated from its first question.
+const DefaultTitle = "Новый чат"
+
+// Message roles.
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+// Message and attempt statuses persisted in the archive.
+const (
+	StatusRequesting  = "requesting"
+	StatusComplete    = "complete"
+	StatusFailed      = "failed"
+	StatusCanceled    = "canceled"
+	StatusUnknown     = "unknown"
+	StatusInterrupted = "interrupted"
+)
+
 type Config struct {
 	Context          string `json:"context"`
 	Instructions     string `json:"instructions"`
@@ -58,7 +77,19 @@ func ID() string {
 	return hex.EncodeToString(b[:])
 }
 func New() Chat {
-	return Chat{Version: 2, ID: ID(), ProviderID: "codex", Title: "Новый чат", ConfigRevision: 1, Config: Config{ResponseLanguage: "Русский", CodeLanguage: "auto", Detail: "brief"}, Messages: []Message{}, Attachments: []Attachment{}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	now := time.Now()
+	return Chat{
+		Version:        2,
+		ID:             ID(),
+		ProviderID:     "codex",
+		Title:          DefaultTitle,
+		ConfigRevision: 1,
+		Config:         Config{ResponseLanguage: "Русский", CodeLanguage: "auto", Detail: "brief"},
+		Messages:       []Message{},
+		Attachments:    []Attachment{},
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
 }
 
 // Clone prevents snapshots/workers from sharing mutable slices with the controller.

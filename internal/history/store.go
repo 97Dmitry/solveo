@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/storage"
 	"io"
 	"os"
 	"path"
@@ -16,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/storage"
 )
 
 const maxChatBytes = 32 << 20
@@ -59,7 +60,7 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 	defer s.mu.Unlock()
 	c := chat.Clone(input.Chat)
 	if !idPattern.MatchString(c.ID) {
-		return input.Chat, errors.New("invalid chat ID")
+		return input.Chat, errors.New("некорректный ID чата")
 	}
 	root, e := os.OpenRoot(s.Dir)
 	if e != nil {
@@ -78,14 +79,14 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 	sources := map[string]string{}
 	for _, src := range input.Sources {
 		if !idPattern.MatchString(src.AttachmentID) {
-			return input.Chat, errors.New("invalid attachment ID")
+			return input.Chat, errors.New("некорректный ID снимка")
 		}
 		sources[src.AttachmentID] = src.TempPath
 	}
 	seen := map[string]bool{}
 	for i, a := range c.Attachments {
 		if !idPattern.MatchString(a.ID) || seen[a.ID] {
-			return input.Chat, errors.New("invalid or duplicate attachment ID")
+			return input.Chat, errors.New("некорректный или повторяющийся ID снимка")
 		}
 		seen[a.ID] = true
 		if src, ok := sources[a.ID]; ok {
@@ -99,12 +100,12 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 			}
 			out, e := root.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 			if e != nil {
-				in.Close()
+				_ = in.Close()
 				return input.Chat, e
 			}
 			copied = append(copied, p)
 			_, copyErr := io.Copy(out, in)
-			in.Close()
+			_ = in.Close() // read-only source
 			if copyErr == nil {
 				copyErr = out.Sync()
 			}
@@ -115,14 +116,14 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 			c.Attachments[i].Path = p
 		} else {
 			if !validPath(c.ID, a.Path) {
-				return input.Chat, errors.New("invalid archive image path")
+				return input.Chat, errors.New("некорректный путь снимка в архиве")
 			}
 			// Open through os.Root to reject links/reparse points escaping the archive.
 			f, e := root.Open(a.Path)
 			if e != nil {
 				return input.Chat, e
 			}
-			f.Close()
+			_ = f.Close()
 		}
 	}
 	if e := validateDocument(c); e != nil {
@@ -135,17 +136,17 @@ func (s *Store) Save(input SaveInput) (chat.Chat, error) {
 		return input.Chat, e
 	}
 	if len(data) > maxChatBytes {
-		return input.Chat, errors.New("chat exceeds 32 MiB history limit")
+		return input.Chat, errors.New("чат превышает лимит истории 32 МиБ")
 	}
 	if e = storage.Replace(root, "chats/"+c.ID+".json", data); e != nil {
-		return input.Chat, fmt.Errorf("save chat: %w", e)
+		return input.Chat, fmt.Errorf("не удалось сохранить чат: %w", e)
 	}
 	committed = true
 	return c, nil
 }
 func (s *Store) Load(id string) (chat.Chat, error) {
 	if !idPattern.MatchString(id) {
-		return chat.Chat{}, errors.New("invalid chat ID")
+		return chat.Chat{}, errors.New("некорректный ID чата")
 	}
 	root, e := os.OpenRoot(s.Dir)
 	if e != nil {
@@ -156,13 +157,13 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	if e != nil {
 		return chat.Chat{}, e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only
 	data, e := io.ReadAll(io.LimitReader(f, maxChatBytes+1))
 	if e != nil {
 		return chat.Chat{}, e
 	}
 	if len(data) > maxChatBytes {
-		return chat.Chat{}, errors.New("chat document too large")
+		return chat.Chat{}, errors.New("файл чата слишком большой")
 	}
 	var version struct {
 		Version int `json:"version"`
@@ -177,17 +178,17 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	case 2:
 		e = json.Unmarshal(data, &c)
 	default:
-		e = errors.New("unsupported archive version")
+		e = errors.New("неподдерживаемая версия архива")
 	}
 	if e != nil {
 		return chat.Chat{}, e
 	}
 	if c.ID != id {
-		return chat.Chat{}, errors.New("chat identity mismatch")
+		return chat.Chat{}, errors.New("ID чата не совпадает с именем файла")
 	}
 	for _, a := range c.Attachments {
 		if !validPath(id, a.Path) {
-			return chat.Chat{}, errors.New("invalid archive image path")
+			return chat.Chat{}, errors.New("некорректный путь снимка в архиве")
 		}
 	}
 	if e := validateDocument(c); e != nil {
@@ -195,12 +196,12 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	}
 	// A process can die after a CLI turn was accepted. Never infer success/retry.
 	for i, m := range c.Messages {
-		if m.Status == "requesting" {
-			c.Messages[i].Status = "interrupted"
+		if m.Status == chat.StatusRequesting {
+			c.Messages[i].Status = chat.StatusInterrupted
 			for j, a := range m.Attempts {
-				if a.Status == "requesting" {
-					c.Messages[i].Attempts[j].Status = "interrupted"
-					c.Messages[i].Attempts[j].Error = "Application stopped before the result was saved"
+				if a.Status == chat.StatusRequesting {
+					c.Messages[i].Attempts[j].Status = chat.StatusInterrupted
+					c.Messages[i].Attempts[j].Error = "Приложение завершилось до сохранения результата"
 				}
 			}
 		}
@@ -233,38 +234,47 @@ func (s *Store) ImagePath(chatID, attachmentID string) (string, error) {
 	}
 	for _, a := range c.Attachments {
 		if a.ID == attachmentID {
-			root, e := os.OpenRoot(s.Dir)
-			if e != nil {
-				return "", e
-			}
-			defer root.Close()
-			f, e := root.Open(a.Path)
-			if e != nil {
-				return "", e
-			}
-			f.Close()
-			resolved, e := filepath.EvalSymlinks(filepath.Join(s.Dir, filepath.FromSlash(a.Path)))
-			if e != nil {
-				return "", e
-			}
-			// Resolve both sides: Windows short names and archive directory aliases
-			// can otherwise make the same directory look like a different root.
-			archiveDir, e := filepath.EvalSymlinks(s.Dir)
-			if e != nil {
-				return "", e
-			}
-			rel, e := filepath.Rel(archiveDir, resolved)
-			if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				return "", errors.New("image escapes archive")
-			}
-			return resolved, nil
+			return s.AttachmentPath(chatID, a)
 		}
 	}
-	return "", errors.New("attachment not found")
+	return "", errors.New("снимок не найден")
+}
+
+// AttachmentPath resolves an attachment taken from an already loaded chat
+// without re-reading the chat document.
+func (s *Store) AttachmentPath(chatID string, a chat.Attachment) (string, error) {
+	if !idPattern.MatchString(chatID) || !validPath(chatID, a.Path) {
+		return "", errors.New("некорректный путь снимка в архиве")
+	}
+	root, e := os.OpenRoot(s.Dir)
+	if e != nil {
+		return "", e
+	}
+	defer root.Close()
+	f, e := root.Open(a.Path)
+	if e != nil {
+		return "", e
+	}
+	_ = f.Close()
+	resolved, e := filepath.EvalSymlinks(filepath.Join(s.Dir, filepath.FromSlash(a.Path)))
+	if e != nil {
+		return "", e
+	}
+	// Resolve both sides: Windows short names and archive directory aliases
+	// can otherwise make the same directory look like a different root.
+	archiveDir, e := filepath.EvalSymlinks(s.Dir)
+	if e != nil {
+		return "", e
+	}
+	rel, e := filepath.Rel(archiveDir, resolved)
+	if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("снимок указывает за пределы архива")
+	}
+	return resolved, nil
 }
 func (s *Store) Delete(id string) error {
 	if !idPattern.MatchString(id) {
-		return errors.New("invalid chat ID")
+		return errors.New("некорректный ID чата")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

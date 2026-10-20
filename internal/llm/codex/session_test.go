@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -72,18 +71,6 @@ func TestValidThreadID(t *testing.T) {
 	} {
 		if got := validThreadID(tt.id); got != tt.valid {
 			t.Errorf("validThreadID(%q) = %t", tt.id, got)
-		}
-	}
-}
-
-func TestFollowUpRejectsInvalidInput(t *testing.T) {
-	for _, tt := range []struct{ id, question string }{
-		{"", "rewrite"},
-		{"--last", "rewrite"},
-		{testThreadID, "   "},
-	} {
-		if _, err := (Client{}).FollowUp(context.Background(), tt.id, tt.question); err == nil {
-			t.Fatalf("expected error for ID %q and question %q", tt.id, tt.question)
 		}
 	}
 }

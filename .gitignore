@@ -5,3 +5,4 @@
 *.test.exe
 *.log
 solveo-data/
+/.tools/

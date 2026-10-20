@@ -4,17 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
-	"os"
-	"strings"
 )
 
 func (c *Controller) Submit(in SubmitInput) (string, error) { return c.submit(in, "") }
 func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	c.mu.Lock()
-	if e := c.availableLocked(); e != nil && (captureID == "" || c.op.ID != captureID || c.op.Phase != "capturing") {
+	if e := c.availableLocked(); e != nil && (captureID == "" || c.op.ID != captureID || c.op.Phase != phaseCapturing) {
 		c.mu.Unlock()
 		return "", e
 	}
@@ -28,7 +30,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	}
 	if c.active.ProviderID != c.deps.Provider.Describe().ID {
 		c.mu.Unlock()
-		return "", errors.New("provider is unavailable for this archive")
+		return "", errors.New("подключение LLM недоступно для этого чата")
 	}
 	if in.IntentID != "" {
 		if c.intent == nil || in.IntentID != c.intent.ID || in.ChatID != c.intent.ChatID || c.deps.Now().UnixMilli() >= c.intent.ExpiresAt || in.DraftRevision < c.intent.DraftRevision {
@@ -49,7 +51,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 			return "", ErrStale
 		}
 		last := doc.Messages[len(doc.Messages)-1]
-		if last.ID != in.RetryMessageID || last.Role != "user" || last.Status == "complete" {
+		if last.ID != in.RetryMessageID || last.Role != chat.RoleUser || last.Status == chat.StatusComplete {
 			c.mu.Unlock()
 			return "", ErrStale
 		}
@@ -62,13 +64,13 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 		}
 		if len(in.Text) > 1<<20 {
 			c.mu.Unlock()
-			return "", errors.New("question exceeds 1 MiB")
+			return "", errors.New("вопрос длиннее 1 МиБ")
 		}
 		wanted := map[string]bool{}
 		for _, id := range in.AttachmentIDs {
 			if wanted[id] {
 				c.mu.Unlock()
-				return "", errors.New("duplicate attachment")
+				return "", errors.New("снимок указан дважды")
 			}
 			wanted[id] = true
 		}
@@ -93,7 +95,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 			c.mu.Unlock()
 			return "", ErrStale
 		}
-		if len(doc.Messages) == 0 && doc.Title == "Новый чат" {
+		if len(doc.Messages) == 0 && doc.Title == chat.DefaultTitle {
 			title := []rune(strings.Join(strings.Fields(in.Text), " "))
 			if len(title) > 80 {
 				title = append(title[:79], '…')
@@ -103,11 +105,11 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 				doc.Title = "Задание на снимках"
 			}
 		}
-		turn = chat.Message{ID: chat.ID(), Role: "user", Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+		turn = chat.Message{ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
 	}
-	turn.Status = "requesting"
+	turn.Status = chat.StatusRequesting
 	turn.ConfigRevision = doc.ConfigRevision
-	turn.Attempts = append(turn.Attempts, chat.Attempt{ID: chat.ID(), Status: "requesting", ConfigRevision: doc.ConfigRevision})
+	turn.Attempts = append(turn.Attempts, chat.Attempt{ID: chat.ID(), Status: chat.StatusRequesting, ConfigRevision: doc.ConfigRevision})
 	if in.RetryMessageID != "" {
 		doc.Messages[len(doc.Messages)-1] = turn
 	} else {
@@ -115,7 +117,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	}
 	opID := chat.ID()
 	ctx, cancel := context.WithCancel(c.ctx)
-	c.op = operation{Operation: Operation{ID: opID, Kind: "submit", Phase: "saving", Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
+	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
 	c.requests[in.RequestID] = true
 	c.intent = nil
 	c.active = chat.Clone(doc)
@@ -133,17 +135,21 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	defer c.workers.Done()
 	saved, e := c.deps.Store.Save(history.SaveInput{Chat: doc, Sources: sources})
 	if e != nil {
-		doc.Messages[len(doc.Messages)-1].Status = "failed"
+		doc.Messages[len(doc.Messages)-1].Status = chat.StatusFailed
 		a := len(doc.Messages[len(doc.Messages)-1].Attempts) - 1
-		doc.Messages[len(doc.Messages)-1].Attempts[a].Status = "failed"
-		doc.Messages[len(doc.Messages)-1].Attempts[a].Error = "Question was not sent: " + e.Error()
+		doc.Messages[len(doc.Messages)-1].Attempts[a].Status = chat.StatusFailed
+		doc.Messages[len(doc.Messages)-1].Attempts[a].Error = "Вопрос не отправлен: " + e.Error()
 		c.setPending(opID, pendingSave{doc: doc, sources: sources}, e)
 		return
 	}
 	doc = saved
+	attachments := map[string]chat.Attachment{}
+	for _, a := range doc.Attachments {
+		attachments[a.ID] = a
+	}
 	images := []llm.Image{}
 	for _, id := range ids {
-		p, err := c.deps.Store.ImagePath(doc.ID, id)
+		p, err := c.deps.Store.AttachmentPath(doc.ID, attachments[id])
 		if err != nil {
 			e = err
 			break
@@ -157,34 +163,42 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	}
 	c.active = chat.Clone(doc)
 	c.rememberLocked(doc)
-	c.op.Phase = "requesting"
+	c.op.Phase = phaseRequesting
 	c.op.Message = "Ожидаю ответ"
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
 	var result llm.Result
 	if e == nil {
-		result, e = c.deps.Provider.Generate(ctx, llm.Request{History: append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...), Turn: turn, Config: doc.Config, ConfigRevision: doc.ConfigRevision, State: doc.ProviderState, Images: images}, func(v llm.Event) { c.appendLog(v.Text) })
+		req := llm.Request{
+			History:        append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...),
+			Turn:           turn,
+			Config:         doc.Config,
+			ConfigRevision: doc.ConfigRevision,
+			State:          doc.ProviderState,
+			Images:         images,
+		}
+		result, e = c.deps.Provider.Generate(ctx, req, func(v llm.Event) { c.appendLog(v.Text) })
 	}
 	if len(result.State) > 0 {
 		doc.ProviderState = result.State
 	}
 	last := len(doc.Messages) - 1
 	attempt := len(doc.Messages[last].Attempts) - 1
-	status := "complete"
+	status := chat.StatusComplete
 	if e != nil {
-		status = "failed"
+		status = chat.StatusFailed
 		if errors.Is(e, llm.ErrOutcomeUnknown) {
-			status = "unknown"
+			status = chat.StatusUnknown
 		} else if errors.Is(e, context.Canceled) {
-			status = "canceled"
+			status = chat.StatusCanceled
 		}
 		doc.Messages[last].Attempts[attempt].Error = e.Error()
 	}
 	doc.Messages[last].Status = status
 	doc.Messages[last].Attempts[attempt].Status = status
 	if e == nil {
-		doc.Messages = append(doc.Messages, chat.Message{ID: chat.ID(), Role: "assistant", Text: result.Text, Status: "complete", AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: doc.ConfigRevision})
+		doc.Messages = append(doc.Messages, chat.Message{ID: chat.ID(), Role: chat.RoleAssistant, Text: result.Text, Status: chat.StatusComplete, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: doc.ConfigRevision})
 	}
 	c.mu.Lock()
 	if c.op.ID != opID {
@@ -192,7 +206,7 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 		return
 	}
 	c.active = chat.Clone(doc)
-	c.op.Phase = "saving"
+	c.op.Phase = phaseSaving
 	c.op.Message = "Сохраняю результат"
 	if e != nil {
 		c.err = e.Error()
@@ -219,7 +233,7 @@ func (c *Controller) setPending(opID string, p pendingSave, e error) {
 	}
 	c.active = chat.Clone(p.doc)
 	c.pending = &p
-	c.op.Phase = "save-pending"
+	c.op.Phase = phaseSavePending
 	c.op.Message = "Результат пока не сохранён"
 	c.err = e.Error()
 	if c.op.cancel != nil {
@@ -240,7 +254,11 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	c.rememberLocked(saved)
 	c.pending = nil
 	paths := []string{}
+	queued := map[string]string{}
 	if p.cleanupIDs != nil {
+		for _, q := range c.queues[saved.ID] {
+			queued[q.Path] = q.ID
+		}
 		paths = c.cleanupQueueLocked(saved.ID, p.cleanupIDs)
 	}
 	if p.clearDraft && c.drafts[saved.ID] == p.draft {
@@ -252,22 +270,24 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	if c.op.cancel != nil {
 		c.op.cancel()
 	}
-	c.op = operation{Operation: Operation{Phase: "idle"}}
+	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
 	if len(paths) > 0 && c.deps.NativeHost != nil {
+		archived := map[string]chat.Attachment{}
+		for _, a := range saved.Attachments {
+			archived[a.ID] = a
+		}
 		remap := map[string]string{}
 		for _, q := range paths {
-			for _, a := range saved.Attachments {
-				if strings.HasSuffix(q, a.ID+".png") {
-					if to, e := c.deps.Store.ImagePath(saved.ID, a.ID); e == nil {
-						remap[q] = to
-					}
+			if a, ok := archived[queued[q]]; ok {
+				if to, e := c.deps.Store.AttachmentPath(saved.ID, a); e == nil {
+					remap[q] = to
 				}
 			}
 		}
 		if err := c.deps.NativeHost.RebindImages(remap); err != nil {
-			c.ReportError(fmt.Errorf("rebind image viewer; temporary PNGs retained until exit: %w", err))
+			c.ReportError(fmt.Errorf("не удалось обновить просмотр снимков, временные PNG останутся до выхода: %w", err))
 			c.publish()
 			return
 		}
@@ -283,13 +303,13 @@ func (c *Controller) RetrySave() error {
 		c.mu.Unlock()
 		return nil
 	}
-	if c.op.Phase != "save-pending" {
+	if c.op.Phase != phaseSavePending {
 		c.mu.Unlock()
 		return ErrBusy
 	}
 	p := *c.pending
 	id := c.op.ID
-	c.op.Phase = "saving"
+	c.op.Phase = phaseSaving
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -307,19 +327,35 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 		c.mu.Unlock()
 		return c.Snapshot(), nil
 	}
-	if c.op.Phase != "save-pending" {
+	if c.op.Phase != phaseSavePending {
 		c.mu.Unlock()
 		return Snapshot{}, ErrBusy
 	}
 	oldID := c.active.ID
+	doc := chat.New()
 	c.pending = nil
 	c.intent = nil
-	c.active = chat.New()
-	c.queues[c.active.ID] = c.queues[oldID]
+	c.active = chat.Clone(doc)
+	c.queues[doc.ID] = c.queues[oldID]
 	delete(c.queues, oldID)
-	c.drafts[c.active.ID] = c.drafts[oldID]
-	c.op = operation{Operation: Operation{Phase: "idle"}}
+	c.drafts[doc.ID] = c.drafts[oldID]
+	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindDiscard, Phase: phaseSaving}}
 	c.err = "Несохранённый ответ отброшен. Снимки перенесены в новый чат"
+	c.changedLocked()
+	c.mu.Unlock()
+	c.publish()
+	// Persist the replacement chat so it appears in history and its moved queue stays
+	// reachable after switching chats. The archive may still be failing: then the chat
+	// stays in memory only and the queue remains usable until exit.
+	saved, e := c.deps.Store.Save(history.SaveInput{Chat: doc})
+	c.mu.Lock()
+	if e == nil {
+		c.active = chat.Clone(saved)
+		c.rememberLocked(saved)
+	} else {
+		c.err += ". Новый чат пока не сохранён в историю: " + e.Error()
+	}
+	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -327,7 +363,7 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 }
 func (c *Controller) Cancel(id string) error {
 	c.mu.Lock()
-	if c.op.ID != id || c.op.Phase != "requesting" || c.op.cancel == nil {
+	if c.op.ID != id || c.op.Phase != phaseRequesting || c.op.cancel == nil {
 		c.mu.Unlock()
 		return ErrStale
 	}
@@ -345,7 +381,7 @@ func (c *Controller) CheckConnection() (string, error) {
 	id := chat.ID()
 	cfg := c.active.Config
 	ctx, cancel := context.WithCancel(c.ctx)
-	c.op = operation{Operation: Operation{ID: id, Kind: "check", Phase: "requesting", Message: "Проверяю соединение"}, cancel: cancel}
+	c.op = operation{Operation: Operation{ID: id, Kind: kindCheck, Phase: phaseRequesting, Message: "Проверяю соединение"}, cancel: cancel}
 	c.changedLocked()
 	c.workers.Add(1)
 	c.mu.Unlock()
@@ -364,7 +400,7 @@ func (c *Controller) CheckConnection() (string, error) {
 		} else {
 			c.err = ""
 		}
-		c.op = operation{Operation: Operation{Phase: "idle", Message: out.Text}}
+		c.op = operation{Operation: Operation{Phase: phaseIdle, Message: out.Text}}
 		c.changedLocked()
 		c.mu.Unlock()
 		c.appendLog(fmt.Sprintf("Connection check: %s\n", out.Text))
@@ -401,6 +437,11 @@ func (c *Controller) removeFiles(paths []string) {
 		_ = os.Remove(p)
 	}
 }
+
+// logFlushInterval coalesces CLI output: the native log edit control is rewritten
+// with up to 64 KiB of text on each update, so per-chunk updates are expensive.
+const logFlushInterval = 200 * time.Millisecond
+
 func (c *Controller) appendLog(text string) {
 	if text == "" {
 		return
@@ -410,11 +451,21 @@ func (c *Controller) appendLog(text string) {
 	if len(c.logs) > 64<<10 {
 		c.logs = c.logs[len(c.logs)-(64<<10):]
 	}
-	log := c.logs
-	c.changedLocked()
-	c.mu.Unlock()
-	if c.deps.NativeHost != nil {
-		_ = c.deps.NativeHost.SetLog(log)
+	// The log lives only in the native log window. Publishing the whole snapshot
+	// for every CLI output chunk would re-render the chat for no visible change.
+	schedule := c.deps.NativeHost != nil && !c.logFlushPending
+	if schedule {
+		c.logFlushPending = true
 	}
-	c.publish()
+	c.mu.Unlock()
+	if schedule {
+		time.AfterFunc(logFlushInterval, c.flushLog)
+	}
+}
+func (c *Controller) flushLog() {
+	c.mu.Lock()
+	c.logFlushPending = false
+	log := c.logs
+	c.mu.Unlock()
+	_ = c.deps.NativeHost.SetLog(log)
 }

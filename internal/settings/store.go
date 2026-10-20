@@ -3,8 +3,9 @@ package settings
 import (
 	"encoding/json"
 	"errors"
-	"github.com/97Dmitry/solveo/internal/storage"
 	"os"
+
+	"github.com/97Dmitry/solveo/internal/storage"
 )
 
 type Config struct {
@@ -22,13 +23,13 @@ type storedSettings struct {
 func Open(dir string) *Store { return &Store{Dir: dir} }
 func Validate(c Config) error {
 	if c.UIScale < 80 || c.UIScale > 150 {
-		return errors.New("UI scale must be 80..150 percent")
+		return errors.New("масштаб интерфейса должен быть от 80 до 150%")
 	}
 	if c.Theme != "light" && c.Theme != "dark" {
-		return errors.New("invalid theme")
+		return errors.New("неизвестная тема")
 	}
 	if c.FontSize < 14 || c.FontSize > 30 {
-		return errors.New("font size must be 14..30")
+		return errors.New("размер текста должен быть от 14 до 30")
 	}
 	return nil
 }
@@ -53,12 +54,12 @@ func (s *Store) Load() (Config, error) {
 	switch disk.SchemaVersion {
 	case 0:
 		if disk.FontSize < 12 || disk.FontSize > 28 {
-			return c, errors.New("invalid legacy font size")
+			return c, errors.New("некорректный размер текста в старых настройках")
 		}
 		disk.FontSize += 2
 	case 1:
 	default:
-		return c, errors.New("unsupported settings schema version")
+		return c, errors.New("неподдерживаемая версия файла настроек")
 	}
 	c = disk.Config
 	return c, Validate(c)

@@ -4,43 +4,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/97Dmitry/solveo/internal/chat"
-	"github.com/97Dmitry/solveo/internal/history"
-	"github.com/97Dmitry/solveo/internal/llm"
-	"github.com/97Dmitry/solveo/internal/settings"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/settings"
 )
 
 type Controller struct {
-	settingsMu    sync.Mutex
-	mu            sync.Mutex
-	deps          Dependencies
-	ctx           context.Context
-	cancel        context.CancelFunc
-	workers       sync.WaitGroup
-	revision      uint64
-	active        chat.Chat
-	settings      settings.Config
-	summaries     []history.Summary
-	drafts        map[string]Draft
-	queues        map[string][]queued
-	op            operation
-	pending       *pendingSave
-	requests      map[string]bool
-	intent        *SubmitIntent
-	err           string
-	logs          string
-	closed        bool
-	selectionMode string
+	settingsMu      sync.Mutex
+	mu              sync.Mutex
+	deps            Dependencies
+	ctx             context.Context
+	cancel          context.CancelFunc
+	workers         sync.WaitGroup
+	revision        uint64
+	active          chat.Chat
+	settings        settings.Config
+	summaries       []history.Summary
+	drafts          map[string]Draft
+	queues          map[string][]queued
+	op              operation
+	pending         *pendingSave
+	requests        map[string]bool
+	intent          *SubmitIntent
+	err             string
+	logs            string
+	logFlushPending bool
+	closed          bool
+	selectionMode   string
 }
 
 func New(d Dependencies) (*Controller, error) {
 	if d.Store == nil || d.SettingsStore == nil || d.Provider == nil {
-		return nil, errors.New("missing application dependency")
+		return nil, errors.New("не заданы зависимости приложения")
 	}
 	if d.Now == nil {
 		d.Now = time.Now
@@ -66,7 +68,19 @@ func New(d Dependencies) (*Controller, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Controller{deps: d, ctx: ctx, cancel: cancel, revision: 1, active: doc, settings: cfg, summaries: list, drafts: map[string]Draft{}, queues: map[string][]queued{}, requests: map[string]bool{}, op: operation{Operation: Operation{Phase: "idle"}}}
+	c := &Controller{
+		deps:      d,
+		ctx:       ctx,
+		cancel:    cancel,
+		revision:  1,
+		active:    doc,
+		settings:  cfg,
+		summaries: list,
+		drafts:    map[string]Draft{},
+		queues:    map[string][]queued{},
+		requests:  map[string]bool{},
+		op:        operation{Operation: Operation{Phase: phaseIdle}},
+	}
 	c.rememberLocked(doc)
 	return c, nil
 }
@@ -82,12 +96,12 @@ func (c *Controller) rememberLocked(doc chat.Chat) {
 }
 func (c *Controller) availableLocked() error {
 	if c.closed {
-		return errors.New("application is shutting down")
+		return errors.New("приложение завершается")
 	}
 	if c.pending != nil {
 		return ErrSavePending
 	}
-	if c.op.Phase != "idle" {
+	if c.op.Phase != phaseIdle {
 		return ErrBusy
 	}
 	return nil
@@ -113,15 +127,15 @@ func (c *Controller) Snapshot() Snapshot {
 	for i, a := range doc.Attachments {
 		imgs = append(imgs, makeView(a.ID, fmt.Sprintf("Снимок %d", i+1)))
 	}
-	idle := c.op.Phase == "idle" && !c.closed
+	idle := c.op.Phase == phaseIdle && !c.closed
 	available := idle && c.pending == nil
 	providerOK := doc.ProviderID == c.deps.Provider.Describe().ID
 	retry := false
 	uncertain := false
 	for _, m := range doc.Messages {
-		if m.Role == "user" && m.Status != "complete" {
+		if m.Role == chat.RoleUser && m.Status != chat.StatusComplete {
 			retry = true
-			if m.Status == "unknown" || m.Status == "interrupted" {
+			if m.Status == chat.StatusUnknown || m.Status == chat.StatusInterrupted {
 				uncertain = true
 			}
 		}
@@ -142,11 +156,37 @@ func (c *Controller) Snapshot() Snapshot {
 	for _, h := range c.summaries {
 		summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.Format(time.RFC3339Nano), Prepared: h.Prepared})
 	}
-	return Snapshot{Revision: c.revision, ActiveChatID: doc.ID, Title: doc.Title, ProviderID: doc.ProviderID, Config: doc.Config, ConfigRevision: doc.ConfigRevision, Messages: messages, Queue: q, Images: imgs, Draft: c.drafts[doc.ID], Operation: c.op.Operation, Controls: Controls{CanSubmit: available && providerOK, CanCapture: available && providerOK && len(q) < 20, CanEditConfig: available && providerOK, CanCancel: c.op.Phase == "requesting", CanSwitch: available, CanRetry: available && providerOK && retry, CanDiscard: c.pending != nil}, Settings: c.settings, Provider: c.deps.Provider.Describe(), History: summaries, Error: c.err, Log: c.logs, Uncertain: uncertain}
+	return Snapshot{
+		Revision:       c.revision,
+		ActiveChatID:   doc.ID,
+		Title:          doc.Title,
+		ProviderID:     doc.ProviderID,
+		Config:         doc.Config,
+		ConfigRevision: doc.ConfigRevision,
+		Messages:       messages,
+		Queue:          q,
+		Images:         imgs,
+		Draft:          c.drafts[doc.ID],
+		Operation:      c.op.Operation,
+		Controls: Controls{
+			CanSubmit:     available && providerOK,
+			CanCapture:    available && providerOK && len(q) < 20,
+			CanEditConfig: available && providerOK,
+			CanCancel:     c.op.Phase == phaseRequesting,
+			CanSwitch:     available,
+			CanRetry:      available && providerOK && retry,
+			CanDiscard:    c.pending != nil,
+		},
+		Settings:  c.settings,
+		Provider:  c.deps.Provider.Describe(),
+		History:   summaries,
+		Error:     c.err,
+		Uncertain: uncertain,
+	}
 }
 func (c *Controller) SetDraft(in DraftInput) error {
 	if len(in.Text) > 1<<20 {
-		return errors.New("draft exceeds 1 MiB")
+		return errors.New("черновик длиннее 1 МиБ")
 	}
 	c.mu.Lock()
 	if in.ChatID != c.active.ID {
@@ -165,16 +205,16 @@ func (c *Controller) SetDraft(in DraftInput) error {
 func validateConfig(cfg chat.Config) error {
 	for _, v := range []string{cfg.Context, cfg.Instructions, cfg.Model, cfg.ResponseLanguage, cfg.CodeLanguage} {
 		if len(v) > 1<<20 || strings.ContainsRune(v, 0) {
-			return errors.New("invalid chat configuration")
+			return errors.New("некорректная преднастройка чата")
 		}
 	}
 	if !llm.ValidReasoning(cfg.Reasoning) {
-		return errors.New("unsupported reasoning effort")
+		return errors.New("неподдерживаемый уровень рассуждения")
 	}
 	switch cfg.Detail {
 	case "brief", "normal", "detailed":
 	default:
-		return errors.New("invalid answer detail")
+		return errors.New("некорректная подробность ответа")
 	}
 	return nil
 }
@@ -196,15 +236,15 @@ func (c *Controller) SaveChatConfig(in ConfigInput) (Snapshot, error) {
 	doc.ConfigRevision++
 	doc.Title = strings.TrimSpace(in.Title)
 	if doc.Title == "" {
-		doc.Title = "Новый чат"
+		doc.Title = chat.DefaultTitle
 	}
-	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: "config", Phase: "saving"}}
+	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindConfig, Phase: phaseSaving}}
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
 	saved, e := c.deps.Store.Save(history.SaveInput{Chat: doc})
 	c.mu.Lock()
-	c.op = operation{Operation: Operation{Phase: "idle"}}
+	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	if e == nil {
 		c.active = chat.Clone(saved)
 		c.rememberLocked(saved)
@@ -224,7 +264,7 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 		c.mu.Unlock()
 		return Snapshot{}, e
 	}
-	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: "open", Phase: "saving"}}
+	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindOpen, Phase: phaseSaving}}
 	c.intent = nil
 	c.changedLocked()
 	c.mu.Unlock()
@@ -244,7 +284,7 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 	} else {
 		c.err = e.Error()
 	}
-	c.op = operation{Operation: Operation{Phase: "idle"}}
+	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -258,9 +298,9 @@ func (c *Controller) DeleteChat(id string) (Snapshot, error) {
 	}
 	if id == c.active.ID {
 		c.mu.Unlock()
-		return Snapshot{}, errors.New("open another chat before deleting this one")
+		return Snapshot{}, errors.New("чтобы удалить этот чат, сначала откройте другой")
 	}
-	c.op = operation{Operation: Operation{Phase: "saving", Kind: "delete"}}
+	c.op = operation{Operation: Operation{Phase: phaseSaving, Kind: kindDelete}}
 	c.mu.Unlock()
 	e := c.deps.Store.Delete(id)
 	c.mu.Lock()
@@ -273,22 +313,28 @@ func (c *Controller) DeleteChat(id string) (Snapshot, error) {
 		}
 		delete(c.drafts, id)
 	}
-	c.op = operation{Operation: Operation{Phase: "idle"}}
+	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
 	return c.Snapshot(), e
 }
 func (c *Controller) SetAlwaysOnTop(value bool) (Snapshot, error) {
+	// Read-modify-write under settingsMu so a concurrent UpdateSettings is not lost.
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
 	c.mu.Lock()
 	cfg := c.settings
 	c.mu.Unlock()
 	cfg.AlwaysOnTop = value
-	return c.UpdateSettings(cfg)
+	return c.updateSettingsLocked(cfg)
 }
 func (c *Controller) UpdateSettings(cfg settings.Config) (Snapshot, error) {
 	c.settingsMu.Lock()
 	defer c.settingsMu.Unlock()
+	return c.updateSettingsLocked(cfg)
+}
+func (c *Controller) updateSettingsLocked(cfg settings.Config) (Snapshot, error) {
 	if e := settings.Validate(cfg); e != nil {
 		return Snapshot{}, e
 	}
@@ -320,7 +366,7 @@ func (c *Controller) ReportError(e error) {
 }
 func (c *Controller) Close(ctx context.Context) error {
 	c.mu.Lock()
-	if c.op.Phase != "idle" && c.op.Kind != "submit" && c.op.Kind != "capture" && c.op.Kind != "check" {
+	if c.op.Phase != phaseIdle && c.op.Kind != kindSubmit && c.op.Kind != kindCapture && c.op.Kind != kindCheck {
 		c.mu.Unlock()
 		return ErrBusy
 	}

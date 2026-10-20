@@ -4,10 +4,16 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 )
 
 func writeFakeSessionCLI(t *testing.T, wrongThread bool) string {
@@ -36,11 +42,10 @@ func writeFakeSessionCLI(t *testing.T, wrongThread bool) string {
 		"  prev=\"$arg\"",
 		"done",
 		"[ \"$json\" -eq 1 ] && [ -n \"$out\" ] || exit 8",
-		"read -r prompt || [ -n \"$prompt\" ] || exit 9",
+		"cat > /dev/null",
 		"if [ \"$resume\" -eq 1 ]; then",
 		"  [ \"$images\" -eq 0 ] || exit 10",
 		"  [ \"$thread\" = \"" + testThreadID + "\" ] || exit 11",
-		"  [ \"$prompt\" = \"Объясни сложность\" ] || exit 12",
 		"  printf 'Уточнение принято' > \"$out\"",
 		"else",
 		"  [ \"$images\" -eq 1 ] || exit 13",
@@ -55,33 +60,36 @@ func writeFakeSessionCLI(t *testing.T, wrongThread bool) string {
 	return binary
 }
 
-func TestAnalyzeThenFollowUpWithoutImage(t *testing.T) {
+func TestGenerateResumesExactSessionWithoutImages(t *testing.T) {
 	binary := writeFakeSessionCLI(t, false)
 	image := filepath.Join(t.TempDir(), "task.png")
 	if err := os.WriteFile(image, []byte("image contents"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c := Client{Binary: binary, Language: "Go"}
-	answer, id, err := c.AnalyzeImagesSession(context.Background(), []string{image})
+	c := New(binary, "", time.Second)
+	r := llm.Request{Turn: chat.Message{Text: "Реши задачу"}, ConfigRevision: 1, Images: []llm.Image{{Path: image}}}
+	first, err := c.Generate(context.Background(), r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer != "Первый ответ" || id != testThreadID {
-		t.Fatalf("initial answer = %q, session = %q", answer, id)
+	if first.Text != "Первый ответ" {
+		t.Fatalf("initial answer = %q", first.Text)
 	}
-	followAnswer, err := c.FollowUp(context.Background(), id, "  Объясни сложность  ")
+	r = llm.Request{Turn: chat.Message{Text: "Объясни сложность"}, ConfigRevision: 1, State: first.State}
+	next, err := c.Generate(context.Background(), r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if followAnswer != "Уточнение принято" {
-		t.Fatalf("follow-up answer = %q", followAnswer)
+	if next.Text != "Уточнение принято" {
+		t.Fatalf("follow-up answer = %q", next.Text)
 	}
 }
 
-func TestFollowUpRejectsUnexpectedResumedThread(t *testing.T) {
-	client := Client{Binary: writeFakeSessionCLI(t, true)}
-	_, err := client.FollowUp(context.Background(), testThreadID, "Объясни сложность")
-	if err == nil || !strings.Contains(err.Error(), "different session") {
+func TestGenerateRejectsUnexpectedResumedThread(t *testing.T) {
+	state, _ := json.Marshal(sessionState{1, testThreadID})
+	c := New(writeFakeSessionCLI(t, true), "", time.Second)
+	_, err := c.Generate(context.Background(), llm.Request{Turn: chat.Message{Text: "Объясни сложность"}, ConfigRevision: 1, State: state}, nil)
+	if !errors.Is(err, llm.ErrOutcomeUnknown) || !strings.Contains(err.Error(), "другую сессию") {
 		t.Fatalf("expected different-session error, got %v", err)
 	}
 }
@@ -106,8 +114,8 @@ func TestSessionFailsWhenNoThreadIDEmitted(t *testing.T) {
 	if err := os.WriteFile(image, []byte("image"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := (Client{Binary: script}).AnalyzeImagesSession(context.Background(), []string{image})
-	if err == nil || !strings.Contains(err.Error(), "session ID") {
+	_, _, err := (Client{Binary: script}).runSession(context.Background(), []string{image}, "prompt", "")
+	if err == nil || !strings.Contains(err.Error(), "ID сессии") {
 		t.Fatalf("expected missing session ID error, got %v", err)
 	}
 }
