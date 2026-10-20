@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Branches are checked through pull requests; pushing to master re-checks the merged result.
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -53,13 +55,19 @@ jobs:
       - name: Vet portable Go packages
         run: go vet ./internal/...
 
+      # The linter is compiled from source by make; reuse it while Makefile and go.mod are unchanged.
+      - name: Cache golangci-lint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('Makefile', 'go.mod') }}
+
       # Uses the golangci-lint version pinned in Makefile; lints host and Windows builds.
       - name: Lint Go
         run: make lint
 
   windows:
     name: Windows tests and build
-    needs: checks
     runs-on: windows-2022
     timeout-minutes: 25
     defaults:
