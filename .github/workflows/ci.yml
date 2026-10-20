@@ -67,12 +67,32 @@ jobs:
         run: make lint
 
   windows:
-    name: Windows tests and build
+    name: Windows tests
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Only native Windows behavior needs a Windows runner; the build is cross-compiled below.
+      - name: Test Go on Windows
+        run: go test -v -timeout 2m ./internal/...
+
+  build:
+    name: Windows build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,22 +117,9 @@ jobs:
         working-directory: frontend
         run: vp install --frozen-lockfile
 
-      - name: Test Go on Windows
-        run: go test -v -timeout 2m ./internal/...
-
-      - name: Generate Wails bindings
-        run: go run -tags bindings .
-
-      - name: Build frontend
-        working-directory: frontend
-        run: vp run build
-
-      - name: Vet Windows application
-        run: go vet ./...
-
-      # Use the same pinned CLI and flags as Makefile without requiring Make on Windows.
-      - name: Build Windows x64 application
-        run: go run github.com/wailsapp/wails/v2/cmd/wails@v2.17.0 build -platform windows/amd64 -skipbindings -s -o Solveo.exe
+      # Same targets as `make check`: bindings, frontend build, Windows vet and Wails cross-build.
+      - name: Vet and build Windows x64 application
+        run: make vet build
 
       - name: Upload Windows application
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
