@@ -8,8 +8,9 @@ import (
 
 func TestCloneSharesNoMutableData(t *testing.T) {
 	src := New()
-	// JSON cloning drops the monotonic clock reading, which is not chat data.
-	src.CreatedAt, src.UpdatedAt = src.CreatedAt.Round(0), src.UpdatedAt.Round(0)
+	// JSON cloning drops the monotonic clock reading and the *time.Location
+	// identity (Local vs UTC), neither of which is chat data.
+	src.CreatedAt, src.UpdatedAt = src.CreatedAt.UTC().Round(0), src.UpdatedAt.UTC().Round(0)
 	src.ProviderState = json.RawMessage(`{"version":1}`)
 	src.Attachments = []Attachment{{ID: "a1", Path: "images/x/a1.png"}}
 	src.Messages = []Message{{
