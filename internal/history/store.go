@@ -247,7 +247,13 @@ func (s *Store) ImagePath(chatID, attachmentID string) (string, error) {
 			if e != nil {
 				return "", e
 			}
-			rel, e := filepath.Rel(s.Dir, resolved)
+			// Resolve both sides: Windows short names and archive directory aliases
+			// can otherwise make the same directory look like a different root.
+			archiveDir, e := filepath.EvalSymlinks(s.Dir)
+			if e != nil {
+				return "", e
+			}
+			rel, e := filepath.Rel(archiveDir, resolved)
 			if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				return "", errors.New("image escapes archive")
 			}

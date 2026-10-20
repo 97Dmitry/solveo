@@ -86,7 +86,7 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Test Go on Windows
-        run: go test ./internal/...
+        run: go test -v -timeout 2m ./internal/...
 
       - name: Generate Wails bindings
         run: go run -tags bindings .

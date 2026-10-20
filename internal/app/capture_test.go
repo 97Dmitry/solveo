@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
 	"image"
 	"os"
@@ -41,7 +42,12 @@ func TestQuickFailureWithNineteenAttachments(t *testing.T) {
 	if e := c.BeginCapture("quick-full"); e != nil {
 		t.Fatal(e)
 	}
-	r := <-f.started
+	var r llm.Request
+	select {
+	case r = <-f.started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("quick capture did not reach provider: %+v", c.Snapshot())
+	}
 	if len(r.Images) != 1 || r.Turn.Text != "" {
 		t.Fatal("quick shot included unrelated input")
 	}

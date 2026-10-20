@@ -91,3 +91,37 @@ func TestSymlinkEscape(t *testing.T) {
 		t.Fatal("accepted escaping link")
 	}
 }
+
+func TestImagePathThroughArchiveAlias(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "archive")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	s, err := Open(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(base, "shot.png")
+	if err := os.WriteFile(source, []byte("png"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := chat.New()
+	a := chat.Attachment{ID: chat.ID()}
+	c.Attachments = []chat.Attachment{a}
+	if _, err := s.Save(SaveInput{Chat: c, Sources: []Source{{a.ID, source}}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ImagePath(c.ID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(got)
+	if err != nil || string(data) != "png" {
+		t.Fatalf("archived image unreadable: %q, %v", data, err)
+	}
+}
