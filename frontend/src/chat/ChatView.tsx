@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, Check, Copy, SlidersHorizontal } from "lucide-react";
-import { streamText, type Snapshot, type StreamSnapshot } from "../bridge/state";
+import { recoveredText, streamText, type Snapshot, type StreamSnapshot } from "../bridge/state";
 import { AnswerBlocks } from "./AnswerBlocks";
 import { Markdown } from "./Markdown";
 import { AttachmentStrip } from "./AttachmentStrip";
@@ -141,15 +141,29 @@ export function ChatView({
                       approach: streamText(snapshot, stream, message, "approach"),
                       solution: streamText(snapshot, stream, message, "solution"),
                     }}
+                    recovered={{
+                      approach: recoveredText(snapshot, message, "approach"),
+                      solution: recoveredText(snapshot, message, "solution"),
+                    }}
                     onCopy={onCopy}
                     onOpenLink={onOpenLink}
                   />
                 ) : (
                   message.role === "user" && (
-                    <StreamPreview
-                      text={streamText(snapshot, stream, message, "message")}
-                      onOpenLink={onOpenLink}
-                    />
+                    <>
+                      <RecoveredPreview
+                        text={
+                          message.status === "interrupted"
+                            ? recoveredText(snapshot, message, "message")
+                            : ""
+                        }
+                        onOpenLink={onOpenLink}
+                      />
+                      <StreamPreview
+                        text={streamText(snapshot, stream, message, "message")}
+                        onOpenLink={onOpenLink}
+                      />
+                    </>
                   )
                 )}
               </div>
@@ -169,6 +183,29 @@ export function ChatView({
         </Button>
       )}
     </div>
+  );
+}
+
+// RecoveredPreview shows text received before the application stopped. The
+// answer is incomplete: no copy actions, and it disappears after a retry.
+function RecoveredPreview({
+  text,
+  onOpenLink,
+}: {
+  text: string;
+  onOpenLink: (url: string) => void;
+}) {
+  if (text === "") return null;
+  return (
+    <article className="message assistant streaming recovered">
+      <div className="message-meta">
+        <span>Solveo</span>
+        <small>Получено до сбоя, ответ не завершён</small>
+      </div>
+      <div className="message-body">
+        <Markdown text={text} onOpenLink={onOpenLink} />
+      </div>
+    </article>
   );
 }
 

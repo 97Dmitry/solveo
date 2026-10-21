@@ -71,7 +71,7 @@ func TestPreparedTextImagesConfigRetryRestart(t *testing.T) {
 	<-f.started
 	f.finish <- nil
 	waitIdle(t, c)
-	reopened, e := New(Dependencies{Store: store, SettingsStore: c.deps.SettingsStore, Provider: f, TempDir: t.TempDir()})
+	reopened, e := New(Dependencies{Store: store, SettingsStore: c.deps.SettingsStore, Provider: f, Work: c.deps.Work})
 	if e != nil {
 		t.Fatal(e)
 	}

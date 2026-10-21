@@ -14,6 +14,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 type fakeProvider struct {
@@ -49,12 +50,22 @@ func setup(t *testing.T) (*Controller, *fakeProvider, *history.Store) {
 		t.Fatal(e)
 	}
 	f := &fakeProvider{started: make(chan llm.Request, 5), finish: make(chan error, 5), store: s}
-	c, e := New(Dependencies{Store: s, SettingsStore: settings.Open(s.Dir), Provider: f, TempDir: t.TempDir()})
+	c, e := New(Dependencies{Store: s, SettingsStore: settings.Open(s.Dir), Provider: f, Work: openWork(t, s)})
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { _, _ = c.DiscardUnsaved(); _ = c.Close(context.Background()) })
 	return c, f, s
+}
+
+// openWork keeps unfinished work beside the archive, as the application does.
+func openWork(t *testing.T, s *history.Store) *workstate.Store {
+	t.Helper()
+	w, e := workstate.Open(filepath.Join(s.Dir, "work"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	return w
 }
 func waitIdle(t *testing.T, c *Controller) {
 	t.Helper()

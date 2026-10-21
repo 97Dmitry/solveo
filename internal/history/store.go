@@ -235,6 +235,23 @@ func (s *Store) List() ([]Summary, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out, nil
 }
+
+// Exists reports whether a chat document is present, even if it cannot be read.
+func (s *Store) Exists(id string) (bool, error) {
+	if !idPattern.MatchString(id) {
+		return false, nil
+	}
+	root, e := os.OpenRoot(s.Dir)
+	if e != nil {
+		return false, e
+	}
+	defer root.Close()
+	_, e = root.Lstat("chats/" + id + ".json")
+	if errors.Is(e, os.ErrNotExist) {
+		return false, nil
+	}
+	return e == nil, e
+}
 func (s *Store) ImagePath(chatID, attachmentID string) (string, error) {
 	c, e := s.Load(chatID)
 	if e != nil {

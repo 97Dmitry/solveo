@@ -14,6 +14,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 type Controller struct {
@@ -44,19 +45,25 @@ type Controller struct {
 	streamRevision     uint64
 	streamFlushPending bool
 	login              LoginView
+
+	// Unfinished work persisted in Dependencies.Work (work.go).
+	submitted     map[string]workstate.Submitted
+	checkpoints   map[streamKey]workstate.Block
+	recovered     []workstate.Block
+	statePersist  *persister
+	streamPersist *persister
+	stateErr      string
+	streamErr     string
 }
 
 var errNoConnection = errors.New("подключение LLM не поддерживает вход")
 
 func New(d Dependencies) (*Controller, error) {
-	if d.Store == nil || d.SettingsStore == nil || d.Provider == nil {
+	if d.Store == nil || d.SettingsStore == nil || d.Provider == nil || d.Work == nil {
 		return nil, errors.New("не заданы зависимости приложения")
 	}
 	if d.Now == nil {
 		d.Now = chat.Now
-	}
-	if e := os.MkdirAll(d.TempDir, 0700); e != nil {
-		return nil, e
 	}
 	cfg, e := d.SettingsStore.Load()
 	if e != nil {
@@ -66,22 +73,12 @@ func New(d Dependencies) (*Controller, error) {
 	if e != nil {
 		return nil, e
 	}
-	doc := chat.New()
-	if len(list) > 0 {
-		doc, e = d.Store.Load(list[0].ID)
-	} else {
-		doc, e = d.Store.Save(history.SaveInput{Chat: doc})
-	}
-	if e != nil {
-		return nil, e
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Controller{
 		deps:      d,
 		ctx:       ctx,
 		cancel:    cancel,
 		revision:  1,
-		active:    doc,
 		settings:  cfg,
 		summaries: list,
 		drafts:    map[string]Draft{},
@@ -89,10 +86,28 @@ func New(d Dependencies) (*Controller, error) {
 		requests:  map[string]bool{},
 		op:        operation{Operation: Operation{Phase: phaseIdle}},
 
-		streams:    map[streamKey]StreamBlock{},
-		streamOpen: map[streamKey]bool{},
+		streams:     map[streamKey]StreamBlock{},
+		streamOpen:  map[streamKey]bool{},
+		submitted:   map[string]workstate.Submitted{},
+		checkpoints: map[streamKey]workstate.Block{},
 	}
+	c.initPersisters()
+	c.err = joinNotices(c.restoreWork())
+	doc := chat.New()
+	if len(c.summaries) > 0 {
+		doc, e = d.Store.Load(c.summaries[0].ID)
+	} else {
+		doc, e = d.Store.Save(history.SaveInput{Chat: doc})
+	}
+	if e != nil {
+		c.statePersist.stop()
+		c.streamPersist.stop()
+		return nil, e
+	}
+	c.active = doc
 	c.rememberLocked(doc)
+	c.statePersist.resume()
+	c.streamPersist.resume()
 	c.prepareConnection()
 	return c, nil
 }
@@ -168,6 +183,10 @@ func (c *Controller) Snapshot() Snapshot {
 	for _, h := range c.summaries {
 		summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.UTC().Format(time.RFC3339Nano), Prepared: h.Prepared})
 	}
+	workErr := c.stateErr
+	if workErr == "" {
+		workErr = c.streamErr
+	}
 	return Snapshot{
 		Revision:       c.revision,
 		ActiveChatID:   doc.ID,
@@ -195,6 +214,8 @@ func (c *Controller) Snapshot() Snapshot {
 		Error:     c.err,
 		Uncertain: uncertain,
 		Login:     c.login,
+		WorkError: workErr,
+		Recovered: c.recoveredLocked(doc),
 	}
 }
 func (c *Controller) SetDraft(in DraftInput) error {
@@ -202,6 +223,10 @@ func (c *Controller) SetDraft(in DraftInput) error {
 		return errors.New("черновик длиннее 1 МиБ")
 	}
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrBusy
+	}
 	if in.ChatID != c.active.ID {
 		c.mu.Unlock()
 		return ErrStale
@@ -210,6 +235,7 @@ func (c *Controller) SetDraft(in DraftInput) error {
 	if in.Revision >= old.Revision {
 		c.drafts[in.ChatID] = Draft{in.Text, in.Revision}
 		c.changedLocked()
+		c.statePersist.mark()
 	}
 	c.mu.Unlock()
 	c.publish()
@@ -314,8 +340,22 @@ func (c *Controller) DeleteChat(id string) (Snapshot, error) {
 		return Snapshot{}, errors.New("чтобы удалить этот чат, сначала откройте другой")
 	}
 	c.op = operation{Operation: Operation{Phase: phaseSaving, Kind: kindDelete}}
+	// Forget the chat's unfinished work on disk before deleting the chat, so a
+	// crash in between cannot bring it back as work of a missing chat.
+	queue := c.queues[id]
+	draft, hadDraft := c.drafts[id]
+	delete(c.queues, id)
+	delete(c.drafts, id)
+	delete(c.submitted, id)
+	if c.dropRecoveredLocked(func(b workstate.Block) bool { return b.ChatID == id }) {
+		c.streamPersist.mark()
+	}
 	c.mu.Unlock()
-	e := c.deps.Store.Delete(id)
+	c.statePersist.mark()
+	e := c.statePersist.flush()
+	if e == nil {
+		e = c.deps.Store.Delete(id)
+	}
 	c.mu.Lock()
 	if e == nil {
 		for i, v := range c.summaries {
@@ -324,11 +364,21 @@ func (c *Controller) DeleteChat(id string) (Snapshot, error) {
 				break
 			}
 		}
-		delete(c.drafts, id)
+	} else {
+		c.queues[id] = queue
+		if hadDraft {
+			c.drafts[id] = draft
+		}
+		c.statePersist.mark()
 	}
 	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
+	if e == nil {
+		for _, q := range queue {
+			_ = os.Remove(q.Path)
+		}
+	}
 	c.publish()
 	return c.Snapshot(), e
 }
@@ -409,12 +459,21 @@ func (c *Controller) Close(ctx context.Context) error {
 		c.mu.Unlock()
 		return ErrSavePending
 	}
-	paths := []string{}
-	for id := range c.queues {
-		paths = append(paths, c.cleanupQueueLocked(id, nil)...)
-	}
 	c.mu.Unlock()
-	c.removeFiles(paths)
+	// Unfinished work stays on disk for the next start; write its final state.
+	if err := errors.Join(c.statePersist.flush(), c.streamPersist.flush()); err != nil {
+		// Keep persisters and the provider usable so disk recovery and another
+		// explicit exit can save the data instead of silently discarding it.
+		c.mu.Lock()
+		c.closed = false
+		c.ctx, c.cancel = context.WithCancel(context.Background())
+		c.changedLocked()
+		c.mu.Unlock()
+		c.publish()
+		return fmt.Errorf("незавершённая работа не сохранена; восстановите запись и повторите выход: %w", err)
+	}
+	c.statePersist.stop()
+	c.streamPersist.stop()
 	// Workers are drained, so no request uses the streaming connection any more.
 	if conn, ok := c.deps.Provider.(llm.Connection); ok {
 		if err := conn.Close(ctx); err != nil {

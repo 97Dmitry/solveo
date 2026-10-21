@@ -5,4 +5,5 @@
 - `client.ts` owns renderer subscriptions, snapshot revisions, live editor revisions and submit intents. Preserve cleanup, IME handling and single-use intent checks; never send a stale backend draft as a fallback.
 - Regenerate bindings from the repository root with `make bindings` when exposed Go types/methods change. Do not hand-edit `wailsjs/`.
 - `solveo:stream` previews are validated by `streamSchema`, accepted only with a newer revision and re-read via `StreamSnapshot` after connect. `streamText` shows a preview only for the active chat, current operation and still-requesting attempt; parallel blocks use their own status, since the solution may fail while the approach still streams.
+- `Snapshot.work_error` is a persistent banner separate from `error`; `Snapshot.recovered` is already filtered by Go to interrupted attempts of the active chat.
 - Additive optional Message.answers/request_config fields support old archives. Wire explicitly permits undefined for optional generated fields to match Zod output under exactOptionalPropertyTypes; required fields remain required. Answer statuses/kinds/timings are validated before presentation.

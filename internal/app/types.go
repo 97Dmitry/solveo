@@ -12,6 +12,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 var (
@@ -50,6 +51,20 @@ type Archive interface {
 	ImagePath(string, string) (string, error)
 	AttachmentPath(string, chat.Attachment) (string, error)
 	Delete(string) error
+	Exists(string) (bool, error)
+}
+
+// WorkStore persists unfinished work: drafts, queued PNGs and answer checkpoints.
+type WorkStore interface {
+	Load() (workstate.State, string, error)
+	Save(workstate.State) error
+	LoadStream() ([]workstate.Block, error)
+	SaveStream([]workstate.Block) error
+	CapturePath(string) (string, error)
+	Commit(string) (string, error)
+	Path(string) (string, error)
+	Has(string) (bool, error)
+	Prune(map[string]bool) error
 }
 type SettingsStore interface {
 	Load() (settings.Config, error)
@@ -81,7 +96,7 @@ type Dependencies struct {
 	Capturer      Capturer
 	NativeHost    NativeHost
 	Window        Window
-	TempDir       string
+	Work          WorkStore
 	Emit          func(string, interface{})
 	Now           func() time.Time
 }
@@ -161,6 +176,10 @@ type Snapshot struct {
 	Error          string           `json:"error"`
 	Uncertain      bool             `json:"uncertain"`
 	Login          LoginView        `json:"login"`
+	// WorkError is set while drafts, the queue or answer checkpoints cannot be written.
+	WorkError string `json:"work_error"`
+	// Recovered is text received before a crash for interrupted attempts of this chat.
+	Recovered []StreamBlock `json:"recovered"`
 }
 type queued struct{ ID, Path, Label string }
 type pendingSave struct {

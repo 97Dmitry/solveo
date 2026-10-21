@@ -8,6 +8,7 @@ import (
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 // Stream blocks of one user turn.
@@ -57,8 +58,11 @@ func (c *Controller) streamSink(opID, chatID, messageID, attemptID, block string
 				return
 			}
 			c.streams[key] = StreamBlock{ChatID: chatID, OperationID: opID, MessageID: messageID, AttemptID: attemptID, Block: block, Text: v.Text}
+			// The checkpoint outlives closeStream until the outcome is archived.
+			c.checkpoints[key] = workstate.Block{ChatID: chatID, MessageID: messageID, AttemptID: attemptID, Block: block, Text: v.Text, UpdatedAt: c.deps.Now()}
 			c.scheduleStreamLocked()
 			c.mu.Unlock()
+			c.streamPersist.mark()
 		default:
 			c.appendLog(v.Text)
 		}

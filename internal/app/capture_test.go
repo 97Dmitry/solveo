@@ -35,11 +35,15 @@ func TestQuickFailureWithNineteenAttachments(t *testing.T) {
 	c.deps.Capturer = fakeCapture{}
 	snap := c.Snapshot()
 	for i := 0; i < 19; i++ {
-		p := c.deps.TempDir + "/" + chat.ID() + ".png"
+		id := chat.ID()
+		p, err := c.deps.Work.Path(id)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(p, []byte("png"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		c.queues[snap.ActiveChatID] = append(c.queues[snap.ActiveChatID], queued{ID: chat.ID(), Path: p})
+		c.queues[snap.ActiveChatID] = append(c.queues[snap.ActiveChatID], queued{ID: id, Path: p})
 	}
 	if err := c.SetDraft(DraftInput{ChatID: snap.ActiveChatID, Text: "draft stays", Revision: 1}); err != nil {
 		t.Fatal(err)

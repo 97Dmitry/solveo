@@ -125,6 +125,14 @@ const loginSchema = z.object({
   state: z.enum(["", "pending", "done", "failed"]),
   error: z.string(),
 } satisfies Shape<app.LoginView>);
+const streamBlockSchema = z.object({
+  chat_id: z.string(),
+  operation_id: z.string(),
+  message_id: z.string(),
+  attempt_id: z.string(),
+  block: z.enum(["message", "approach", "solution"]),
+  text: z.string(),
+} satisfies Shape<app.StreamBlock>);
 export const snapshotSchema = z.object({
   revision,
   active_chat_id: z.string(),
@@ -144,15 +152,9 @@ export const snapshotSchema = z.object({
   error: z.string(),
   uncertain: z.boolean(),
   login: loginSchema,
+  work_error: z.string(),
+  recovered: z.array(streamBlockSchema).max(8),
 } satisfies Shape<app.Snapshot>);
-const streamBlockSchema = z.object({
-  chat_id: z.string(),
-  operation_id: z.string(),
-  message_id: z.string(),
-  attempt_id: z.string(),
-  block: z.enum(["message", "approach", "solution"]),
-  text: z.string(),
-} satisfies Shape<app.StreamBlock>);
 export const streamSchema = z.object({
   revision,
   blocks: z.array(streamBlockSchema).max(2),
@@ -213,6 +215,21 @@ export function streamText(
       b.attempt_id === attemptID,
   );
   return found?.text ?? "";
+}
+// recoveredText returns text received before a crash for an interrupted block.
+// Go publishes only blocks whose attempt is still interrupted; the text is not an
+// answer and is never sent to the LLM.
+export function recoveredText(
+  snapshot: Snapshot,
+  message: Message,
+  block: StreamBlock["block"],
+): string {
+  return (
+    snapshot.recovered.find(
+      (b) =>
+        b.block === block && b.chat_id === snapshot.active_chat_id && b.message_id === message.id,
+    )?.text ?? ""
+  );
 }
 export function errorText(error: unknown): string {
   return error instanceof Error
