@@ -47,5 +47,7 @@ export function snapshotFixture(): Snapshot {
     error: "",
     uncertain: false,
     login: { id: "", url: "", code: "", state: "", error: "" },
+    work_error: "",
+    recovered: [],
   };
 }

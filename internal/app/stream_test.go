@@ -99,7 +99,7 @@ func streamingSetup(t *testing.T) (*Controller, *streamingProvider, *emitted) {
 	}
 	p := &streamingProvider{calls: make(chan streamCall, 4), finish: map[string]chan llm.Result{"": make(chan llm.Result, 1), chat.AnswerApproach: make(chan llm.Result, 1), chat.AnswerSolution: make(chan llm.Result, 1)}}
 	ev := &emitted{}
-	c, err := New(Dependencies{Store: s, SettingsStore: st, Provider: p, TempDir: t.TempDir(), Emit: ev.record})
+	c, err := New(Dependencies{Store: s, SettingsStore: st, Provider: p, Work: openWork(t, s), Emit: ev.record})
 	if err != nil {
 		t.Fatal(err)
 	}

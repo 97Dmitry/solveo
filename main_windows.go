@@ -31,6 +31,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/platform"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 type screenCapture struct{}
@@ -121,11 +122,11 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	temp, e := os.MkdirTemp("", "solveo-captures-*")
+	// Drafts, queued captures and answer checkpoints survive restarts beside the archive.
+	work, e := workstate.Open(filepath.Join(dir, "work"))
 	if e != nil {
 		return e
 	}
-	defer os.RemoveAll(temp)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	host := &native.Host{}
@@ -150,7 +151,7 @@ func run() error {
 		Capturer:      screenCapture{},
 		NativeHost:    host,
 		Window:        window,
-		TempDir:       temp,
+		Work:          work,
 		Emit: func(name string, data interface{}) {
 			window.mu.Lock()
 			runtimeCtx := window.ctx

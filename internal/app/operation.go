@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 func (c *Controller) Submit(in SubmitInput) (string, error) { return c.submit(in, "") }
@@ -135,6 +135,18 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
 	c.requests[in.RequestID] = true
+	if captureID == "" && in.RetryMessageID == "" {
+		// After a crash this tells whether the saved draft only repeats this question.
+		c.submitted[doc.ID] = workstate.Submitted{MessageID: turn.ID, Revision: in.DraftRevision}
+		c.statePersist.mark()
+	}
+	streamChanged := c.clearCheckpointsLocked("")
+	if in.RetryMessageID != "" && c.dropRecoveredLocked(func(b workstate.Block) bool { return b.MessageID == in.RetryMessageID }) {
+		streamChanged = true
+	}
+	if streamChanged {
+		c.streamPersist.mark()
+	}
 	c.intent = nil
 	c.active = chat.Clone(doc)
 	c.err = ""
@@ -149,7 +161,13 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 }
 func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, turn chat.Message, sources []history.Source, ids []string, draft Draft, clearDraft bool) {
 	defer c.workers.Done()
-	saved, e := c.deps.Store.Save(history.SaveInput{Chat: doc, Sources: sources})
+	// Persist the submit marker before archiving or sending the question. Even a
+	// very fast answer must not outrun the draft debounce and resurrect old text.
+	e := c.statePersist.flush()
+	var saved chat.Chat
+	if e == nil {
+		saved, e = c.deps.Store.Save(history.SaveInput{Chat: doc, Sources: sources})
+	}
 	if e != nil {
 		doc.Messages[len(doc.Messages)-1].Status = chat.StatusFailed
 		a := len(doc.Messages[len(doc.Messages)-1].Attempts) - 1
@@ -304,6 +322,12 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 		d.Revision++
 		c.drafts[saved.ID] = d
 	}
+	// The archive now holds the outcome: the submit marker and checkpoints are obsolete.
+	delete(c.submitted, saved.ID)
+	c.statePersist.mark()
+	if c.clearCheckpointsLocked(opID) {
+		c.streamPersist.mark()
+	}
 	if c.op.cancel != nil {
 		c.op.cancel()
 	}
@@ -329,9 +353,7 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 			return
 		}
 	}
-	for _, p := range paths {
-		_ = os.Remove(p)
-	}
+	c.removeQueueFiles(paths)
 	c.publish()
 }
 func (c *Controller) RetrySave() error {
@@ -376,6 +398,11 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 	c.queues[doc.ID] = c.queues[oldID]
 	delete(c.queues, oldID)
 	c.drafts[doc.ID] = c.drafts[oldID]
+	delete(c.drafts, oldID)
+	// The discarded question stays in the old chat's archive; keep the draft rather
+	// than clear it as a duplicate after a crash.
+	delete(c.submitted, oldID)
+	c.statePersist.mark()
 	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindDiscard, Phase: phaseSaving}}
 	c.err = "Несохранённый ответ отброшен. Снимки перенесены в новый чат"
 	c.changedLocked()
@@ -467,16 +494,21 @@ func (c *Controller) cleanupQueueLocked(id string, ids []string) []string {
 	c.queues[id] = keep
 	return paths
 }
+
+// removeFiles deletes removed queue images after the viewer releases them. If the
+// viewer cannot close, the files stay unreferenced and the next start prunes them.
 func (c *Controller) removeFiles(paths []string) {
-	if len(paths) > 0 && c.deps.NativeHost != nil {
+	if len(paths) == 0 {
+		return
+	}
+	if c.deps.NativeHost != nil {
 		if err := c.deps.NativeHost.CloseImages(); err != nil {
+			c.saveWorkNow()
 			c.ReportError(err)
 			return
 		}
 	}
-	for _, p := range paths {
-		_ = os.Remove(p)
-	}
+	c.removeQueueFiles(paths)
 }
 
 // logFlushInterval coalesces CLI output: the native log edit control is rewritten

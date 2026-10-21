@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -137,30 +136,46 @@ func (c *Controller) finishSelection(e platform.Event) {
 	go func() {
 		defer c.workers.Done()
 		id := chat.ID()
-		p := filepath.Join(c.deps.TempDir, id+".png")
-		var err error
-		if mode == "quick-full" {
-			err = c.deps.Capturer.SavePrimary(p)
-		} else {
-			err = c.deps.Capturer.SaveRegion(p, e.Region)
+		// The capture is written under a temporary name and committed after Sync,
+		// so the queue never refers to a partially written PNG.
+		tmp, err := c.deps.Work.CapturePath(id)
+		if err == nil {
+			if mode == "quick-full" {
+				err = c.deps.Capturer.SavePrimary(tmp)
+			} else {
+				err = c.deps.Capturer.SaveRegion(tmp, e.Region)
+			}
+		}
+		var p string
+		if err == nil {
+			p, err = c.deps.Work.Commit(id)
 		}
 		if err != nil {
-			os.Remove(p)
+			if tmp != "" {
+				_ = os.Remove(tmp)
+			}
 			c.captureError(e.OperationID, err)
 			return
 		}
 		c.mu.Lock()
 		if c.op.ID != e.OperationID || c.closed {
 			c.mu.Unlock()
-			os.Remove(p)
+			_ = os.Remove(p)
 			return
 		}
 		c.queues[chatID] = append(c.queues[chatID], queued{ID: id, Path: p, Label: fmt.Sprintf("Снимок %d", len(c.queues[chatID])+1)})
-		if mode == "queue-region" {
-			c.op = operation{Operation: Operation{Phase: phaseIdle}}
-		}
 		c.changedLocked()
 		c.mu.Unlock()
+		// The capture is complete once its queue entry is on disk.
+		c.saveWorkNow()
+		if mode == "queue-region" {
+			c.mu.Lock()
+			if c.op.ID == e.OperationID {
+				c.op = operation{Operation: Operation{Phase: phaseIdle}}
+				c.changedLocked()
+			}
+			c.mu.Unlock()
+		}
 		c.publish()
 		if mode != "queue-region" {
 			_, err = c.submit(SubmitInput{RequestID: chat.ID(), ChatID: chatID, AttachmentIDs: []string{id}}, e.OperationID)

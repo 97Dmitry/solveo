@@ -164,6 +164,28 @@ export namespace app {
 	        this.message = source["message"];
 	    }
 	}
+	export class StreamBlock {
+	    chat_id: string;
+	    operation_id: string;
+	    message_id: string;
+	    attempt_id: string;
+	    block: string;
+	    text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamBlock(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chat_id = source["chat_id"];
+	        this.operation_id = source["operation_id"];
+	        this.message_id = source["message_id"];
+	        this.attempt_id = source["attempt_id"];
+	        this.block = source["block"];
+	        this.text = source["text"];
+	    }
+	}
 	export class Snapshot {
 	    revision: number;
 	    active_chat_id: string;
@@ -183,6 +205,8 @@ export namespace app {
 	    error: string;
 	    uncertain: boolean;
 	    login: LoginView;
+	    work_error: string;
+	    recovered: StreamBlock[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Snapshot(source);
@@ -208,6 +232,8 @@ export namespace app {
 	        this.error = source["error"];
 	        this.uncertain = source["uncertain"];
 	        this.login = this.convertValues(source["login"], LoginView);
+	        this.work_error = source["work_error"];
+	        this.recovered = this.convertValues(source["recovered"], StreamBlock);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -228,28 +254,7 @@ export namespace app {
 		    return a;
 		}
 	}
-	export class StreamBlock {
-	    chat_id: string;
-	    operation_id: string;
-	    message_id: string;
-	    attempt_id: string;
-	    block: string;
-	    text: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new StreamBlock(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.chat_id = source["chat_id"];
-	        this.operation_id = source["operation_id"];
-	        this.message_id = source["message_id"];
-	        this.attempt_id = source["attempt_id"];
-	        this.block = source["block"];
-	        this.text = source["text"];
-	    }
-	}
 	export class StreamSnapshot {
 	    revision: number;
 	    blocks: StreamBlock[];

@@ -7,12 +7,15 @@ import { Markdown } from "./Markdown";
 export function AnswerBlocks({
   answers,
   previews,
+  recovered = {},
   onCopy,
   onOpenLink,
 }: {
   answers: NonNullable<Message["answers"]>;
   // Unfinished text of requesting blocks; never copied or treated as complete.
   previews: Partial<Record<"approach" | "solution", string>>;
+  // Text received before a crash for interrupted blocks; shown only, never copied.
+  recovered?: Partial<Record<"approach" | "solution", string>>;
   onCopy: (text: string) => Promise<boolean>;
   onOpenLink: (url: string) => void;
 }) {
@@ -84,6 +87,14 @@ export function AnswerBlocks({
                     ? "Ожидаю подход…"
                     : "Ожидаю решение…"}
               </p>
+            )}
+            {answer.status === "interrupted" && recovered[answer.kind] && (
+              <>
+                <p className="answer-note">Получено до сбоя, ответ не завершён</p>
+                <div className="message-body streaming recovered">
+                  <Markdown text={recovered[answer.kind] ?? ""} onOpenLink={onOpenLink} />
+                </div>
+              </>
             )}
             {answer.status !== "requesting" && answer.status !== "complete" && (
               <p className="answer-note">

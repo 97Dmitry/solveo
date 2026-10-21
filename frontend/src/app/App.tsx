@@ -159,6 +159,11 @@ export default function App() {
           )}
         </div>
       )}
+      {s.work_error && (
+        <div className="error-banner" role="alert">
+          <span>{s.work_error}</span>
+        </div>
+      )}
       {notice && (
         <div className="notice" role="status">
           {notice}
