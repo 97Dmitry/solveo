@@ -80,7 +80,14 @@ const attachmentSchema = z.object({
   label: z.string(),
   url: z.string().regex(/^\/attachments\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/),
 } satisfies Shape<app.AttachmentView>);
+export const globalInstructionsSchema = z
+  .string()
+  .refine(
+    (text) => Array.from(text).length <= 16384 && !/[\uD800-\uDFFF]/u.test(text),
+    "Не более 16384 символов Unicode",
+  );
 export const settingsSchema = z.object({
+  global_instructions: globalInstructionsSchema,
   ui_scale: z.number().int().min(80).max(150),
   theme: z.enum(["light", "dark"]),
   font_size: z.number().int().min(14).max(30),

@@ -367,6 +367,7 @@ func TestWorkOfMissingChatMovesToNewChat(t *testing.T) {
 
 func TestDiscardMovesPersistedWork(t *testing.T) {
 	c, f, s := setup(t)
+	setGlobal(t, c, "recovery snapshot")
 	c.deps.Capturer, c.deps.NativeHost = fakeCapture{}, &fakeHost{}
 	img := captureQueued(t, c)
 	old := c.Snapshot().ActiveChatID
@@ -399,6 +400,11 @@ func TestDiscardMovesPersistedWork(t *testing.T) {
 	if got.ActiveChatID == old || got.ActiveChatID == snap.ActiveChatID || len(got.Queue) != 1 || got.Queue[0].ID != img {
 		t.Fatalf("%+v", got)
 	}
+	doc, err := s.Load(got.ActiveChatID)
+	if err != nil || doc.GlobalInstructions != "recovery snapshot" {
+		t.Fatalf("missing recovery snapshot: %+v %v", doc, err)
+	}
+
 }
 
 func TestStreamCheckpointRecoveredAfterCrash(t *testing.T) {

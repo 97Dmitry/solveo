@@ -33,6 +33,7 @@ export function snapshotFixture(): Snapshot {
       can_discard: false,
     },
     settings: {
+      global_instructions: "",
       ui_scale: 100,
       theme: "dark",
       font_size: 17,

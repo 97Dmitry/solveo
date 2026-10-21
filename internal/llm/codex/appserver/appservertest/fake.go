@@ -38,18 +38,19 @@ const (
 )
 
 type server struct {
-	wmu   sync.Mutex
-	out   *bufio.Writer
-	store string
-	log   *os.File
-	mu    sync.Mutex
-	turns map[string]chan struct{} // turn ID -> interrupt
-	seq   int
+	wmu          sync.Mutex
+	out          *bufio.Writer
+	store        string
+	log          *os.File
+	mu           sync.Mutex
+	turns        map[string]chan struct{} // turn ID -> interrupt
+	instructions map[string]string
+	seq          int
 }
 
 // Main serves stdin/stdout until stdin closes, then exits the process.
 func Main() {
-	s := &server{out: bufio.NewWriter(os.Stdout), store: os.Getenv(EnvStore), turns: map[string]chan struct{}{}}
+	s := &server{out: bufio.NewWriter(os.Stdout), store: os.Getenv(EnvStore), turns: map[string]chan struct{}{}, instructions: map[string]string{}}
 	if p := os.Getenv(EnvLog); p != "" {
 		f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err == nil {
@@ -182,8 +183,11 @@ func (s *server) handle(id json.RawMessage, method string, params json.RawMessag
 	case "thread/start":
 		thread := s.id("01a1")
 		if eph, _ := p["ephemeral"].(bool); !eph {
-			s.touch(filepath.Join("threads", thread))
+			instructions, _ := p["developerInstructions"].(string)
+			_ = os.WriteFile(filepath.Join(s.store, "threads", thread), []byte(instructions), 0o600)
 		}
+		instructions, _ := p["developerInstructions"].(string)
+		s.instructions[thread] = instructions
 		s.reply(id, map[string]any{"thread": map[string]any{"id": thread}, "instructionSources": []any{}, "model": p["model"], "sandbox": map[string]any{"type": "readOnly"}})
 	case "thread/resume":
 		thread, _ := p["threadId"].(string)
@@ -191,6 +195,9 @@ func (s *server) handle(id json.RawMessage, method string, params json.RawMessag
 			s.fail(id, -32600, "no rollout found for thread id "+thread)
 			return
 		}
+		b, _ := os.ReadFile(filepath.Join(s.store, "threads", thread))
+		s.instructions[thread] = string(b)
+		// Like Codex 0.163.0, do not replace loaded instructions on resume.
 		s.reply(id, map[string]any{"thread": map[string]any{"id": thread}, "instructionSources": []any{}})
 	case "model/list":
 		s.models(id, p)
@@ -220,6 +227,18 @@ func (s *server) turn(id json.RawMessage, p map[string]any) {
 			text, _ = first["text"].(string)
 		}
 	}
+	// Persist explicit updates just as user input remains in the real thread history.
+	if start := strings.Index(text, "Следующие пожелания заменяют прежнюю преднастройку"); start >= 0 {
+		if end := strings.Index(text, "\nКонец обновления инструкций."); end >= 0 {
+			if nl := strings.IndexByte(text[start:], '\n'); nl >= 0 {
+				s.instructions[thread] = text[start+nl+1 : end]
+				if s.exists(filepath.Join("threads", thread)) {
+					_ = os.WriteFile(filepath.Join(s.store, "threads", thread), []byte(s.instructions[thread]), 0o600)
+				}
+			}
+		}
+	}
+	effective := s.instructions[thread]
 	has := func(marker string) bool { return strings.Contains(text, "["+marker+"]") }
 	if has("stop-reading") {
 		// A wedged server: stop reading stdin so the client's pipe fills up.
@@ -292,6 +311,9 @@ func (s *server) turn(id json.RawMessage, p map[string]any) {
 			return
 		}
 		answer := "Ответ: " + strings.TrimSpace(text)
+		if has("show-instructions") {
+			answer = effective
+		}
 		if has("early") {
 			answer = "Ранний " + answer
 			delta(answer[len("Ранний "):])

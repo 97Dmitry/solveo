@@ -16,3 +16,5 @@
 - Standalone approach receives bounded recent text excluding earlier approaches; text-only follow-ups receive the latest prior image set. No new provider call or retry occurs on renderer reconnect/RetrySave.
 
 - Queue probes that fail with access/I/O errors protect the existing work state from rewriting and pruning until access is restored and the app restarts. SetDraft rejects edits after closing starts, so no accepted edit can arrive after the final snapshot. A normal Close that fails a final work write must return an error, restore a usable controller context and leave persisters running for retry.
+
+- All local chat creation uses `newChat(instructions)` with a settings snapshot: startup, NewChat, DiscardUnsaved and restoreWork for missing chats. Capture settings under c.mu during runtime; startup restoration is single-threaded. Pass the chat snapshot to both llm requests; never inspect provider instruction hashes.

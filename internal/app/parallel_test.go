@@ -50,10 +50,15 @@ func (*parallelProvider) Check(context.Context, chat.Config, func(llm.Event)) (l
 func parallelSetup(t *testing.T) (*Controller, *parallelProvider, *history.Store) {
 	t.Helper()
 	c, _, store := setup(t)
+	setGlobal(t, c, "shared global")
+	if _, err := c.NewChat(); err != nil {
+		t.Fatal(err)
+	}
 	p := &parallelProvider{started: make(chan llm.Request, 10), approach: make(chan answerCompletion, 5), solution: make(chan answerCompletion, 5)}
 	c.deps.Provider = p
 	s := c.Snapshot()
 	cfg := s.Config
+	cfg.Instructions = "frozen instructions"
 	cfg.ParallelAnswers = true
 	cfg.FastModel = "light"
 	cfg.FastReasoning = "none"
@@ -94,6 +99,9 @@ func startParallel(t *testing.T, c *Controller, p *parallelProvider) (llm.Reques
 		t.Fatal(err)
 	}
 	a, b := nextParallelRequest(t, p), nextParallelRequest(t, p)
+	if a.GlobalInstructions != "shared global" || b.GlobalInstructions != a.GlobalInstructions || a.Config.Instructions != b.Config.Instructions {
+		t.Fatal("parallel instructions differ")
+	}
 	if a.Purpose == chat.AnswerSolution {
 		a, b = b, a
 	}
@@ -147,6 +155,7 @@ func TestParallelRetryOnlyMainUsesFrozenConfig(t *testing.T) {
 	waitIdle(t, c)
 	s := c.Snapshot()
 	cfg := s.Config
+	cfg.Instructions = "changed instructions"
 	cfg.Model = "changed"
 	cfg.ParallelAnswers = false
 	if _, err := c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Config: cfg, ExpectedRevision: s.ConfigRevision}); err != nil {
@@ -156,7 +165,7 @@ func TestParallelRetryOnlyMainUsesFrozenConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := nextParallelRequest(t, p)
-	if r.Purpose != "solution" || r.Config.Model != "strong" || string(r.State) != `{"main":true}` {
+	if r.GlobalInstructions != "shared global" || r.Config.Instructions != "frozen instructions" || r.Purpose != "solution" || r.Config.Model != "strong" || string(r.State) != `{"main":true}` {
 		t.Fatal(r)
 	}
 	p.solution <- answerCompletion{result: llm.Result{Text: "retry main"}}
@@ -347,6 +356,7 @@ func TestSingleRetryKeepsAnswerConfigRevisionConsistent(t *testing.T) {
 	s = c.Snapshot()
 	originalRevision := s.Messages[0].ConfigRevision
 	cfg := s.Config
+	cfg.Instructions = "new preferences after failure"
 	cfg.Model = "changed"
 	if _, err := c.SaveChatConfig(ConfigInput{ChatID: s.ActiveChatID, Config: cfg, ExpectedRevision: s.ConfigRevision}); err != nil {
 		t.Fatal(err)
@@ -355,7 +365,7 @@ func TestSingleRetryKeepsAnswerConfigRevisionConsistent(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := <-p.started
-	if request.ConfigRevision != originalRevision || request.Config.Model != "" {
+	if request.ConfigRevision != originalRevision || request.Config.Model != "" || request.Config.Instructions != "" {
 		t.Fatal("retry did not preserve frozen configuration")
 	}
 	p.finish <- nil

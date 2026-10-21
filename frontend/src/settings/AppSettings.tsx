@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   errorText,
   settingsSchema,
+  globalInstructionsSchema,
   type Account as AccountState,
   type AppSettings as Config,
   type Snapshot,
@@ -35,6 +36,7 @@ export function AppSettings({
   const [fontSize, setFontSize] = useState(snapshot.settings.font_size);
   return (
     <div className="settings-form">
+      <GlobalInstructions settings={snapshot.settings} onSettings={onSettings} />
       <label>
         Тема
         <select
@@ -203,6 +205,58 @@ function Account({ login, actions }: { login: Snapshot["login"]; actions: Connec
           Войти в Codex
         </Button>
       )}
+    </>
+  );
+}
+
+function GlobalInstructions({
+  settings,
+  onSettings,
+}: {
+  settings: Config;
+  onSettings: (config: Config) => void;
+}) {
+  const [draft, setDraft] = useState({
+    base: settings.global_instructions,
+    text: settings.global_instructions,
+  });
+  if (draft.base !== settings.global_instructions) {
+    setDraft({
+      base: settings.global_instructions,
+      text: draft.text === draft.base ? settings.global_instructions : draft.text,
+    });
+  }
+  const text = draft.text;
+  const parsed = globalInstructionsSchema.safeParse(text);
+  return (
+    <>
+      <label>
+        Общие инструкции
+        <textarea
+          rows={6}
+          value={text}
+          aria-describedby="global-instructions-help"
+          onChange={(event) => setDraft({ ...draft, text: event.target.value })}
+        />
+      </label>
+      <p id="global-instructions-help" className="form-intro">
+        Применяется к новым чатам
+      </p>
+      <p className="form-intro">
+        Общие сведения о вас и пожелания к ответам. Преднастройка чата дополняет их и имеет
+        приоритет. До 16384 символов.
+      </p>
+      {!parsed.success && <p role="alert">Не более 16384 символов Unicode</p>}
+      <Button
+        disabled={!parsed.success || text === settings.global_instructions}
+        onClick={() => {
+          const value = globalInstructionsSchema.safeParse(text);
+          if (value.success) onSettings({ ...settings, global_instructions: value.data });
+        }}
+      >
+        Сохранить общие инструкции
+      </Button>
+      <div className="form-divider" />
     </>
   );
 }

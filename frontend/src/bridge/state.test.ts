@@ -56,3 +56,13 @@ it("rejects malformed parallel answer metadata", () => {
     }),
   ).toThrow();
 });
+
+it("validates global instructions by Unicode code points", () => {
+  const snapshot = snapshotFixture();
+  snapshot.settings.global_instructions = "😀".repeat(16384);
+  expect(() => parseSnapshot(snapshot)).not.toThrow();
+  snapshot.settings.global_instructions += "a";
+  expect(() => parseSnapshot(snapshot)).toThrow();
+  snapshot.settings.global_instructions = "\uD800";
+  expect(() => parseSnapshot(snapshot)).toThrow();
+});

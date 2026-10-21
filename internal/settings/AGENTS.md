@@ -6,3 +6,5 @@
 
 - `ui_scale` is an integer percentage (80..150, default 100). Missing fields in older settings default to 100; explicit invalid values are rejected. Persist it in the same settings.json as theme/font/pin, not browser storage or the working directory.
 - The removed `experimental_streaming` field of older files is ignored on load and dropped on the next save.
+
+- `global_instructions` is additive in schema v1, default empty, at most 16384 Unicode code points (valid UTF-8). Saving it never calls the provider; existing chat snapshots never change. Go and Zod count code points, not bytes/UTF-16 units.

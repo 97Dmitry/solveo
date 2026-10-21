@@ -10,3 +10,5 @@
 - Interface scale is independent of text size and persisted by Go as ui_scale. Apply it to the document so layout and modal dialogs scale together; keep compact-window settings reachable across 80..150%. Do not use browser storage for settings.
 - Parallel answers are explicitly opt-in and cost two requests. Main and fast model/effort selectors use the same discovered catalog independently; changing either model resets only its effort. Validate fast selections only while enabled; preserve them when disabling the mode.
 - Connection settings always show the Solveo Codex account: status loads through the injected `loadAccount` in an effect keyed by login state; the device-code prompt (URL, code, state, error) comes from Go's `Snapshot.login`, links open through `onOpenLink`.
+
+- Global instructions have an explicit save button and “Применяется к новым чатам” help text. They affect no existing chat, including empty chats. Preserve unsaved text across unrelated settings snapshots; validate with globalInstructionsSchema before sending.

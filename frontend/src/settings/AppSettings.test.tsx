@@ -71,3 +71,54 @@ it("shows the device-code login from Go state and refreshes the account", async 
   expect(await screen.findByText("Вход выполнен (chatgpt)")).toBeTruthy();
   expect(screen.queryByText("Войти в Codex")).toBeNull();
 });
+
+it("saves global instructions explicitly without checking the model connection", async () => {
+  const snapshot = snapshotFixture();
+  const save = vi.fn();
+  const check = vi.fn();
+  render(
+    <AppSettings
+      snapshot={snapshot}
+      connection={connection()}
+      onSettings={save}
+      onCheck={check}
+      onLog={vi.fn()}
+      onRetrySave={vi.fn()}
+      onDiscard={vi.fn()}
+      onExit={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Применяется к новым чатам")).toBeTruthy();
+  await userEvent.type(screen.getByLabelText("Общие инструкции"), "Отвечай кратко");
+  expect(save).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByText("Сохранить общие инструкции"));
+  expect(save).toHaveBeenCalledWith({
+    ...snapshot.settings,
+    global_instructions: "Отвечай кратко",
+  });
+  expect(check).not.toHaveBeenCalled();
+});
+
+it("keeps newer edits while a settings save completes", async () => {
+  const snapshot = snapshotFixture();
+  const actions = connection();
+  const save = vi.fn();
+  const view = (s: typeof snapshot) => (
+    <AppSettings
+      snapshot={s}
+      connection={actions}
+      onSettings={save}
+      onCheck={vi.fn()}
+      onLog={vi.fn()}
+      onRetrySave={vi.fn()}
+      onDiscard={vi.fn()}
+      onExit={vi.fn()}
+    />
+  );
+  const { rerender } = render(view(snapshot));
+  await userEvent.type(screen.getByLabelText("Общие инструкции"), "A");
+  await userEvent.click(screen.getByText("Сохранить общие инструкции"));
+  await userEvent.type(screen.getByLabelText("Общие инструкции"), "B");
+  rerender(view({ ...snapshot, settings: { ...snapshot.settings, global_instructions: "A" } }));
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Общие инструкции").value).toBe("AB");
+});

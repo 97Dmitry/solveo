@@ -7,3 +7,5 @@
 - `solveo:stream` previews are validated by `streamSchema`, accepted only with a newer revision and re-read via `StreamSnapshot` after connect. `streamText` shows a preview only for the active chat, current operation and still-requesting attempt; parallel blocks use their own status, since the solution may fail while the approach still streams.
 - `Snapshot.work_error` is a persistent banner separate from `error`; `Snapshot.recovered` is already filtered by Go to interrupted attempts of the active chat.
 - Additive optional Message.answers/request_config fields support old archives. Wire explicitly permits undefined for optional generated fields to match Zod output under exactOptionalPropertyTypes; required fields remain required. Answer statuses/kinds/timings are validated before presentation.
+
+- settings.global_instructions is required on the current wire; globalInstructionsSchema accepts at most 16384 Unicode code points and rejects lone UTF-16 surrogates. Older disk files are normalized by Go, not the renderer.
