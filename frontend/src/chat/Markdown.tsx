@@ -15,7 +15,7 @@ function Code({
 }: {
   children: ReactNode;
   className: string | undefined;
-  onCopy: (text: string) => Promise<boolean>;
+  onCopy: ((text: string) => Promise<boolean>) | undefined;
 }) {
   const [copied, setCopied] = useState(false);
   const text = plainText(children);
@@ -24,14 +24,16 @@ function Code({
     <div className="code-block">
       <div className="code-toolbar">
         <span>{language}</span>
-        <IconButton
-          label={copied ? "Код скопирован" : "Скопировать код"}
-          onClick={() => {
-            void onCopy(text).then((ok) => setCopied(ok));
-          }}
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </IconButton>
+        {onCopy && (
+          <IconButton
+            label={copied ? "Код скопирован" : "Скопировать код"}
+            onClick={() => {
+              void onCopy(text).then((ok) => setCopied(ok));
+            }}
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </IconButton>
+        )}
       </div>
       <pre>
         <code className={className}>{children}</code>
@@ -47,7 +49,8 @@ export const Markdown = memo(function Markdown({
   onOpenLink,
 }: {
   text: string;
-  onCopy: (text: string) => Promise<boolean>;
+  // Omitted for unfinished text: incomplete code must not be copied.
+  onCopy?: (text: string) => Promise<boolean>;
   onOpenLink: (url: string) => void;
 }) {
   return (

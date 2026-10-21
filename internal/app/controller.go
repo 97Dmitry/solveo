@@ -38,7 +38,15 @@ type Controller struct {
 	logFlushPending bool
 	closed          bool
 	selectionMode   string
+
+	streams            map[streamKey]StreamBlock
+	streamOpen         map[streamKey]bool
+	streamRevision     uint64
+	streamFlushPending bool
+	login              LoginView
 }
+
+var errNoConnection = errors.New("подключение LLM не поддерживает вход")
 
 func New(d Dependencies) (*Controller, error) {
 	if d.Store == nil || d.SettingsStore == nil || d.Provider == nil {
@@ -80,8 +88,12 @@ func New(d Dependencies) (*Controller, error) {
 		queues:    map[string][]queued{},
 		requests:  map[string]bool{},
 		op:        operation{Operation: Operation{Phase: phaseIdle}},
+
+		streams:    map[streamKey]StreamBlock{},
+		streamOpen: map[streamKey]bool{},
 	}
 	c.rememberLocked(doc)
+	c.prepareConnection()
 	return c, nil
 }
 func (c *Controller) rememberLocked(doc chat.Chat) {
@@ -182,6 +194,7 @@ func (c *Controller) Snapshot() Snapshot {
 		History:   summaries,
 		Error:     c.err,
 		Uncertain: uncertain,
+		Login:     c.login,
 	}
 }
 func (c *Controller) SetDraft(in DraftInput) error {
@@ -203,12 +216,12 @@ func (c *Controller) SetDraft(in DraftInput) error {
 	return nil
 }
 func validateConfig(cfg chat.Config) error {
-	for _, v := range []string{cfg.Context, cfg.Instructions, cfg.Model, cfg.ResponseLanguage, cfg.CodeLanguage} {
+	for _, v := range []string{cfg.Context, cfg.Instructions, cfg.Model, cfg.FastModel, cfg.ResponseLanguage, cfg.CodeLanguage} {
 		if len(v) > 1<<20 || strings.ContainsRune(v, 0) {
 			return errors.New("некорректная преднастройка чата")
 		}
 	}
-	if !llm.ValidReasoning(cfg.Reasoning) {
+	if !llm.ValidReasoning(cfg.Reasoning) || !llm.ValidReasoning(cfg.FastReasoning) {
 		return errors.New("неподдерживаемый уровень рассуждения")
 	}
 	switch cfg.Detail {
@@ -402,5 +415,11 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	c.removeFiles(paths)
+	// Workers are drained, so no request uses the streaming connection any more.
+	if conn, ok := c.deps.Provider.(llm.Connection); ok {
+		if err := conn.Close(ctx); err != nil {
+			c.appendLog(fmt.Sprintf("Codex app-server: %v\n", err))
+		}
+	}
 	return nil
 }

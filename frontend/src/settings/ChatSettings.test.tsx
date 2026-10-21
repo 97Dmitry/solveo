@@ -152,3 +152,50 @@ it("does not save an obsolete model or effort advertised by another model", asyn
   await userEvent.click(screen.getByRole("button", { name: "Сохранить преднастройку" }));
   expect(save).toHaveBeenCalledWith("Новый чат", expect.objectContaining({ reasoning: "" }));
 });
+
+it("saves independent approach model and effort without resetting the main model", async () => {
+  const save = vi.fn(async () => true);
+  const models = [
+    {
+      id: "strong",
+      label: "Strong",
+      description: "",
+      is_default: true,
+      default_reasoning: "high",
+      reasoning_efforts: [{ id: "high", description: "Deep" }],
+    },
+    {
+      id: "light",
+      label: "Light",
+      description: "",
+      is_default: false,
+      default_reasoning: "none",
+      reasoning_efforts: [{ id: "none", description: "Fast" }],
+    },
+  ];
+  render(
+    <ChatSettings
+      snapshot={snapshotFixture()}
+      onSave={save}
+      onClose={vi.fn()}
+      loadModels={async () => models}
+    />,
+  );
+  await screen.findByRole("option", { name: "Strong" });
+  await userEvent.selectOptions(screen.getByLabelText("Модель"), "strong");
+  await userEvent.selectOptions(screen.getByLabelText("Усилие рассуждения"), "high");
+  await userEvent.click(screen.getByLabelText("Параллельные подход и решение"));
+  await userEvent.selectOptions(screen.getByLabelText("Быстрая модель"), "light");
+  await userEvent.selectOptions(screen.getByLabelText("Рассуждение быстрой модели"), "none");
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить преднастройку" }));
+  expect(save).toHaveBeenCalledWith(
+    "Новый чат",
+    expect.objectContaining({
+      parallel_answers: true,
+      model: "strong",
+      reasoning: "high",
+      fast_model: "light",
+      fast_reasoning: "none",
+    }),
+  );
+});

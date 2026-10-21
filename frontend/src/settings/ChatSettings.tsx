@@ -60,6 +60,81 @@ function LanguageSelect({
     </select>
   );
 }
+function ModelFields({
+  models,
+  modelID,
+  reasoning,
+  modelLabel,
+  effortLabel,
+  disabled,
+  supportsReasoning,
+  onModel,
+  onReasoning,
+}: {
+  models: Model[];
+  modelID: string;
+  reasoning: string;
+  modelLabel: string;
+  effortLabel: string;
+  disabled: boolean;
+  supportsReasoning: boolean;
+  onModel: (value: string) => void;
+  onReasoning: (value: string) => void;
+}) {
+  const defaultModel = models.find((model) => model.is_default);
+  const selected = modelID === "" ? defaultModel : models.find((model) => model.id === modelID);
+  const efforts = selected?.reasoning_efforts ?? [];
+  const effort = efforts.find((item) => item.id === reasoning);
+  return (
+    <>
+      <label>
+        {modelLabel}
+        <select
+          value={modelID}
+          disabled={disabled}
+          onChange={(event) => onModel(event.target.value)}
+        >
+          <option value="">
+            По умолчанию подключения{defaultModel ? ` — ${defaultModel.label}` : ""}
+          </option>
+          {modelID !== "" && selected === undefined && (
+            <option value={modelID}>{modelID} — сохранённая, нет в списке</option>
+          )}
+          {models.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selected?.description && <p className="form-intro">{selected.description}</p>}
+      {supportsReasoning && (
+        <label>
+          {effortLabel}
+          <select
+            value={reasoning}
+            disabled={disabled}
+            onChange={(event) => onReasoning(event.target.value)}
+          >
+            <option value="">
+              По умолчанию{selected?.default_reasoning ? ` — ${selected.default_reasoning}` : ""}
+            </option>
+            {reasoning !== "" && effort === undefined && (
+              <option value={reasoning}>{reasoning} — сохранённое, недоступно</option>
+            )}
+            {efforts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.id}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {effort?.description && <p className="form-intro">{effort.description}</p>}
+    </>
+  );
+}
+
 type Catalog =
   | { status: "loading" }
   | { status: "ready"; models: Model[] }
@@ -96,14 +171,20 @@ export function ChatSettings({
     };
   }, [loadModels, refresh]);
   const models = catalog.status === "ready" ? catalog.models : [];
-  const defaultModel = models.find((model) => model.is_default);
-  const selectedModel =
-    form.model === "" ? defaultModel : models.find((model) => model.id === form.model);
-  const efforts = selectedModel?.reasoning_efforts ?? [];
-  const selectedEffort = efforts.find((effort) => effort.id === form.reasoning);
-  const unknownModel = form.model !== "" && !models.some((model) => model.id === form.model);
-  const unknownEffort = form.reasoning !== "" && selectedEffort === undefined;
-  const invalidSelection = catalog.status === "ready" && (unknownModel || unknownEffort);
+  const unavailable = (modelID: string, reasoning: string) => {
+    const model =
+      modelID === ""
+        ? models.find((item) => item.is_default)
+        : models.find((item) => item.id === modelID);
+    return (
+      (modelID !== "" && model === undefined) ||
+      (reasoning !== "" && !model?.reasoning_efforts.some((effort) => effort.id === reasoning))
+    );
+  };
+  const invalidSelection =
+    catalog.status === "ready" &&
+    (unavailable(form.model, form.reasoning) ||
+      (form.parallel_answers && unavailable(form.fast_model, form.fast_reasoning)));
   const change = <K extends keyof ChatConfig>(key: K, value: ChatConfig[K]) =>
     setForm((previous) => ({ ...previous, [key]: value }));
   return (
@@ -195,53 +276,54 @@ export function ChatSettings({
           изменений.
         </p>
       )}
-      <label>
-        Модель
-        <select
-          value={form.model}
-          disabled={catalog.status !== "ready" || saving}
-          onChange={(event) =>
-            setForm((previous) => ({ ...previous, model: event.target.value, reasoning: "" }))
-          }
-        >
-          <option value="">
-            По умолчанию подключения{defaultModel ? ` — ${defaultModel.label}` : ""}
-          </option>
-          {unknownModel && (
-            <option value={form.model}>{form.model} — сохранённая, нет в списке</option>
-          )}
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.label}
-            </option>
-          ))}
-        </select>
+      {form.parallel_answers && <h3>Основное решение</h3>}
+      <ModelFields
+        models={models}
+        modelID={form.model}
+        reasoning={form.reasoning}
+        modelLabel="Модель"
+        effortLabel="Усилие рассуждения"
+        disabled={catalog.status !== "ready" || saving}
+        supportsReasoning={snapshot.provider.capabilities.reasoning}
+        onModel={(model) => setForm((previous) => ({ ...previous, model, reasoning: "" }))}
+        onReasoning={(reasoning) => change("reasoning", reasoning)}
+      />
+      <div className="form-divider" />
+      <label className="checkbox-field">
+        <input
+          type="checkbox"
+          checked={form.parallel_answers}
+          disabled={saving}
+          onChange={(event) => change("parallel_answers", event.target.checked)}
+        />
+        Параллельные подход и решение
       </label>
-      {selectedModel?.description && <p className="form-intro">{selectedModel.description}</p>}
-      {snapshot.provider.capabilities.reasoning && (
-        <label>
-          Усилие рассуждения
-          <select
-            value={form.reasoning}
+      <p className="form-intro">
+        Эксперимент: два запроса на вопрос. Предварительный подход может отличаться от решения.
+        Время каждого ответа отображается в чате.
+      </p>
+      {form.parallel_answers && (
+        <>
+          <h3>Быстрый подход</h3>
+          <p className="form-intro">
+            Выберите доступную лёгкую модель и небольшое усилие рассуждения. Пустые значения
+            используют настройки подключения и не гарантируют ускорение.
+          </p>
+          <ModelFields
+            models={models}
+            modelID={form.fast_model}
+            reasoning={form.fast_reasoning}
+            modelLabel="Быстрая модель"
+            effortLabel="Рассуждение быстрой модели"
             disabled={catalog.status !== "ready" || saving}
-            onChange={(event) => change("reasoning", event.target.value)}
-          >
-            <option value="">
-              По умолчанию
-              {selectedModel?.default_reasoning ? ` — ${selectedModel.default_reasoning}` : ""}
-            </option>
-            {unknownEffort && (
-              <option value={form.reasoning}>{form.reasoning} — сохранённое, недоступно</option>
-            )}
-            {efforts.map((effort) => (
-              <option key={effort.id} value={effort.id}>
-                {effort.id}
-              </option>
-            ))}
-          </select>
-        </label>
+            supportsReasoning={snapshot.provider.capabilities.reasoning}
+            onModel={(fast_model) =>
+              setForm((previous) => ({ ...previous, fast_model, fast_reasoning: "" }))
+            }
+            onReasoning={(reasoning) => change("fast_reasoning", reasoning)}
+          />
+        </>
       )}
-      {selectedEffort?.description && <p className="form-intro">{selectedEffort.description}</p>}
       {invalidSelection && (
         <p role="alert">
           Выберите доступную модель и её уровень рассуждения. Сохранённое значение отсутствует в

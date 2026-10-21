@@ -1,10 +1,13 @@
 import type { app } from "../../wailsjs/go/models";
 import {
   acceptSnapshot,
+  emptyStream,
   errorText,
   intentSchema,
   parseSnapshot,
+  streamSchema,
   type Snapshot,
+  type StreamSnapshot,
   type Wire,
 } from "./state";
 export type SubmitInput = Wire<app.SubmitInput>;
@@ -14,12 +17,21 @@ export interface Transport {
   on(name: string, callback: (data: unknown) => void): () => void;
   setDraft(input: Wire<app.DraftInput>): Promise<void>;
   submit(input: SubmitInput): Promise<string>;
+  streamSnapshot(): Promise<unknown>;
 }
 type Editor = { chatID: string; text: string; revision: number; composing: boolean };
 export type ClientState =
   | { status: "loading"; error: string }
   | { status: "error"; error: string }
-  | { status: "ready"; snapshot: Snapshot; editor: Editor; working: boolean; error: string };
+  | {
+      status: "ready";
+      snapshot: Snapshot;
+      editor: Editor;
+      working: boolean;
+      error: string;
+      // Unfinished answer text; presentation filters it by the running attempt.
+      stream: StreamSnapshot;
+    };
 export class SolveoClient {
   private state: ClientState = { status: "loading", error: "" };
   private listeners = new Set<() => void>();
@@ -28,6 +40,7 @@ export class SolveoClient {
   private draftTimer: ReturnType<typeof setTimeout> | undefined;
   private writes: Promise<void> = Promise.resolve();
   private intents = new Set<string>();
+  private stream: StreamSnapshot = emptyStream;
   constructor(private readonly transport: Transport) {}
   getState = (): ClientState => this.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -71,9 +84,20 @@ export class SolveoClient {
         editor,
         working: old.status === "ready" && old.working,
         error: old.error,
+        stream: this.stream,
       });
     } catch (error) {
       this.update({ status: "error", error: `Ошибка обмена с приложением: ${errorText(error)}` });
+    }
+  };
+  private receiveStream = (data: unknown) => {
+    try {
+      const incoming = streamSchema.parse(data);
+      if (incoming.revision <= this.stream.revision) return;
+      this.stream = incoming;
+      if (this.state.status === "ready") this.update({ ...this.state, stream: incoming });
+    } catch (error) {
+      this.fail(`Ошибка обмена с приложением: ${errorText(error)}`);
     }
   };
   connect = (): (() => void) => {
@@ -85,12 +109,22 @@ export class SolveoClient {
     const offSubmit = this.transport.on("solveo:submit", (data) => {
       if (generation === this.generation) this.nativeSubmit(data);
     });
+    const offStream = this.transport.on("solveo:stream", (data) => {
+      if (generation === this.generation) this.receiveStream(data);
+    });
     void this.transport
       .snapshot()
       .then((data) => {
         if (generation !== this.generation) return;
         this.receive(data);
         this.connected = this.state.status === "ready";
+        // A reloaded renderer recovers previews of a request already running.
+        void this.transport
+          .streamSnapshot()
+          .then((stream) => {
+            if (generation === this.generation) this.receiveStream(stream);
+          })
+          .catch(() => {});
         return this.transport.ready();
       })
       .catch((error) => {
@@ -106,6 +140,7 @@ export class SolveoClient {
       }
       offState();
       offSubmit();
+      offStream();
       if (this.draftTimer !== undefined) clearTimeout(this.draftTimer);
     };
   };

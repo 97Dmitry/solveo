@@ -4,11 +4,21 @@ import type { app, chat, llm, settings } from "../../wailsjs/go/models";
 export type Wire<T> = T extends readonly (infer U)[]
   ? Wire<U>[]
   : T extends object
-    ? { [K in keyof T as K extends "convertValues" ? never : K]: Wire<T[K]> }
+    ? {
+        [K in keyof T as K extends "convertValues" ? never : K]: undefined extends T[K]
+          ? Wire<T[K]> | undefined
+          : Wire<T[K]>;
+      }
     : T;
 type Shape<T> = { [K in keyof Wire<T>]: z.ZodType<Wire<T>[K]> };
 const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const configSchema = z.object({
+  parallel_answers: z.boolean(),
+  fast_model: z.string(),
+  fast_reasoning: z
+    .string()
+    .max(64)
+    .regex(/^[a-z0-9_-]*$/),
   context: z.string(),
   instructions: z.string(),
   response_language: z.string(),
@@ -44,7 +54,19 @@ const attemptSchema = z.object({
   config_revision: revision,
   error: z.string(),
 } satisfies Shape<chat.Attempt>);
+const answerSchema = z.object({
+  kind: z.enum(["approach", "solution"]),
+  status: z.enum(["requesting", "complete", "failed", "canceled", "unknown", "interrupted"]),
+  text: z.string(),
+  error: z.string(),
+  attempt_id: z.string(),
+  model: z.string(),
+  reasoning: z.string(),
+  elapsed_ms: revision,
+} satisfies Shape<chat.Answer>);
 export const messageSchema = z.object({
+  answers: z.array(answerSchema).max(2).optional(),
+  request_config: configSchema.optional(),
   id: z.string(),
   role: z.enum(["user", "assistant"]),
   text: z.string(),
@@ -96,6 +118,13 @@ const operationSchema = z.object({
   message: z.string(),
 } satisfies Shape<app.Operation>);
 const draftSchema = z.object({ text: z.string(), revision } satisfies Shape<app.Draft>);
+const loginSchema = z.object({
+  id: z.string(),
+  url: z.union([z.literal(""), z.url({ protocol: /^https$/ })]),
+  code: z.string().max(64),
+  state: z.enum(["", "pending", "done", "failed"]),
+  error: z.string(),
+} satisfies Shape<app.LoginView>);
 export const snapshotSchema = z.object({
   revision,
   active_chat_id: z.string(),
@@ -114,7 +143,24 @@ export const snapshotSchema = z.object({
   history: z.array(summarySchema),
   error: z.string(),
   uncertain: z.boolean(),
+  login: loginSchema,
 } satisfies Shape<app.Snapshot>);
+const streamBlockSchema = z.object({
+  chat_id: z.string(),
+  operation_id: z.string(),
+  message_id: z.string(),
+  attempt_id: z.string(),
+  block: z.enum(["message", "approach", "solution"]),
+  text: z.string(),
+} satisfies Shape<app.StreamBlock>);
+export const streamSchema = z.object({
+  revision,
+  blocks: z.array(streamBlockSchema).max(2),
+} satisfies Shape<app.StreamSnapshot>);
+export const accountSchema = z.object({
+  signed_in: z.boolean(),
+  kind: z.string(),
+} satisfies Shape<llm.Account>);
 export const intentSchema = z.object({
   id: z.string(),
   chat_id: z.string(),
@@ -126,11 +172,47 @@ export type ChatConfig = z.infer<typeof configSchema>;
 export type AppSettings = z.infer<typeof settingsSchema>;
 export type Message = z.infer<typeof messageSchema>;
 export type SubmitIntent = z.infer<typeof intentSchema>;
+export type StreamSnapshot = z.infer<typeof streamSchema>;
+export type StreamBlock = z.infer<typeof streamBlockSchema>;
+export type Account = z.infer<typeof accountSchema>;
 export function parseSnapshot(input: unknown): Snapshot {
   return snapshotSchema.parse(input);
 }
 export function acceptSnapshot(current: Snapshot | null, incoming: Snapshot): Snapshot {
   return current === null || incoming.revision > current.revision ? incoming : current;
+}
+export const emptyStream: StreamSnapshot = { revision: 0, blocks: [] };
+
+// streamText returns unfinished text only for the running request it belongs
+// to: the active chat, the current operation and the still-requesting attempt.
+// An ordinary answer follows the turn's status; a parallel block follows its
+// own, because the solution may fail while the approach is still arriving.
+export function streamText(
+  snapshot: Snapshot,
+  stream: StreamSnapshot,
+  message: Message,
+  block: StreamBlock["block"],
+): string {
+  if (snapshot.operation.phase !== "requesting") return "";
+  let attemptID: string | undefined;
+  if (block === "message") {
+    const attempt = message.attempts.at(-1);
+    if (message.status === "requesting" && attempt?.status === "requesting") attemptID = attempt.id;
+  } else {
+    attemptID = message.answers?.find(
+      (a) => a.kind === block && a.status === "requesting",
+    )?.attempt_id;
+  }
+  if (attemptID === undefined) return "";
+  const found = stream.blocks.find(
+    (b) =>
+      b.block === block &&
+      b.chat_id === snapshot.active_chat_id &&
+      b.operation_id === snapshot.operation.id &&
+      b.message_id === message.id &&
+      b.attempt_id === attemptID,
+  );
+  return found?.text ?? "";
 }
 export function errorText(error: unknown): string {
   return error instanceof Error

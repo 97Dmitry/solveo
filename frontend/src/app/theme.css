@@ -972,3 +972,49 @@ input[type="range"] {
     scroll-behavior: auto !important;
   }
 }
+
+.answer-blocks {
+  min-width: 0;
+}
+.answer-block {
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+.answer-block.solution {
+  border-color: var(--accent);
+}
+.answer-block .message-meta {
+  flex-wrap: wrap;
+}
+.answer-block .message-meta small {
+  overflow-wrap: anywhere;
+}
+.answer-block .message-meta time {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.answer-note {
+  color: var(--muted);
+  font-size: 0.85em;
+  margin: 0 0 8px;
+}
+.settings-form .checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-form .checkbox-field input {
+  width: auto;
+}
+/* Unfinished answer text: visibly provisional until Go marks the answer complete. */
+.message.streaming,
+.message-body.streaming {
+  border-left: 2px dashed var(--muted);
+  padding-left: 10px;
+}
+.login-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 1.2em;
+  letter-spacing: 0.08em;
+  user-select: all;
+}

@@ -27,7 +27,16 @@ const (
 	StatusInterrupted = "interrupted"
 )
 
+// Answer kinds identify independent outputs of one submitted question.
+const (
+	AnswerApproach = "approach"
+	AnswerSolution = "solution"
+)
+
 type Config struct {
+	ParallelAnswers  bool   `json:"parallel_answers"`
+	FastModel        string `json:"fast_model"`
+	FastReasoning    string `json:"fast_reasoning"`
 	Context          string `json:"context"`
 	Instructions     string `json:"instructions"`
 	ResponseLanguage string `json:"response_language"`
@@ -42,7 +51,22 @@ type Attempt struct {
 	ConfigRevision uint64 `json:"config_revision"`
 	Error          string `json:"error"`
 }
+
+// Answer is a completed CLI response, never a fabricated text stream.
+type Answer struct {
+	Kind      string `json:"kind"`
+	Status    string `json:"status"`
+	Text      string `json:"text"`
+	Error     string `json:"error"`
+	AttemptID string `json:"attempt_id"`
+	Model     string `json:"model"`
+	Reasoning string `json:"reasoning"`
+	ElapsedMS int64  `json:"elapsed_ms"`
+}
+
 type Message struct {
+	Answers        []Answer  `json:"answers,omitempty"`
+	RequestConfig  *Config   `json:"request_config,omitempty"`
 	ID             string    `json:"id"`
 	Role           string    `json:"role"`
 	Text           string    `json:"text"`

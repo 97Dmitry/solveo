@@ -4,26 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/llm"
 )
 
+const transportAppServer = "app_server"
+
+// sessionState is opaque to the application: an app-server thread in Solveo's
+// own Codex home. Any other state is rejected rather than reinterpreted.
 type sessionState struct {
 	Version   int    `json:"version"`
-	SessionID string `json:"session_id"`
+	Transport string `json:"transport"`
+	ThreadID  string `json:"thread_id"`
 }
 
-var _ llm.Provider = (*Client)(nil)
+var (
+	_ llm.Provider   = (*Client)(nil)
+	_ llm.Connection = (*Client)(nil)
+)
 
-func New(binary, prompt string, timeout time.Duration) *Client {
-	return &Client{Binary: binary, Prompt: prompt, Timeout: timeout}
+func validThreadID(id string) bool {
+	// Codex thread IDs are UUIDs.
+	if len(id) != 36 {
+		return false
+	}
+	for i, ch := range id {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if ch != '-' {
+				return false
+			}
+			continue
+		}
+		switch {
+		case ch >= '0' && ch <= '9', ch >= 'a' && ch <= 'f', ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
+
 func (c *Client) Describe() llm.Descriptor {
 	return llm.Descriptor{ID: "codex", Label: "Codex CLI", Capabilities: llm.Capabilities{Images: true, Reasoning: true}}
 }
@@ -33,18 +57,26 @@ func (c *Client) prompt(r llm.Request) string {
 		base = "Помоги пользователю разобраться с вопросом или заданием. Учитывай приложенные изображения по порядку. Не выполняй команды, не меняй файлы и не читай локальные данные."
 	}
 	// JSON separates configuration fields and arbitrary user text without shell interpolation.
+	format := ""
+	switch r.Purpose {
+	case chat.AnswerApproach:
+		format = "\nДай только суть задачи и подход в 2–4 фразах, без кода. Укажи сложность, только если она ясна. Если данных не хватает, назови недостающее; не выдумывай условие. Это предварительный ответ независимой модели, его корректность ещё не проверена."
+	case chat.AnswerSolution:
+		format = "\nНачни с одной строки своего подхода. Затем дай решение: код, если задача требует кода, и краткое пояснение со сложностью, если уместно. Для теории ответь прямо без ненужного кода. Проверь условия самостоятельно; исправляй ошибочные предположения."
+	}
 	b, _ := json.MarshalIndent(struct {
 		Revision uint64      `json:"configuration_revision"`
 		Config   chat.Config `json:"configuration"`
 		Question string      `json:"question"`
-	}{r.ConfigRevision, r.Config, r.Turn.Text}, "", "  ")
-	return base + "\nНастройка действует для этого и следующих вопросов, пока не будет изменена. Если вопрос пустой, помоги с заданием на изображениях.\n" + string(b)
+		Context  string      `json:"recent_conversation,omitempty"`
+	}{r.ConfigRevision, r.Config, r.Turn.Text, r.ContextText}, "", "  ")
+	return base + "\nНастройка действует для этого и следующих вопросов, пока не будет изменена. Если вопрос пустой, помоги с заданием на изображениях.\n" + string(b) + format
 }
 func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Event)) (llm.Result, error) {
 	var state sessionState
 	if len(r.State) > 0 {
-		if e := json.Unmarshal(r.State, &state); e != nil || state.Version != 1 || !validThreadID(state.SessionID) {
-			return llm.Result{}, errors.New("повреждено состояние сессии Codex")
+		if e := json.Unmarshal(r.State, &state); e != nil || state.Version != 2 || state.Transport != transportAppServer || !validThreadID(state.ThreadID) {
+			return llm.Result{}, errors.New("состояние сессии Codex не поддерживается; начните новый чат")
 		}
 	}
 	if strings.TrimSpace(r.Turn.Text) == "" && len(r.Images) == 0 {
@@ -65,39 +97,26 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 		}
 		images = append(images, p)
 	}
-	worker := *c
-	worker.Model = r.Config.Model
-	worker.Reasoning = r.Config.Reasoning
-	worker.Progress = func(s string) {
-		if emit != nil {
-			emit(llm.Event{Kind: "progress", Text: s})
-		}
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
 	}
-	text, id, e := worker.runSession(ctx, images, c.prompt(r), state.SessionID)
-	result := llm.Result{}
-	if id != "" {
-		if state.SessionID != "" && state.SessionID != id {
-			return result, fmt.Errorf("%w: Codex продолжил другую сессию, ответ отброшен", llm.ErrOutcomeUnknown)
-		}
-		result.State, _ = json.Marshal(sessionState{1, id})
-	} else if len(r.State) > 0 {
-		result.State = append(json.RawMessage(nil), r.State...)
-	}
-	if e != nil {
-		return result, e
-	}
-	result.Text = text
-	return result, nil
+	// The approach is a one-off session; only the main request continues the chat.
+	return c.run(ctx, turnSpec{
+		purpose:   r.Purpose,
+		config:    r.Config,
+		threadID:  state.ThreadID,
+		images:    images,
+		prompt:    c.prompt(r),
+		ephemeral: r.Purpose == chat.AnswerApproach,
+		timeout:   timeout,
+	}, emit)
 }
+
+// Check sends a short request in a one-off session with the chat's model and
+// effort. A reply proves this connection worked at that moment; it does not
+// validate answers or change any chat.
 func (c *Client) Check(ctx context.Context, cfg chat.Config, emit func(llm.Event)) (llm.CheckResult, error) {
-	worker := *c
-	worker.Model = cfg.Model
-	worker.Reasoning = cfg.Reasoning
-	worker.Progress = func(s string) {
-		if emit != nil {
-			emit(llm.Event{Kind: "progress", Text: s})
-		}
-	}
-	text, e := worker.CheckConnection(ctx)
-	return llm.CheckResult{Text: text}, e
+	out, err := c.run(ctx, turnSpec{purpose: "check", config: cfg, prompt: "Ответь одним словом: OK.", ephemeral: true, timeout: ConnectionTimeout}, emit)
+	return llm.CheckResult{Text: out.Text}, err
 }

@@ -75,3 +75,14 @@ func TestUIScalePersistsBesideArchiveAndDefaultsForOlderSettings(t *testing.T) {
 		t.Fatalf("invalid save overwrote settings: %+v %v", again, err)
 	}
 }
+
+func TestRemovedStreamingSettingIsIgnored(t *testing.T) {
+	s := Open(t.TempDir())
+	if err := os.WriteFile(filepath.Join(s.Dir, "settings.json"), []byte(`{"schema_version":1,"theme":"light","font_size":18,"ui_scale":110,"experimental_streaming":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load()
+	if err != nil || got != (Config{Theme: "light", FontSize: 18, UIScale: 110}) {
+		t.Fatalf("%+v %v", got, err)
+	}
+}

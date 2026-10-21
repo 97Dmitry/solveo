@@ -198,6 +198,12 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
 	// A process can die after a CLI turn was accepted. Never infer success/retry.
 	for i, m := range c.Messages {
+		for j, answer := range m.Answers {
+			if answer.Status == chat.StatusRequesting {
+				c.Messages[i].Answers[j].Status = chat.StatusInterrupted
+				c.Messages[i].Answers[j].Error = "Приложение завершилось до сохранения результата"
+			}
+		}
 		if m.Status == chat.StatusRequesting {
 			c.Messages[i].Status = chat.StatusInterrupted
 			for j, a := range m.Attempts {
