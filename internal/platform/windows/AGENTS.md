@@ -9,3 +9,4 @@
 - Verify message-loop, capture, tray, DPI, focus and pin behavior on Windows using `docs/windows-acceptance.md`. Portable geometry tests and cross-builds do not verify those behaviors.
 
 - Initialize and verify shared GDI theme resources on the host thread before creating windows. A zero brush/pen makes background and owner-drawn button painting fail silently. `theme_windows_test.go` verifies actual fills when run on Windows.
+- The main window is tray-only: `TrayOnly` (called in `OnDomReady`, before the first show and after capture affinity) sets `WS_EX_TOOLWINDOW`, clears `WS_EX_APPWINDOW` and removes the minimize box, then verifies the style. Wails sets `WS_EX_APPWINDOW` itself and has no option for this. Do not use a cross-thread owner window instead: it couples the Wails and host message queues.

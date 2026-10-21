@@ -107,9 +107,25 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 		}
 		turn = chat.Message{ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
 	}
+	if turn.RequestConfig == nil {
+		cfg := doc.Config
+		turn.RequestConfig = &cfg
+		turn.ConfigRevision = doc.ConfigRevision
+	}
 	turn.Status = chat.StatusRequesting
-	turn.ConfigRevision = doc.ConfigRevision
-	turn.Attempts = append(turn.Attempts, chat.Attempt{ID: chat.ID(), Status: chat.StatusRequesting, ConfigRevision: doc.ConfigRevision})
+	attemptID := chat.ID()
+	turn.Attempts = append(turn.Attempts, chat.Attempt{ID: attemptID, Status: chat.StatusRequesting, ConfigRevision: turn.ConfigRevision})
+	if turn.RequestConfig.ParallelAnswers {
+		cfg := *turn.RequestConfig
+		if len(turn.Answers) == 0 {
+			turn.Answers = []chat.Answer{
+				{Kind: chat.AnswerApproach, Status: chat.StatusRequesting, AttemptID: attemptID, Model: cfg.FastModel, Reasoning: cfg.FastReasoning},
+				{Kind: chat.AnswerSolution, Status: chat.StatusRequesting, AttemptID: attemptID, Model: cfg.Model, Reasoning: cfg.Reasoning},
+			}
+		} else {
+			turn.Answers[1] = chat.Answer{Kind: chat.AnswerSolution, Status: chat.StatusRequesting, AttemptID: attemptID, Model: cfg.Model, Reasoning: cfg.Reasoning}
+		}
+	}
 	if in.RetryMessageID != "" {
 		doc.Messages[len(doc.Messages)-1] = turn
 	} else {
@@ -139,6 +155,13 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 		a := len(doc.Messages[len(doc.Messages)-1].Attempts) - 1
 		doc.Messages[len(doc.Messages)-1].Attempts[a].Status = chat.StatusFailed
 		doc.Messages[len(doc.Messages)-1].Attempts[a].Error = "Вопрос не отправлен: " + e.Error()
+		for i := range doc.Messages[len(doc.Messages)-1].Answers {
+			answer := &doc.Messages[len(doc.Messages)-1].Answers[i]
+			if answer.Status == chat.StatusRequesting {
+				answer.Status = chat.StatusFailed
+				answer.Error = "Вопрос не отправлен: " + e.Error()
+			}
+		}
 		c.setPending(opID, pendingSave{doc: doc, sources: sources}, e)
 		return
 	}
@@ -168,18 +191,24 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
+	if turn.RequestConfig != nil && turn.RequestConfig.ParallelAnswers {
+		c.runParallel(ctx, opID, doc, images, ids, draft, clearDraft, e)
+		return
+	}
 	var result llm.Result
+	attemptID := turn.Attempts[len(turn.Attempts)-1].ID
 	if e == nil {
 		req := llm.Request{
 			History:        append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...),
 			Turn:           turn,
-			Config:         doc.Config,
-			ConfigRevision: doc.ConfigRevision,
+			Config:         *turn.RequestConfig,
+			ConfigRevision: turn.ConfigRevision,
 			State:          doc.ProviderState,
 			Images:         images,
 		}
-		result, e = c.deps.Provider.Generate(ctx, req, func(v llm.Event) { c.appendLog(v.Text) })
+		result, e = c.deps.Provider.Generate(ctx, req, c.streamSink(opID, doc.ID, turn.ID, attemptID, blockMessage))
 	}
+	c.closeStream(opID, attemptID, blockMessage)
 	if len(result.State) > 0 {
 		doc.ProviderState = result.State
 	}
@@ -198,7 +227,7 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	doc.Messages[last].Status = status
 	doc.Messages[last].Attempts[attempt].Status = status
 	if e == nil {
-		doc.Messages = append(doc.Messages, chat.Message{ID: chat.ID(), Role: chat.RoleAssistant, Text: result.Text, Status: chat.StatusComplete, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: doc.ConfigRevision})
+		doc.Messages = append(doc.Messages, chat.Message{ID: chat.ID(), Role: chat.RoleAssistant, Text: result.Text, Status: chat.StatusComplete, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: turn.ConfigRevision})
 	}
 	c.mu.Lock()
 	if c.op.ID != opID {
@@ -218,12 +247,20 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	if e == nil {
 		p.cleanupIDs = ids
 	}
-	saved, saveErr := c.deps.Store.Save(history.SaveInput{Chat: doc})
+	saved, saveErr := c.timedSave(history.SaveInput{Chat: doc})
 	if saveErr != nil {
 		c.setPending(opID, p, saveErr)
 		return
 	}
 	c.finishSave(opID, saved, p)
+}
+
+// timedSave records the content-free archive time of a received answer.
+func (c *Controller) timedSave(in history.SaveInput) (chat.Chat, error) {
+	started := time.Now()
+	saved, err := c.deps.Store.Save(in)
+	c.appendLog(fmt.Sprintf("Solveo timing: save_ms=%d ok=%t\n", time.Since(started).Milliseconds(), err == nil))
+	return saved, err
 }
 func (c *Controller) setPending(opID string, p pendingSave, e error) {
 	c.mu.Lock()
@@ -389,7 +426,11 @@ func (c *Controller) CheckConnection() (string, error) {
 	go func() {
 		defer c.workers.Done()
 		defer cancel()
-		out, e := c.deps.Provider.Check(ctx, cfg, func(v llm.Event) { c.appendLog(v.Text) })
+		out, e := c.deps.Provider.Check(ctx, cfg, func(v llm.Event) {
+			if v.Kind == llm.EventProgress {
+				c.appendLog(v.Text)
+			}
+		})
 		c.mu.Lock()
 		if c.op.ID != id {
 			c.mu.Unlock()

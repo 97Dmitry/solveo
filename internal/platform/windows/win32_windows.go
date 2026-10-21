@@ -202,3 +202,36 @@ func limitMainWindowSize(data uintptr) {
 	info.minTrackSize = point{x: 520, y: 400}
 	procMoveMemory.Call(data, uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info))
 }
+
+const (
+	gwlStyle        = -16
+	gwlExStyle      = -20
+	wsExAppWindow   = 0x00040000
+	wsMinimizeBox   = 0x00020000
+	swpNoSize       = 0x0001
+	swpNoMove       = 0x0002
+	swpNoZOrder     = 0x0004
+	swpNoActivate   = 0x0010
+	swpFrameChanged = 0x0020
+)
+
+// TrayOnly removes a still hidden main window from the taskbar and Alt+Tab:
+// Windows lists unowned windows unless they are tool windows. A tool window
+// minimized has no taskbar button to restore it, so its minimize box is
+// removed; the window hides to the tray on close. Call before the first show.
+func TrayOnly(hwnd uintptr) error {
+	get := user32.NewProc("GetWindowLongPtrW")
+	set := user32.NewProc("SetWindowLongPtrW")
+	exIndex, styleIndex := gwlExStyle, gwlStyle
+	ex, _, _ := get.Call(hwnd, uintptr(exIndex))
+	style, _, _ := get.Call(hwnd, uintptr(styleIndex))
+	set.Call(hwnd, uintptr(exIndex), (ex&^wsExAppWindow)|wsExToolWindow)
+	set.Call(hwnd, uintptr(styleIndex), style&^wsMinimizeBox)
+	// Apply the frame change without moving, showing or activating the window.
+	user32.NewProc("SetWindowPos").Call(hwnd, 0, 0, 0, 0, 0, swpNoSize|swpNoMove|swpNoZOrder|swpNoActivate|swpFrameChanged)
+	ex, _, _ = get.Call(hwnd, uintptr(exIndex))
+	if ex&wsExToolWindow == 0 || ex&wsExAppWindow != 0 {
+		return fmt.Errorf("main window still has a taskbar button: style %#x", ex)
+	}
+	return nil
+}

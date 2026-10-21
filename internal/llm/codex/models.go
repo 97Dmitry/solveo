@@ -1,99 +1,34 @@
 package codex
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/llm/codex/appserver"
 )
 
-// Models uses the authenticated CLI's catalog, never starts a thread or a model turn.
-// App-server may use its own cached/bundled catalog if upstream is unavailable.
+// Models reads the catalog through Solveo's own connection and account. It
+// never starts a thread or a model turn. Codex may serve its cached/bundled
+// catalog when the upstream list is unavailable.
 func (c *Client) Models(parent context.Context) ([]llm.Model, error) {
-	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	// A cold start includes launching the process and Codex's own catalog refresh timeout.
+	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 	defer cancel()
-	workdir, err := os.MkdirTemp("", "solveo-models-")
+	conn, err := c.app.connection(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("подключение Codex недоступно: %w", err)
 	}
-	defer os.RemoveAll(workdir)
-	cmd := exec.CommandContext(ctx, c.binary(), "app-server", "-c", `model_provider="openai"`)
-	cmd.Dir = workdir
-	configureSubprocess(cmd)
-	cmd.WaitDelay = 2 * time.Second
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = stdin.Close() }()
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	// Do not expose raw stderr, which may contain local/account information.
-	cmd.Stderr = io.Discard
-	if err = cmd.Start(); err != nil {
-		return nil, fmt.Errorf("не удалось запустить загрузку моделей Codex: %w", err)
-	}
-	defer func() { cancel(); _ = stdin.Close(); _ = cmd.Wait() }()
-	scanner := bufio.NewScanner(io.LimitReader(stdout, 16<<20))
-	scanner.Buffer(make([]byte, 4096), 2<<20)
-	encoder := json.NewEncoder(stdin)
-	nextID := 0
-	rpc := func(method string, params interface{}, out interface{}) error {
-		nextID++
-		if e := encoder.Encode(struct {
-			ID     int         `json:"id"`
-			Method string      `json:"method"`
-			Params interface{} `json:"params"`
-		}{nextID, method, params}); e != nil {
-			return e
+	rpc := func(method string, params, out any) error {
+		err := conn.Call(ctx, method, params, out)
+		if rpcErr, ok := errors.AsType[*appserver.RPCError](err); ok {
+			// Do not expose raw server messages, which may contain account details.
+			return fmt.Errorf("запрос каталога Codex %s завершился ошибкой (код %d)", method, rpcErr.Code)
 		}
-		for scanner.Scan() {
-			var envelope struct {
-				ID     *int            `json:"id"`
-				Result json.RawMessage `json:"result"`
-				Error  *struct {
-					Code    int    `json:"code"`
-					Message string `json:"message"`
-				} `json:"error"`
-			}
-			if e := json.Unmarshal(scanner.Bytes(), &envelope); e != nil {
-				return errors.New("некорректный ответ каталога моделей Codex")
-			}
-			if envelope.ID == nil || *envelope.ID != nextID {
-				continue
-			}
-			if envelope.Error != nil {
-				return fmt.Errorf("запрос каталога Codex %s завершился ошибкой (код %d)", method, envelope.Error.Code)
-			}
-			if len(envelope.Result) == 0 || string(envelope.Result) == "null" {
-				return errors.New("каталог Codex не вернул результат")
-			}
-			return json.Unmarshal(envelope.Result, out)
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if e := scanner.Err(); e != nil {
-			return e
-		}
-		return errors.New("загрузка моделей Codex прервалась до ответа; обновите Codex CLI и проверьте вход")
-	}
-	var initialized map[string]interface{}
-	if err = rpc("initialize", map[string]interface{}{"clientInfo": map[string]string{"name": "solveo", "title": "Solveo", "version": "0.1.0"}}, &initialized); err != nil {
-		return nil, err
-	}
-	if err = encoder.Encode(map[string]interface{}{"method": "initialized", "params": map[string]interface{}{}}); err != nil {
-		return nil, err
+		return err
 	}
 	models := make([]llm.Model, 0)
 	seenModels := map[string]bool{}

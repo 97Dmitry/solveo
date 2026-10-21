@@ -13,11 +13,11 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { actions, client, loadModels } from "../bridge/wails";
+import { actions, client, loadAccount, loadModels } from "../bridge/wails";
 import { ChatView } from "../chat/ChatView";
 import { Composer } from "../chat/Composer";
 import { AttachmentStrip } from "../chat/AttachmentStrip";
-import { latestCode } from "../chat/code";
+import { lastAnswerText, latestCode } from "../chat/code";
 import { ChatSettings } from "../settings/ChatSettings";
 import { AppSettings } from "../settings/AppSettings";
 import { HistoryDrawer } from "../history/HistoryDrawer";
@@ -67,7 +67,7 @@ export default function App() {
   const s = state.snapshot;
   const busy = state.working;
   const close = () => setPanel("closed");
-  const lastAnswer = s.messages.findLast((m) => m.role === "assistant")?.text ?? "";
+  const lastAnswer = lastAnswerText(s.messages);
   const code = latestCode(lastAnswer);
   const error = state.error || s.error;
   const panelTitle = {
@@ -170,6 +170,7 @@ export default function App() {
       <ChatView
         key={s.active_chat_id}
         snapshot={s}
+        stream={state.stream}
         onConfigure={() => setPanel("configuration")}
         onOpenImage={(id) => {
           void actions.image(s.active_chat_id, id);
@@ -287,6 +288,16 @@ export default function App() {
           )}{" "}
           {panel === "settings" && (
             <AppSettings
+              connection={{
+                loadAccount,
+                onLogin: () => {
+                  void actions.startLogin();
+                },
+                onCancelLogin: () => {
+                  void actions.cancelLogin();
+                },
+                onOpenLink: actions.openLink,
+              }}
               onExit={() => {
                 void actions.exit();
               }}

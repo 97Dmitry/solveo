@@ -6,6 +6,9 @@ export function snapshotFixture(): Snapshot {
     title: "Новый чат",
     provider_id: "codex",
     config: {
+      parallel_answers: false,
+      fast_model: "",
+      fast_reasoning: "",
       context: "",
       instructions: "",
       response_language: "Русский",
@@ -29,7 +32,12 @@ export function snapshotFixture(): Snapshot {
       can_retry: false,
       can_discard: false,
     },
-    settings: { ui_scale: 100, theme: "dark", font_size: 17, always_on_top: false },
+    settings: {
+      ui_scale: 100,
+      theme: "dark",
+      font_size: 17,
+      always_on_top: false,
+    },
     provider: {
       id: "codex",
       label: "Codex CLI",
@@ -38,5 +46,6 @@ export function snapshotFixture(): Snapshot {
     history: [],
     error: "",
     uncertain: false,
+    login: { id: "", url: "", code: "", state: "", error: "" },
   };
 }

@@ -35,6 +35,27 @@ func validateDocument(c chat.Chat) error {
 		if !idPattern.MatchString(m.ID) || messages[m.ID] || (m.Role != chat.RoleUser && m.Role != chat.RoleAssistant) || !validStatus(m.Status) {
 			return errors.New("в архиве некорректное сообщение")
 		}
+		if len(m.Answers) > 0 {
+			if m.Role != chat.RoleUser || len(m.Answers) != 2 || m.RequestConfig == nil || !m.RequestConfig.ParallelAnswers {
+				return errors.New("в архиве некорректные блоки ответа")
+			}
+			for i, answer := range m.Answers {
+				want := chat.AnswerApproach
+				if i == 1 {
+					want = chat.AnswerSolution
+				}
+				linked := false
+				for _, attempt := range m.Attempts {
+					if attempt.ID == answer.AttemptID {
+						linked = true
+						break
+					}
+				}
+				if answer.Kind != want || !validStatus(answer.Status) || !idPattern.MatchString(answer.AttemptID) || !linked || answer.ElapsedMS < 0 {
+					return errors.New("в архиве некорректный блок ответа")
+				}
+			}
+		}
 		messages[m.ID] = true
 		for _, id := range m.AttachmentIDs {
 			if !attachments[id] {

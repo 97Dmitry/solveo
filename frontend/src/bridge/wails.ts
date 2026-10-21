@@ -3,6 +3,7 @@ import { app, settings } from "../../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from "../../wailsjs/runtime/runtime";
 import { SolveoClient } from "./client";
 import {
+  accountSchema,
   configSchema,
   modelsSchema,
   settingsSchema,
@@ -16,6 +17,7 @@ export const client = new SolveoClient({
   on: (name, callback) => EventsOn(name, (data: unknown) => callback(data)),
   setDraft: api.SetDraft,
   submit: api.Submit,
+  streamSnapshot: api.StreamSnapshot,
 });
 export const actions = {
   exit: () => client.run(api.Exit),
@@ -48,6 +50,8 @@ export const actions = {
   check: () => client.run(api.CheckConnection),
   image: (chatID: string, id: string) => client.run(() => api.OpenImage(chatID, id)),
   log: () => client.run(api.ShowLog),
+  startLogin: () => client.run(api.StartLogin, true),
+  cancelLogin: () => client.run(api.CancelLogin, true),
   copy: async (text: string) => {
     try {
       return await ClipboardSetText(text);
@@ -59,6 +63,10 @@ export const actions = {
     if (/^https?:\/\//i.test(url)) BrowserOpenURL(url);
   },
 };
+
+export async function loadAccount() {
+  return accountSchema.parse(await api.Account());
+}
 
 export async function loadModels() {
   return modelsSchema.parse(await api.ListModels());

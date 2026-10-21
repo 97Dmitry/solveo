@@ -16,6 +16,19 @@ function setup() {
     },
     setDraft: async () => {},
     submit,
+    streamSnapshot: async () => ({
+      revision: 3,
+      blocks: [
+        {
+          chat_id: "first",
+          operation_id: "op",
+          message_id: "m",
+          attempt_id: "a",
+          block: "message",
+          text: "до перезагрузки",
+        },
+      ],
+    }),
   } satisfies Transport;
   return { client: new SolveoClient(api), listeners, submit };
 }
@@ -60,6 +73,33 @@ describe("bridge lifecycle", () => {
     });
     await Promise.resolve();
     expect(submit).not.toHaveBeenCalled();
+    off();
+  });
+});
+
+describe("answer stream", () => {
+  it("recovers previews after connect and accepts only newer revisions", async () => {
+    const { client, listeners } = setup();
+    const off = client.connect();
+    await vi.waitFor(() => {
+      const state = client.getState();
+      expect(state.status === "ready" && state.stream.revision).toBe(3);
+    });
+    const block = {
+      chat_id: "first",
+      operation_id: "op",
+      message_id: "m",
+      attempt_id: "a",
+      block: "message",
+    };
+    listeners.get("solveo:stream")?.({ revision: 2, blocks: [{ ...block, text: "старое" }] });
+    listeners.get("solveo:stream")?.({ revision: 5, blocks: [{ ...block, text: "новое" }] });
+    const state = client.getState();
+    expect(state.status === "ready" && state.stream.blocks[0]?.text).toBe("новое");
+    listeners.get("solveo:stream")?.({ revision: 6, blocks: [{ ...block, block: "bogus" }] });
+    const after = client.getState();
+    expect(after.status === "ready" && after.stream.revision).toBe(5);
+    expect(after.status === "ready" && after.error).toContain("Ошибка обмена");
     off();
   });
 });

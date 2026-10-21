@@ -4,12 +4,15 @@ package codex
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 const createNoWindow = 0x08000000
@@ -40,4 +43,26 @@ func configureSubprocess(cmd *exec.Cmd) {
 		}
 		return cmd.Process.Kill()
 	}
+}
+
+const driveRemote = 4
+
+// localDisk rejects UNC paths (including \\wsl.localhost) and mapped network
+// drives: Codex cannot initialize its SQLite state there.
+func localDisk(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	volume := filepath.VolumeName(abs)
+	remote := strings.HasPrefix(volume, `\\`)
+	if !remote && volume != "" {
+		root, _ := syscall.UTF16PtrFromString(volume + `\`)
+		kind, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetDriveTypeW").Call(uintptr(unsafe.Pointer(root)))
+		remote = kind == driveRemote
+	}
+	if remote {
+		return fmt.Errorf("папка Solveo находится на сетевом пути (%s); Codex не может хранить там своё состояние. Скопируйте Solveo.exe в папку на локальном диске", volume)
+	}
+	return nil
 }

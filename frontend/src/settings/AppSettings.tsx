@@ -1,8 +1,21 @@
-import { useState } from "react";
-import { settingsSchema, type AppSettings as Config, type Snapshot } from "../bridge/state";
+import { useEffect, useState } from "react";
+import {
+  errorText,
+  settingsSchema,
+  type Account as AccountState,
+  type AppSettings as Config,
+  type Snapshot,
+} from "../bridge/state";
 import { Button } from "../ui/Button";
+export type ConnectionActions = {
+  loadAccount: () => Promise<AccountState>;
+  onLogin: () => void;
+  onCancelLogin: () => void;
+  onOpenLink: (url: string) => void;
+};
 export function AppSettings({
   snapshot,
+  connection,
   onSettings,
   onCheck,
   onLog,
@@ -11,6 +24,7 @@ export function AppSettings({
   onExit,
 }: {
   snapshot: Snapshot;
+  connection: ConnectionActions;
   onSettings: (config: Config) => void;
   onCheck: () => void;
   onLog: () => void;
@@ -86,8 +100,11 @@ export function AppSettings({
       <div className="form-divider" />
       <h3>Подключение</h3>
       <p className="form-intro">
-        {snapshot.provider.label}. Проверка выполнит отдельный короткий запрос и не изменит чат.
+        {snapshot.provider.label} с отдельным профилем Solveo: ваши настройки Codex, плагины и
+        skills не используются, поэтому нужен собственный вход. Проверка выполнит отдельный короткий
+        запрос и не изменит чат.
       </p>
+      <Account login={snapshot.login} actions={connection} />
       <div className="button-row">
         <Button disabled={!snapshot.controls.can_submit} onClick={onCheck}>
           Проверить соединение
@@ -125,5 +142,67 @@ export function AppSettings({
         </div>
       )}
     </div>
+  );
+}
+
+// Account shows the sign-in state of Solveo's own Codex profile and runs the
+// device-code login. Go owns the login state.
+function Account({ login, actions }: { login: Snapshot["login"]; actions: ConnectionActions }) {
+  const [account, setAccount] = useState<{ key: string; value: AccountState | string } | null>(
+    null,
+  );
+  // Re-read the account whenever the login outcome changes.
+  const key = `${login.state}:${login.id}`;
+  const load = actions.loadAccount;
+  useEffect(() => {
+    let live = true;
+    load().then(
+      (value) => {
+        if (live) setAccount({ key, value });
+      },
+      (error: unknown) => {
+        if (live) setAccount({ key, value: errorText(error) });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [key, load]);
+  const status = account?.key === key ? account.value : "";
+  return (
+    <>
+      <div className="connection-account" role="status">
+        {status === ""
+          ? "Проверяю вход…"
+          : typeof status === "string"
+            ? status
+            : status.signed_in
+              ? `Вход выполнен${status.kind ? ` (${status.kind})` : ""}`
+              : "Вход не выполнен"}
+      </div>
+      {login.state === "pending" && (
+        <div className="login-prompt">
+          <p>Откройте страницу входа и введите код:</p>
+          <p className="login-code">{login.code}</p>
+          <div className="button-row">
+            <Button className="primary" onClick={() => actions.onOpenLink(login.url)}>
+              Открыть страницу входа
+            </Button>
+            <Button onClick={actions.onCancelLogin}>Отменить вход</Button>
+          </div>
+        </div>
+      )}
+      {login.state === "failed" && (
+        <div className="login-prompt">
+          <p>{login.error || "Вход не выполнен"}</p>
+          <Button onClick={actions.onCancelLogin}>Закрыть</Button>
+        </div>
+      )}
+      {login.state !== "pending" && typeof status !== "string" && !status.signed_in && (
+        <Button className="primary" onClick={actions.onLogin}>
+          Войти в Codex
+        </Button>
+      )}
+    </>
   );
 }

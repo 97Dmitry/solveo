@@ -25,3 +25,34 @@ describe("authoritative state", () => {
     ).toThrow();
   });
 });
+
+it("rejects malformed parallel answer metadata", () => {
+  expect(() =>
+    parseSnapshot({
+      ...snapshotFixture(),
+      messages: [
+        {
+          id: "question",
+          role: "user",
+          text: "solve",
+          status: "complete",
+          attachment_ids: [],
+          config_revision: 1,
+          attempts: [],
+          answers: [
+            {
+              kind: "typo",
+              status: "complete",
+              text: "wrong",
+              error: "",
+              attempt_id: "attempt",
+              model: "light",
+              reasoning: "none",
+              elapsed_ms: -1,
+            },
+          ],
+        },
+      ],
+    }),
+  ).toThrow();
+});

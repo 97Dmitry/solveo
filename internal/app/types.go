@@ -160,6 +160,7 @@ type Snapshot struct {
 	History        []HistorySummary `json:"history"`
 	Error          string           `json:"error"`
 	Uncertain      bool             `json:"uncertain"`
+	Login          LoginView        `json:"login"`
 }
 type queued struct{ ID, Path, Label string }
 type pendingSave struct {

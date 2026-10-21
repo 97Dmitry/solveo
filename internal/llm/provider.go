@@ -22,6 +22,9 @@ type Descriptor struct {
 }
 type Image struct{ ID, Path string }
 type Request struct {
+	// Purpose is empty for ordinary chat, or an answer kind for parallel requests.
+	Purpose        string
+	ContextText    string
 	History        []chat.Message
 	Turn           chat.Message
 	Config         chat.Config
@@ -33,6 +36,15 @@ type Result struct {
 	Text  string
 	State json.RawMessage
 }
+
+// Event kinds. Progress is technical output for the log only. AnswerText carries
+// the full accumulated text of the current, not yet completed answer; it never
+// includes reasoning and is not a final result.
+const (
+	EventProgress   = "progress"
+	EventAnswerText = "answer_text"
+)
+
 type Event struct{ Kind, Text string }
 type CheckResult struct{ Text string }
 type Provider interface {

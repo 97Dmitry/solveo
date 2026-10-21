@@ -141,10 +141,12 @@ func run() error {
 		return e
 	}
 	defer func() { _ = host.Close() }()
+	// Codex keeps Solveo's own state, login and sessions beside the archive.
+	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
 	controller, e := core.New(core.Dependencies{
 		Store:         store,
 		SettingsStore: settings.Open(dir),
-		Provider:      codex.New(flags.Binary, flags.Prompt, flags.Timeout),
+		Provider:      provider,
 		Capturer:      screenCapture{},
 		NativeHost:    host,
 		Window:        window,
@@ -248,6 +250,10 @@ func run() error {
 			if err == nil {
 				err = native.EnsureExcluded(hwnd)
 			}
+			if err == nil {
+				// Solveo lives in the tray: no taskbar button and no Alt+Tab entry.
+				err = native.TrayOnly(hwnd)
+			}
 			stateMu.Lock()
 			readyErr = err
 			domReady = err == nil
@@ -276,6 +282,8 @@ func run() error {
 			shutdownCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)
 			defer stop()
 			_ = controller.Close(shutdownCtx)
+			// The process is ending even if Close refused: never leave app-server running.
+			_ = provider.Close(shutdownCtx)
 			_ = host.Close()
 		},
 	})

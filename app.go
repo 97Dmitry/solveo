@@ -59,3 +59,8 @@ func (a *App) Exit() error {
 }
 
 func (a *App) ListModels() ([]llm.Model, error) { return a.controller.ListModels() }
+
+func (a *App) StreamSnapshot() core.StreamSnapshot { return a.controller.StreamSnapshot() }
+func (a *App) Account() (llm.Account, error)       { return a.controller.Account() }
+func (a *App) StartLogin() (core.Snapshot, error)  { return a.controller.StartLogin() }
+func (a *App) CancelLogin() (core.Snapshot, error) { return a.controller.CancelLogin() }
