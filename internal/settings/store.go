@@ -5,14 +5,16 @@ import (
 	"errors"
 	"os"
 
+	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/storage"
 )
 
 type Config struct {
-	UIScale     int    `json:"ui_scale"`
-	Theme       string `json:"theme"`
-	FontSize    int    `json:"font_size"`
-	AlwaysOnTop bool   `json:"always_on_top"`
+	GlobalInstructions string `json:"global_instructions"`
+	UIScale            int    `json:"ui_scale"`
+	Theme              string `json:"theme"`
+	FontSize           int    `json:"font_size"`
+	AlwaysOnTop        bool   `json:"always_on_top"`
 }
 type Store struct{ Dir string }
 type storedSettings struct {
@@ -22,6 +24,9 @@ type storedSettings struct {
 
 func Open(dir string) *Store { return &Store{Dir: dir} }
 func Validate(c Config) error {
+	if !chat.ValidGlobalInstructions(c.GlobalInstructions) {
+		return errors.New("общие инструкции длиннее 16384 символов или содержат некорректный UTF-8")
+	}
 	if c.UIScale < 80 || c.UIScale > 150 {
 		return errors.New("масштаб интерфейса должен быть от 80 до 150%")
 	}

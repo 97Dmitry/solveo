@@ -581,6 +581,7 @@ export namespace llm {
 export namespace settings {
 	
 	export class Config {
+	    global_instructions: string;
 	    ui_scale: number;
 	    theme: string;
 	    font_size: number;
@@ -592,6 +593,7 @@ export namespace settings {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.global_instructions = source["global_instructions"];
 	        this.ui_scale = source["ui_scale"];
 	        this.theme = source["theme"];
 	        this.font_size = source["font_size"];

@@ -14,6 +14,9 @@ func validStatus(status string) bool {
 	return false
 }
 func validateDocument(c chat.Chat) error {
+	if !chat.ValidGlobalInstructions(c.GlobalInstructions) {
+		return errors.New("в архиве некорректные общие инструкции")
+	}
 	if !idPattern.MatchString(c.ID) || c.ProviderID == "" || c.ConfigRevision == 0 {
 		return errors.New("повреждены метаданные чата")
 	}

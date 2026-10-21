@@ -322,6 +322,7 @@ func TestDiscardUnsavedKeepsUnarchivedScreenshot(t *testing.T) {
 }
 func TestDiscardUnsavedPersistsReplacementChat(t *testing.T) {
 	c, _, store := setup(t)
+	setGlobal(t, c, "discard snapshot")
 	c.deps.Capturer = fakeCapture{}
 	chats := filepath.Join(store.Dir, "chats")
 	if err := os.Rename(chats, chats+"-old"); err != nil {
@@ -348,8 +349,8 @@ func TestDiscardUnsavedPersistsReplacementChat(t *testing.T) {
 	if len(next.History) == 0 || next.History[0].ID != next.ActiveChatID || len(next.Queue) != 1 {
 		t.Fatalf("replacement chat is not in history: %+v", next.History)
 	}
-	if _, e := store.Load(next.ActiveChatID); e != nil {
-		t.Fatal(e)
+	if doc, e := store.Load(next.ActiveChatID); e != nil || doc.GlobalInstructions != "discard snapshot" {
+		t.Fatalf("discard snapshot: %+v %v", doc, e)
 	}
 }
 func TestFirstQuestionBecomesTitle(t *testing.T) {

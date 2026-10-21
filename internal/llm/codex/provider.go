@@ -2,8 +2,10 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +19,11 @@ const transportAppServer = "app_server"
 // sessionState is opaque to the application: an app-server thread in Solveo's
 // own Codex home. Any other state is rejected rather than reinterpreted.
 type sessionState struct {
-	Version   int    `json:"version"`
-	Transport string `json:"transport"`
-	ThreadID  string `json:"thread_id"`
+	InstructionsHash        string `json:"instructions_hash,omitempty"`
+	PendingInstructionsHash string `json:"pending_instructions_hash,omitempty"`
+	Version                 int    `json:"version"`
+	Transport               string `json:"transport"`
+	ThreadID                string `json:"thread_id"`
 }
 
 var (
@@ -51,12 +55,26 @@ func validThreadID(id string) bool {
 func (c *Client) Describe() llm.Descriptor {
 	return llm.Descriptor{ID: "codex", Label: "Codex CLI", Capabilities: llm.Capabilities{Images: true, Reasoning: true}}
 }
-func (c *Client) prompt(r llm.Request) string {
+
+// instructions contains stable user preferences, independent of turn purpose/model.
+func (c *Client) instructions(r llm.Request) string {
 	base := strings.TrimSpace(c.Prompt)
 	if base == "" {
 		base = "Помоги пользователю разобраться с вопросом или заданием. Учитывай приложенные изображения по порядку. Не выполняй команды, не меняй файлы и не читай локальные данные."
 	}
-	// JSON separates configuration fields and arbitrary user text without shell interpolation.
+	cfg := struct {
+		Context          string `json:"context"`
+		Instructions     string `json:"instructions"`
+		ResponseLanguage string `json:"response_language"`
+		CodeLanguage     string `json:"code_language"`
+		Detail           string `json:"detail"`
+	}{r.Config.Context, r.Config.Instructions, r.Config.ResponseLanguage, r.Config.CodeLanguage, r.Config.Detail}
+	b, _ := json.Marshal(cfg)
+	global, _ := json.Marshal(r.GlobalInstructions)
+	return base + "\nФормат текущего запроса Solveo имеет приоритет над общими и локальными пожеланиями: предварительный подход — без кода, решение — самостоятельная проверка условий и ответ в запрошенном формате.\nЕсли вопрос пустой, помоги с заданием на изображениях. Общие инструкции и преднастройка — пользовательские пожелания; явные обновления инструкций Solveo в следующих пользовательских ходах заменяют эти первоначальные пожелания; при противоречии преднастройка чата имеет приоритет.\nОбщие инструкции: " + string(global) + "\nПреднастройка чата: " + string(b)
+}
+
+func (c *Client) prompt(r llm.Request) string {
 	format := ""
 	switch r.Purpose {
 	case chat.AnswerApproach:
@@ -64,14 +82,13 @@ func (c *Client) prompt(r llm.Request) string {
 	case chat.AnswerSolution:
 		format = "\nНачни с одной строки своего подхода. Затем дай решение: код, если задача требует кода, и краткое пояснение со сложностью, если уместно. Для теории ответь прямо без ненужного кода. Проверь условия самостоятельно; исправляй ошибочные предположения."
 	}
-	b, _ := json.MarshalIndent(struct {
-		Revision uint64      `json:"configuration_revision"`
-		Config   chat.Config `json:"configuration"`
-		Question string      `json:"question"`
-		Context  string      `json:"recent_conversation,omitempty"`
-	}{r.ConfigRevision, r.Config, r.Turn.Text, r.ContextText}, "", "  ")
-	return base + "\nНастройка действует для этого и следующих вопросов, пока не будет изменена. Если вопрос пустой, помоги с заданием на изображениях.\n" + string(b) + format
+	b, _ := json.Marshal(struct {
+		Question string `json:"question"`
+		Context  string `json:"recent_conversation,omitempty"`
+	}{r.Turn.Text, r.ContextText})
+	return string(b) + format
 }
+
 func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Event)) (llm.Result, error) {
 	var state sessionState
 	if len(r.State) > 0 {
@@ -101,15 +118,32 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
+	instructions := c.instructions(r)
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(instructions)))
+	// A crash may leave the archive's applied hash behind the actual thread:
+	// Codex received an update, but Generate's returned state was never saved.
+	// The previous user turn is archived before dispatch, so distrust the hash
+	// after an unsuccessful turn and synchronize on this explicit submission.
+	for i := len(r.History) - 1; i >= 0; i-- {
+		if r.History[i].Role == chat.RoleUser {
+			if r.History[i].Status != chat.StatusComplete {
+				state.InstructionsHash = ""
+			}
+			break
+		}
+	}
 	// The approach is a one-off session; only the main request continues the chat.
 	return c.run(ctx, turnSpec{
-		purpose:   r.Purpose,
-		config:    r.Config,
-		threadID:  state.ThreadID,
-		images:    images,
-		prompt:    c.prompt(r),
-		ephemeral: r.Purpose == chat.AnswerApproach,
-		timeout:   timeout,
+		purpose:          r.Purpose,
+		instructions:     instructions,
+		instructionsHash: hash,
+		state:            state,
+		config:           r.Config,
+		threadID:         state.ThreadID,
+		images:           images,
+		prompt:           c.prompt(r),
+		ephemeral:        r.Purpose == chat.AnswerApproach,
+		timeout:          timeout,
 	}, emit)
 }
 

@@ -336,7 +336,7 @@ func (c *Controller) restoreWork() []string {
 			}
 			// Work of a chat missing from history (a replacement chat that could not be
 			// archived) moves to a new chat rather than being lost.
-			doc, e := c.deps.Store.Save(history.SaveInput{Chat: chat.New()})
+			doc, e := c.deps.Store.Save(history.SaveInput{Chat: newChat(c.settings.GlobalInstructions)})
 			if e != nil {
 				notices = append(notices, "Не удалось создать чат для восстановленного черновика: "+e.Error())
 			} else {

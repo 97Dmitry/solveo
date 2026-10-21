@@ -6,7 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"time"
+	"unicode/utf8"
 )
+
+// MaxGlobalInstructions is measured in Unicode code points, including newlines.
+const MaxGlobalInstructions = 16384
+
+func ValidGlobalInstructions(text string) bool {
+	return utf8.ValidString(text) && utf8.RuneCountInString(text) <= MaxGlobalInstructions
+}
 
 // DefaultTitle marks a chat whose title is still generated from its first question.
 const DefaultTitle = "Новый чат"
@@ -80,17 +88,18 @@ type Attachment struct {
 	Path string `json:"path"`
 }
 type Chat struct {
-	Version        int             `json:"version"`
-	ID             string          `json:"id"`
-	ProviderID     string          `json:"provider_id"`
-	Title          string          `json:"title"`
-	ProviderState  json.RawMessage `json:"provider_state,omitempty"`
-	Config         Config          `json:"config"`
-	ConfigRevision uint64          `json:"config_revision"`
-	Messages       []Message       `json:"messages"`
-	Attachments    []Attachment    `json:"attachments"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	GlobalInstructions string          `json:"global_instructions"`
+	Version            int             `json:"version"`
+	ID                 string          `json:"id"`
+	ProviderID         string          `json:"provider_id"`
+	Title              string          `json:"title"`
+	ProviderState      json.RawMessage `json:"provider_state,omitempty"`
+	Config             Config          `json:"config"`
+	ConfigRevision     uint64          `json:"config_revision"`
+	Messages           []Message       `json:"messages"`
+	Attachments        []Attachment    `json:"attachments"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // Now is the application clock. All persisted and displayed times are UTC.

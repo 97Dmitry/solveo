@@ -7,3 +7,5 @@
 - `turn/start` on a thread with an active turn adds input to that turn. Therefore `turn/start` always waits for its turn ID (cancellation becomes an interrupt), and an unanswered `turn/start` or unconfirmed interrupt kills the connection: neighbouring turns become unknown instead of a stale turn absorbing the next question.
 - Server requests (approvals) are refused: Solveo runs read-only with approval `never`.
 - Tests use the scripted fake in `appservertest` by re-executing the test binary (works on Windows). Run `go test -race ./internal/llm/codex/...`.
+
+- The fake persists developerInstructions per thread and explicit user-turn preference updates across process restarts; `[show-instructions]` returns effective preferences without a real model. Keep resume from silently overriding loaded instructions.

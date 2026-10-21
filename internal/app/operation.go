@@ -217,12 +217,13 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	attemptID := turn.Attempts[len(turn.Attempts)-1].ID
 	if e == nil {
 		req := llm.Request{
-			History:        append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...),
-			Turn:           turn,
-			Config:         *turn.RequestConfig,
-			ConfigRevision: turn.ConfigRevision,
-			State:          doc.ProviderState,
-			Images:         images,
+			GlobalInstructions: doc.GlobalInstructions,
+			History:            append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...),
+			Turn:               turn,
+			Config:             *turn.RequestConfig,
+			ConfigRevision:     turn.ConfigRevision,
+			State:              doc.ProviderState,
+			Images:             images,
 		}
 		result, e = c.deps.Provider.Generate(ctx, req, c.streamSink(opID, doc.ID, turn.ID, attemptID, blockMessage))
 	}
@@ -391,7 +392,7 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 		return Snapshot{}, ErrBusy
 	}
 	oldID := c.active.ID
-	doc := chat.New()
+	doc := newChat(c.settings.GlobalInstructions)
 	c.pending = nil
 	c.intent = nil
 	c.active = chat.Clone(doc)

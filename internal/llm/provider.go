@@ -22,6 +22,7 @@ type Descriptor struct {
 }
 type Image struct{ ID, Path string }
 type Request struct {
+	GlobalInstructions string
 	// Purpose is empty for ordinary chat, or an answer kind for parallel requests.
 	Purpose        string
 	ContextText    string

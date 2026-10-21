@@ -414,18 +414,23 @@ func threadParams(cwd string, cfg chat.Config) map[string]any {
 // turnSpec describes one request. An ephemeral one-off session neither
 // continues nor returns chat state.
 type turnSpec struct {
-	purpose   string
-	config    chat.Config
-	threadID  string
-	images    []string
-	prompt    string
-	ephemeral bool
-	timeout   time.Duration
+	instructions     string
+	instructionsHash string
+	state            sessionState
+	purpose          string
+	config           chat.Config
+	threadID         string
+	images           []string
+	prompt           string
+	ephemeral        bool
+	timeout          time.Duration
 }
 
 // run sends one request through the persistent connection.
 func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (llm.Result, error) {
 	timeout, threadID, ephemeral := spec.timeout, spec.threadID, spec.ephemeral
+	applied, pending := spec.state.InstructionsHash, spec.state.PendingInstructionsHash
+	newThread := threadID == ""
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	progress := func(s string) {
@@ -437,7 +442,7 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 		if threadID == "" || ephemeral {
 			return llm.Result{}
 		}
-		state, _ := json.Marshal(sessionState{Version: 2, Transport: transportAppServer, ThreadID: threadID})
+		state, _ := json.Marshal(sessionState{Version: 2, Transport: transportAppServer, ThreadID: threadID, InstructionsHash: applied, PendingInstructionsHash: pending})
 		return llm.Result{State: state}
 	}
 
@@ -490,6 +495,9 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 		c.app.markLoaded(conn, threadID)
 	default:
 		params["ephemeral"] = ephemeral
+		if spec.instructions != "" {
+			params["developerInstructions"] = spec.instructions
+		}
 		if err = conn.Call(ctx, "thread/start", params, &thread); err != nil {
 			return llm.Result{}, fmt.Errorf("не удалось начать сессию Codex: %w", err)
 		}
@@ -497,6 +505,9 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 			return llm.Result{}, errors.New("Codex вернул некорректный ID сессии")
 		}
 		threadID = thread.Thread.ID
+		// Codex defers model-visible initial context until the first turn.
+		// A thread/start reply alone is not durable instruction confirmation.
+		pending = spec.instructionsHash
 		if ephemeral {
 			// The one-off approach thread would otherwise stay loaded until exit.
 			defer unsubscribe(conn, threadID)
@@ -506,7 +517,13 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	}
 	threadReady := time.Since(threadStart)
 
-	input := []map[string]any{{"type": "text", "text": spec.prompt}}
+	prompt := spec.prompt
+	updating := !newThread && spec.instructionsHash != "" && (applied != spec.instructionsHash || pending != "")
+	if updating {
+		prompt = "Обновление инструкций Solveo. Следующие пожелания заменяют прежнюю преднастройку и действуют для этого и следующих вопросов.\n" + spec.instructions + "\nКонец обновления инструкций.\n" + prompt
+		pending = spec.instructionsHash
+	}
+	input := []map[string]any{{"type": "text", "text": prompt}}
 	for _, p := range spec.images {
 		input = append(input, map[string]any{"type": "localImage", "path": p})
 	}
@@ -523,6 +540,9 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 		}
 	})
 	progress(timingLine(spec.purpose, info, accountReady, threadReady, result.Timing))
+	if (newThread || updating) && err == nil && result.Status == appserver.StatusCompleted && strings.TrimSpace(result.Text) != "" {
+		applied, pending = spec.instructionsHash, ""
+	}
 	state := keep()
 	switch {
 	case errors.Is(err, llm.ErrOutcomeUnknown):

@@ -93,7 +93,7 @@ func New(d Dependencies) (*Controller, error) {
 	}
 	c.initPersisters()
 	c.err = joinNotices(c.restoreWork())
-	doc := chat.New()
+	doc := newChat(cfg.GlobalInstructions)
 	if len(c.summaries) > 0 {
 		doc, e = d.Store.Load(c.summaries[0].ID)
 	} else {
@@ -305,13 +305,14 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 	}
 	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindOpen, Phase: phaseSaving}}
 	c.intent = nil
+	globalInstructions := c.settings.GlobalInstructions
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
 	var doc chat.Chat
 	var e error
 	if id == "" {
-		doc, e = c.deps.Store.Save(history.SaveInput{Chat: chat.New()})
+		doc, e = c.deps.Store.Save(history.SaveInput{Chat: newChat(globalInstructions)})
 	} else {
 		doc, e = c.deps.Store.Load(id)
 	}
@@ -481,4 +482,11 @@ func (c *Controller) Close(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// newChat snapshots application settings without coupling the domain to settings.
+func newChat(instructions string) chat.Chat {
+	doc := chat.New()
+	doc.GlobalInstructions = instructions
+	return doc
 }
