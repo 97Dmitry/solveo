@@ -80,7 +80,8 @@ func TestTurnStreamsPreviewAndReturnsFinalText(t *testing.T) {
 	if len(seen.list) == 0 || !strings.HasPrefix("Ответ: вопрос", seen.list[0]) || seen.last() != "Ответ: вопрос" {
 		t.Fatalf("previews %q", seen.list)
 	}
-	if r.Timing.FirstText <= 0 || r.Timing.Completed < r.Timing.FirstText {
+	// Fast fake responses can share a clock tick with sending on Windows.
+	if r.Timing.Sent.IsZero() || r.Timing.FirstText < 0 || r.Timing.Completed < r.Timing.FirstText {
 		t.Fatalf("timing %+v", r.Timing)
 	}
 }
