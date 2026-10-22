@@ -13,6 +13,9 @@ export type AudioActions = {
   clear: () => void;
   send: (segmentIDs: string[]) => void;
   insert: (text: string) => void;
+  selectProvider: (id: string) => void;
+  setKey: (provider: string, key: string) => void;
+  deleteKey: (provider: string) => void;
 };
 type Check = AudioState["checks"][number];
 const sourceLabel = { system: "Собеседник", mic: "Микрофон" } as const;
@@ -37,15 +40,17 @@ export function AudioPanel({
 }) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const needsCheck = audio.available && audio.checks.length === 0 && audio.busy === "";
+  const [key, setKey] = useState("");
   const { refresh } = actions;
-  // Check once per opening; a later empty list means a check is already running.
-  const asked = useRef(false);
+  // Check once per opening and per provider; a later empty list means a check is already running.
+  const asked = useRef("");
+  const providerID = audio.provider.id;
   useEffect(() => {
-    if (needsCheck && !asked.current) {
-      asked.current = true;
+    if (needsCheck && asked.current !== providerID) {
+      asked.current = providerID;
       refresh();
     }
-  }, [needsCheck, refresh]);
+  }, [needsCheck, providerID, refresh]);
   if (!audio.available)
     return (
       <section className="audio-panel" aria-label="Распознавание речи">
@@ -58,6 +63,8 @@ export function AudioPanel({
   const idle = audio.busy === "" && !disabled;
   const allOk = audio.checks.length > 0 && audio.checks.every((c) => c.state === "ok");
   const ready = audio.model === "ready";
+  const provider = audio.provider;
+  const running = audio.busy !== "" || audio.listening || ready || audio.model === "starting";
   const toggle = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -66,6 +73,62 @@ export function AudioPanel({
   };
   return (
     <section className="audio-panel" aria-label="Распознавание речи">
+      <div className="audio-provider">
+        {audio.providers.length > 1 && (
+          <label>
+            Распознаватель
+            <select
+              value={provider.id}
+              disabled={running || disabled}
+              onChange={(e) => actions.selectProvider(e.target.value)}
+            >
+              {audio.providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <span className={provider.local ? "privacy local" : "privacy cloud"}>
+          {provider.local
+            ? "Локально: звук не покидает компьютер"
+            : `Облако: звук отправляется в ${provider.label}`}
+        </span>
+      </div>
+      {provider.needs_key && !ready && (
+        <form
+          className="audio-key"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (key.trim() === "") return;
+            actions.setKey(provider.id, key);
+            setKey("");
+          }}
+        >
+          <label>
+            {provider.key_label}
+            <input
+              type="password"
+              autoComplete="off"
+              value={key}
+              placeholder={audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
+              onChange={(e) => setKey(e.target.value)}
+            />
+          </label>
+          <span className="key-state">
+            {audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
+          </span>
+          <Button type="submit" disabled={key.trim() === "" || disabled}>
+            Сохранить ключ
+          </Button>
+          {audio.key_configured && (
+            <Button disabled={disabled} onClick={() => actions.deleteKey(provider.id)}>
+              Удалить ключ
+            </Button>
+          )}
+        </form>
+      )}
       {!ready && (
         <ul className="audio-checks">
           {audio.checks.map((c) => (
@@ -78,11 +141,15 @@ export function AudioPanel({
         </ul>
       )}
       <div className="audio-controls">
-        {audio.busy === "" && !allOk && audio.checks.length > 0 && !ready && (
-          <Button className="primary" disabled={!idle} onClick={actions.prepare}>
-            Подготовить
-          </Button>
-        )}
+        {audio.busy === "" &&
+          provider.preparable &&
+          !allOk &&
+          audio.checks.length > 0 &&
+          !ready && (
+            <Button className="primary" disabled={!idle} onClick={actions.prepare}>
+              Подготовить
+            </Button>
+          )}
         {audio.busy === "" && !ready && audio.checks.length > 0 && (
           <Button disabled={!idle} onClick={actions.refresh}>
             Проверить снова
@@ -90,7 +157,7 @@ export function AudioPanel({
         )}
         {audio.busy === "" && allOk && (audio.model === "stopped" || audio.model === "failed") && (
           <Button className="primary" disabled={!idle} onClick={actions.startModel}>
-            Запустить модель
+            {provider.start_label}
           </Button>
         )}
         {audio.busy === "" && ready && !audio.listening && (
@@ -100,7 +167,7 @@ export function AudioPanel({
               Слушать
             </Button>
             <Button disabled={!idle} onClick={actions.stopModel}>
-              Выгрузить модель
+              {provider.stop_label}
             </Button>
           </>
         )}

@@ -40,7 +40,9 @@ type Description struct {
 	// Preparable providers install something before the first start (image, model).
 	Preparable bool `json:"preparable"`
 	// NeedsKey providers read an API key stored under KeyName(ID).
-	NeedsKey       bool   `json:"needs_key"`
+	NeedsKey bool `json:"needs_key"`
+	// KeyLabel names the key in the UI, e.g. "API-ключ xAI".
+	KeyLabel       string `json:"key_label"`
 	StartLabel     string `json:"start_label"`
 	StopLabel      string `json:"stop_label"`
 	MaxPhrases     int    `json:"max_phrases"`

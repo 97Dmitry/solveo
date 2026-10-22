@@ -125,6 +125,8 @@ type audioState struct {
 	revisions map[string]int
 	emitTimer *time.Timer
 	keys      map[string]bool // provider ID → key stored
+	// providerID is the selected provider (settings.Audio.Provider), mirrored here so views never take c.mu.
+	providerID string
 }
 
 func (a *audioState) init() {
@@ -231,12 +233,54 @@ func (c *Controller) DeleteSTTKey(providerID string) error {
 	return nil
 }
 
-// audioProvider is the provider used for the next check, preparation or start.
+// audioProvider is the provider used for the next check, preparation or start: the selected one, or the
+// first when the stored choice is empty or no longer exists. Callers may hold audio.mu.
 func (c *Controller) audioProvider() stt.Provider {
 	if len(c.deps.Audio.Providers) == 0 {
 		return nil
 	}
+	if p := c.findProvider(c.audio.providerID); p != nil {
+		return p
+	}
 	return c.deps.Audio.Providers[0]
+}
+
+func (c *Controller) findProvider(id string) stt.Provider {
+	for _, p := range c.deps.Audio.Providers {
+		if p.Describe().ID == id {
+			return p
+		}
+	}
+	return nil
+}
+
+// SetAudioProvider selects the recognizer; only while nothing is running.
+func (c *Controller) SetAudioProvider(id string) error {
+	if c.findProvider(id) == nil {
+		return errors.New("неизвестный распознаватель")
+	}
+	a := &c.audio
+	a.mu.Lock()
+	running := a.busy != "" || a.listening || a.model == audioModelReady || a.model == audioModelStarting
+	a.mu.Unlock()
+	if running {
+		return errors.New("Сначала остановите распознавание")
+	}
+	c.settingsMu.Lock()
+	c.mu.Lock()
+	cfg := c.settings
+	c.mu.Unlock()
+	cfg.Audio.Provider = id
+	_, err := c.saveSettingsLocked(cfg)
+	c.settingsMu.Unlock()
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.providerID, a.checks, a.err, a.model = id, nil, "", audioModelStopped
+	c.audioChangedLocked()
+	a.mu.Unlock()
+	return nil
 }
 
 // audioChangedLocked bumps the revision and schedules one coalesced solveo:audio event.

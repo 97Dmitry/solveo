@@ -114,3 +114,4 @@ func (a *App) SubmitTranscript(in core.SubmitTranscriptInput) (string, error) {
 }
 func (a *App) SetSTTKey(provider, key string) error { return a.controller.SetSTTKey(provider, key) }
 func (a *App) DeleteSTTKey(provider string) error   { return a.controller.DeleteSTTKey(provider) }
+func (a *App) SetAudioProvider(id string) error     { return a.controller.SetAudioProvider(id) }

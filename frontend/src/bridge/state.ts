@@ -145,6 +145,7 @@ export const hotkeysSchema = z.object({
 });
 // Go normalizes and limits the dictionary; the renderer checks only the shape.
 export const audioSettingsSchema = z.object({
+  provider: z.string().max(64),
   context_phrases: z.array(z.string().min(1).max(512)).max(256),
 } satisfies Shape<settings.Audio>);
 export const settingsSchema = z.object({
@@ -289,6 +290,7 @@ const audioProviderSchema = z.object({
   local: z.boolean(),
   preparable: z.boolean(),
   needs_key: z.boolean(),
+  key_label: z.string().max(128),
   start_label: z.string().max(128),
   stop_label: z.string().max(128),
   max_phrases: z.number().int().min(0),
@@ -338,6 +340,7 @@ export const emptyAudio: AudioState = {
     local: true,
     preparable: false,
     needs_key: false,
+    key_label: "",
     start_label: "",
     stop_label: "",
     max_phrases: 0,

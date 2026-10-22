@@ -16,6 +16,7 @@ export type ConnectionActions = {
   onCancelLogin: () => void;
   onOpenLink: (url: string) => void;
 };
+export type DictionaryLimits = { label: string; phrases: number; runes: number };
 export type HotkeyBridge = {
   loadDefaults: () => Promise<Hotkeys>;
   suspend: (on: boolean) => Promise<void>;
@@ -31,7 +32,9 @@ export function AppSettings({
   onRetrySave,
   onDiscard,
   onExit,
+  dictionaryLimits,
 }: {
+  dictionaryLimits?: DictionaryLimits;
   snapshot: Snapshot;
   busy?: boolean;
   hotkeyActions: HotkeyBridge;
@@ -47,7 +50,11 @@ export function AppSettings({
   return (
     <div className="settings-form">
       <GlobalInstructions settings={snapshot.settings} onSettings={onSettings} />
-      <RecognitionDictionary settings={snapshot.settings} onSettings={onSettings} />
+      <RecognitionDictionary
+        settings={snapshot.settings}
+        onSettings={onSettings}
+        {...(dictionaryLimits ? { limits: dictionaryLimits } : {})}
+      />
       <label>
         Тема
         <select
@@ -272,9 +279,11 @@ function GlobalInstructions({
 function RecognitionDictionary({
   settings,
   onSettings,
+  limits,
 }: {
   settings: Config;
   onSettings: (config: Config) => void;
+  limits?: DictionaryLimits;
 }) {
   const saved = settings.audio.context_phrases.join("\n");
   const [draft, setDraft] = useState({ base: saved, text: saved });
@@ -300,10 +309,17 @@ function RecognitionDictionary({
         По одному термину на строку: названия технологий, библиотек и аббревиатуры, которые нужно
         писать точно. Применяется при следующем запуске прослушивания.
       </p>
+      {limits && limits.phrases > 0 && (
+        <p className="form-intro">
+          {limits.label}: до {limits.phrases} терминов по {limits.runes} символов
+        </p>
+      )}
       {tooMany && <p role="alert">Не более 256 терминов</p>}
       <Button
         disabled={tooMany || phrases.join("\n") === saved}
-        onClick={() => onSettings({ ...settings, audio: { context_phrases: phrases } })}
+        onClick={() =>
+          onSettings({ ...settings, audio: { ...settings.audio, context_phrases: phrases } })
+        }
       >
         Сохранить словарь
       </Button>

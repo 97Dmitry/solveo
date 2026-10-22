@@ -104,6 +104,7 @@ func New(d Dependencies) (*Controller, error) {
 		checkpoints: map[streamKey]workstate.Block{},
 	}
 	c.audio.init()
+	c.audio.providerID = cfg.Audio.Provider
 	c.loadAudioKeys()
 	c.loadProfiles()
 	c.initPersisters()
@@ -387,6 +388,15 @@ func (c *Controller) UpdateSettings(cfg settings.Config) (Snapshot, error) {
 	return c.updateSettingsLocked(cfg)
 }
 func (c *Controller) updateSettingsLocked(cfg settings.Config) (Snapshot, error) {
+	// The recognizer changes only through SetAudioProvider, which checks that nothing runs.
+	c.mu.Lock()
+	cfg.Audio.Provider = c.settings.Audio.Provider
+	c.mu.Unlock()
+	return c.saveSettingsLocked(cfg)
+}
+
+// saveSettingsLocked validates, applies and persists settings; settingsMu is held.
+func (c *Controller) saveSettingsLocked(cfg settings.Config) (Snapshot, error) {
 	cfg, e := settings.Normalize(cfg)
 	if e != nil {
 		return Snapshot{}, e

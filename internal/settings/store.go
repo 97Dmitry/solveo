@@ -27,6 +27,8 @@ type Config struct {
 
 // Audio holds speech recognition preferences; ContextPhrases is the term dictionary sent at listening start.
 type Audio struct {
+	// Provider is the selected recognizer ID; "" or an unknown ID means the application's default.
+	Provider       string   `json:"provider"`
 	ContextPhrases []string `json:"context_phrases"`
 }
 
@@ -38,6 +40,9 @@ const (
 )
 
 func validateAudio(a Audio) error {
+	if len(a.Provider) > 64 || strings.Trim(a.Provider, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
+		return errors.New("некорректный идентификатор распознавателя")
+	}
 	if len(a.ContextPhrases) > MaxContextPhrases {
 		return fmt.Errorf("в словаре распознавания больше %d терминов", MaxContextPhrases)
 	}
@@ -67,7 +72,7 @@ func normalizeAudio(a Audio) Audio {
 			out = append(out, p)
 		}
 	}
-	return Audio{ContextPhrases: out}
+	return Audio{Provider: strings.TrimSpace(a.Provider), ContextPhrases: out}
 }
 
 type Store struct{ Dir string }

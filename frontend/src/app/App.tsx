@@ -47,6 +47,9 @@ const audioActions: AudioActions = {
   clear: () => void actions.clearTranscript(),
   send: (ids) => void client.submitTranscript(ids),
   insert: () => {},
+  selectProvider: (id) => void actions.selectAudioProvider(id),
+  setKey: (provider, key) => void actions.setSTTKey(provider, key),
+  deleteKey: (provider) => void actions.deleteSTTKey(provider),
 };
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getState);
@@ -455,6 +458,11 @@ export default function App() {
             <AppSettings
               busy={busy}
               hotkeyActions={{ loadDefaults: defaultHotkeys, suspend: suspendHotkeys }}
+              dictionaryLimits={{
+                label: state.audio.provider.label,
+                phrases: state.audio.provider.max_phrases,
+                runes: state.audio.provider.max_phrase_runes,
+              }}
               connection={{
                 loadAccount,
                 onLogin: () => {

@@ -38,7 +38,7 @@ func New(keys func() (string, bool, error)) *Provider { return &Provider{keys: k
 
 func (p *Provider) Describe() stt.Description {
 	return stt.Description{
-		ID: "grok", Label: "Grok STT (облако xAI)", Local: false, Preparable: false, NeedsKey: true,
+		ID: "grok", Label: "Grok STT (облако xAI)", Local: false, Preparable: false, NeedsKey: true, KeyLabel: "API-ключ xAI",
 		StartLabel: "Подключить", StopLabel: "Отключить", MaxPhrases: maxKeyTerms, MaxPhraseRunes: maxTermRunes,
 	}
 }

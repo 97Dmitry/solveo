@@ -146,6 +146,10 @@ export function SetAlwaysOnTop(arg1) {
   return window['go']['main']['App']['SetAlwaysOnTop'](arg1);
 }
 
+export function SetAudioProvider(arg1) {
+  return window['go']['main']['App']['SetAudioProvider'](arg1);
+}
+
 export function SetChatPinned(arg1, arg2) {
   return window['go']['main']['App']['SetChatPinned'](arg1, arg2);
 }

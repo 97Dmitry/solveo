@@ -8,6 +8,7 @@ export function audioFixture(): AudioState {
       local: true,
       preparable: true,
       needs_key: false,
+      key_label: "",
       start_label: "Запустить модель",
       stop_label: "Выгрузить модель",
       max_phrases: 256,
@@ -78,7 +79,7 @@ export function snapshotFixture(): Snapshot {
         submit: "Ctrl+Alt+Enter",
         "quick-full": "Ctrl+Alt+F",
       },
-      audio: { context_phrases: [] },
+      audio: { provider: "", context_phrases: [] },
     },
     provider: {
       id: "codex",

@@ -77,6 +77,8 @@ export function SearchHistory(arg1:string):Promise<Array<app.SearchHit>>;
 
 export function SetAlwaysOnTop(arg1:boolean):Promise<app.Snapshot>;
 
+export function SetAudioProvider(arg1:string):Promise<void>;
+
 export function SetChatPinned(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetDraft(arg1:app.DraftInput):Promise<void>;

@@ -146,15 +146,17 @@ it("saves the recognition dictionary as trimmed phrases, one per line", async ()
       onRetrySave={vi.fn()}
       onDiscard={vi.fn()}
       onExit={vi.fn()}
+      dictionaryLimits={{ label: "Grok STT (облако xAI)", phrases: 100, runes: 50 }}
     />,
   );
+  expect(screen.getByText(/Grok STT \(облако xAI\): до 100 терминов по 50 символов/)).toBeTruthy();
   const field = screen.getByLabelText<HTMLTextAreaElement>("Словарь терминов для распознавания");
   expect(field.value).toBe("NestJS");
   await userEvent.type(field, "{Enter}  JWT  {Enter}{Enter}PostgreSQL");
   await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
   expect(save).toHaveBeenCalledWith({
     ...snapshot.settings,
-    audio: { context_phrases: ["NestJS", "JWT", "PostgreSQL"] },
+    audio: { provider: "", context_phrases: ["NestJS", "JWT", "PostgreSQL"] },
   });
   expect(screen.getByText(/Применяется при следующем запуске прослушивания/)).toBeTruthy();
 });

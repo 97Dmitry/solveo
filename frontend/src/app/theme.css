@@ -1428,3 +1428,36 @@ input[type="range"] {
 .header-actions .audio-toggle {
   position: relative;
 }
+.audio-provider,
+.audio-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.audio-provider label,
+.audio-key label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.audio-provider select,
+.audio-key input {
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+.audio-key input {
+  width: 16em;
+  max-width: 100%;
+}
+.privacy.cloud {
+  color: var(--danger);
+}
+.privacy.local,
+.key-state {
+  color: var(--muted);
+}

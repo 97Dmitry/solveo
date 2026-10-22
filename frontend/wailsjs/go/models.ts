@@ -904,6 +904,7 @@ export namespace llm {
 export namespace settings {
 	
 	export class Audio {
+	    provider: string;
 	    context_phrases: string[];
 	
 	    static createFrom(source: any = {}) {
@@ -912,6 +913,7 @@ export namespace settings {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
 	        this.context_phrases = source["context_phrases"];
 	    }
 	}
@@ -986,6 +988,7 @@ export namespace stt {
 	    local: boolean;
 	    preparable: boolean;
 	    needs_key: boolean;
+	    key_label: string;
 	    start_label: string;
 	    stop_label: string;
 	    max_phrases: number;
@@ -1002,6 +1005,7 @@ export namespace stt {
 	        this.local = source["local"];
 	        this.preparable = source["preparable"];
 	        this.needs_key = source["needs_key"];
+	        this.key_label = source["key_label"];
 	        this.start_label = source["start_label"];
 	        this.stop_label = source["stop_label"];
 	        this.max_phrases = source["max_phrases"];

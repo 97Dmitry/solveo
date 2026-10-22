@@ -17,6 +17,9 @@ function actions(): AudioActions {
     clear: vi.fn(),
     send: vi.fn(),
     insert: vi.fn(),
+    selectProvider: vi.fn(),
+    setKey: vi.fn(),
+    deleteKey: vi.fn(),
   };
 }
 const ok = (id: string) => ({
@@ -146,4 +149,60 @@ it("disables sending while the chat cannot submit", async () => {
 it("explains when recognition is unavailable", () => {
   renderPanel(audio({ available: false }));
   expect(screen.getByText(/Распознавание речи недоступно/)).toBeTruthy();
+});
+
+const grok = {
+  id: "grok",
+  label: "Grok STT (облако xAI)",
+  local: false,
+  preparable: false,
+  needs_key: true,
+  key_label: "API-ключ xAI",
+  start_label: "Подключить",
+  stop_label: "Отключить",
+  max_phrases: 100,
+  max_phrase_runes: 50,
+};
+const providers = [
+  { id: "qwen", label: "Qwen3-ASR (локально)", local: true },
+  { id: "grok", label: "Grok STT (облако xAI)", local: false },
+];
+
+it("switches the provider only while recognition is stopped", async () => {
+  const a = renderPanel(audio({ providers }));
+  await userEvent.selectOptions(screen.getByLabelText("Распознаватель"), "grok");
+  expect(a.selectProvider).toHaveBeenCalledWith("grok");
+  expect(screen.getByText(/Локально: звук не покидает компьютер/)).toBeTruthy();
+  cleanup();
+  renderPanel(audio({ providers, model: "ready", listening: true }));
+  expect(screen.getByLabelText("Распознаватель").hasAttribute("disabled")).toBe(true);
+});
+
+it("marks a cloud provider and takes button wording from it", () => {
+  renderPanel(
+    audio({
+      provider: grok,
+      providers,
+      key_configured: true,
+      checks: [{ id: "key", label: "Ключ xAI", state: "ok", message: "Ключ задан" }],
+    }),
+  );
+  expect(screen.getByText(/Облако: звук отправляется в Grok STT/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Подключить" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Подготовить" })).toBeNull();
+});
+
+it("stores the key without ever showing the saved one", async () => {
+  const a = renderPanel(audio({ provider: grok, providers, key_configured: true }));
+  expect(screen.getByText("Ключ сохранён")).toBeTruthy();
+  const field = screen.getByLabelText<HTMLInputElement>("API-ключ xAI");
+  expect(field.value).toBe("");
+  expect(field.type).toBe("password");
+  await userEvent.type(field, "xai-new-key");
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить ключ" }));
+  expect(a.setKey).toHaveBeenCalledWith("grok", "xai-new-key");
+  expect(field.value).toBe("");
+  await userEvent.click(screen.getByRole("button", { name: "Удалить ключ" }));
+  expect(a.deleteKey).toHaveBeenCalledWith("grok");
 });

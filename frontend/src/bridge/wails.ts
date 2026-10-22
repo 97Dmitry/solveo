@@ -84,6 +84,9 @@ export const actions = {
   startListening: () => client.run(api.StartListening),
   stopListening: () => client.run(api.StopListening),
   clearTranscript: () => client.run(api.ClearTranscript),
+  selectAudioProvider: (id: string) => client.run(() => api.SetAudioProvider(id)),
+  setSTTKey: (provider: string, key: string) => client.run(() => api.SetSTTKey(provider, key)),
+  deleteSTTKey: (provider: string) => client.run(() => api.DeleteSTTKey(provider)),
   startLogin: () => client.run(api.StartLogin, true),
   cancelLogin: () => client.run(api.CancelLogin, true),
   copy: async (text: string) => {
