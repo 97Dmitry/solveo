@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import App from "./App";
 
 const transport = vi.hoisted(() => ({
+  reuseImage: vi.fn(),
+  importImage: vi.fn(),
+  reorder: vi.fn(),
   listeners: new Map<string, (data: unknown) => void>(),
   submit: vi.fn<() => Promise<string>>(),
 }));
@@ -25,7 +28,13 @@ vi.mock("../bridge/wails", async () => {
         };
       },
     }),
-    actions: { copy: async () => true, openLink: () => {} },
+    actions: {
+      copy: async () => true,
+      openLink: () => {},
+      reuseImage: transport.reuseImage,
+      importImage: transport.importImage,
+      reorder: transport.reorder,
+    },
     loadAccount: async () => ({ signed_in: true, kind: "fake" }),
     loadModels: async () => [],
   };
@@ -123,4 +132,36 @@ it("opens interview profiles from an existing read-only chat", async () => {
     "disabled",
     true,
   );
+});
+
+it("connects composer and historical image actions to the active chat", async () => {
+  Element.prototype.scrollTo = vi.fn();
+  render(<App />);
+  await screen.findByRole("textbox", { name: "Вопрос" });
+  const fixture = snapshotFixture();
+  act(() =>
+    transport.listeners.get("solveo:state")?.({
+      ...fixture,
+      revision: 200,
+      messages: [
+        {
+          id: "old-question",
+          role: "user",
+          text: "previous",
+          status: "complete",
+          config_revision: 1,
+          attempts: [],
+          attachment_ids: ["old"],
+        },
+      ],
+      images: [{ id: "old", label: "Снимок 1", url: "/attachments/first/old" }],
+      queue: [{ id: "new", label: "new", url: "/attachments/first/new" }],
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Добавить к вопросу: Снимок 1" }));
+  expect(transport.reuseImage).toHaveBeenCalledWith("first", "old");
+  const file = new File(["bytes"], "picture.png", { type: "image/png" });
+  fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { files: [file] } });
+  expect(transport.importImage).toHaveBeenCalledWith("first", file);
+  expect(screen.getByText("К вопросу: 1 из 20 изображений")).toBeTruthy();
 });

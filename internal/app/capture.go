@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/97Dmitry/solveo/internal/attachments"
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/platform"
 )
@@ -147,6 +148,9 @@ func (c *Controller) finishSelection(e platform.Event) {
 			}
 		}
 		var p string
+		if err == nil {
+			err = attachments.ValidatePNGFile(tmp)
+		}
 		if err == nil {
 			p, err = c.deps.Work.Commit(id)
 		}

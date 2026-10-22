@@ -13,6 +13,8 @@ export function ChatView({
   stream,
   onConfigure,
   onOpenImage,
+  onReuseImage,
+  canReuseImage = false,
   onRetry,
   onCopy,
   onOpenLink,
@@ -27,6 +29,8 @@ export function ChatView({
   stream: StreamSnapshot;
   onConfigure: () => void;
   onOpenImage: (id: string) => void;
+  onReuseImage?: (id: string) => void;
+  canReuseImage?: boolean;
   onRetry: (id: string) => void;
   onCopy: (text: string) => Promise<boolean>;
   onOpenLink: (url: string) => void;
@@ -150,10 +154,11 @@ export function ChatView({
                   )}
                   {message.attachment_ids.length > 0 && (
                     <AttachmentStrip
-                      items={snapshot.images.filter((image) =>
-                        message.attachment_ids.includes(image.id),
+                      items={message.attachment_ids.flatMap((id) =>
+                        snapshot.images.filter((image) => image.id === id),
                       )}
-                      disabled={false}
+                      disabled={!canReuseImage}
+                      {...(onReuseImage ? { onReuse: onReuseImage } : {})}
                       onOpen={onOpenImage}
                     />
                   )}

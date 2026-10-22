@@ -42,6 +42,10 @@ export function Exit() {
   return window['go']['main']['App']['Exit']();
 }
 
+export function ImportAttachment(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ImportAttachment'](arg1, arg2, arg3);
+}
+
 export function ListModels() {
   return window['go']['main']['App']['ListModels']();
 }
@@ -78,12 +82,20 @@ export function RendererReady() {
   return window['go']['main']['App']['RendererReady']();
 }
 
+export function ReorderAttachments(arg1, arg2) {
+  return window['go']['main']['App']['ReorderAttachments'](arg1, arg2);
+}
+
 export function RequestSubmit() {
   return window['go']['main']['App']['RequestSubmit']();
 }
 
 export function RetrySave() {
   return window['go']['main']['App']['RetrySave']();
+}
+
+export function ReuseAttachment(arg1, arg2) {
+  return window['go']['main']['App']['ReuseAttachment'](arg1, arg2);
 }
 
 export function SaveChatConfig(arg1) {

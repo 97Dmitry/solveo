@@ -1,8 +1,11 @@
 import { useRef, type Ref } from "react";
-import { ArrowUp, Square } from "lucide-react";
-import { IconButton } from "../ui/Button";
+import { ArrowUp, Square, ImagePlus } from "lucide-react";
+import { Button, IconButton } from "../ui/Button";
 type Props = {
   textareaRef?: Ref<HTMLTextAreaElement>;
+  canAddImage?: boolean;
+  onAddImage?: (file: File) => void;
+  onImageError?: (message: string) => void;
   text: string;
   disabled: boolean;
   canSend: boolean;
@@ -14,6 +17,9 @@ type Props = {
 };
 export function Composer({
   textareaRef,
+  canAddImage = false,
+  onAddImage,
+  onImageError,
   text,
   disabled,
   canSend,
@@ -24,6 +30,7 @@ export function Composer({
   onComposition,
 }: Props) {
   const composing = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   return (
     <div className="composer">
       <textarea
@@ -34,6 +41,22 @@ export function Composer({
         disabled={disabled}
         placeholder="Задайте вопрос или добавьте снимок…"
         onChange={(e) => onChange(e.target.value)}
+        onPaste={(e) => {
+          const files = Array.from(e.clipboardData.files);
+          if (files.length === 0) return;
+          e.preventDefault();
+          if (!canAddImage || !onAddImage) {
+            onImageError?.(
+              "Сейчас нельзя добавить изображение: дождитесь завершения операции или освободите очередь",
+            );
+          } else if (files.length !== 1) {
+            onImageError?.("Добавляйте изображения по одному");
+          } else {
+            const file = files[0];
+            if (file?.type.startsWith("image/")) onAddImage(file);
+            else onImageError?.("Вставьте изображение PNG/JPEG или добавьте его из файла");
+          }
+        }}
         onCompositionStart={() => {
           composing.current = true;
           onComposition(true);
@@ -54,7 +77,32 @@ export function Composer({
           }
         }}
       />
+      {onAddImage && (
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+          aria-label="Файл изображения"
+          hidden
+          disabled={!canAddImage}
+          onChange={(e) => {
+            const file = e.currentTarget.files?.[0];
+            e.currentTarget.value = "";
+            if (file && canAddImage) onAddImage(file);
+          }}
+        />
+      )}
       <div className="composer-footer">
+        {onAddImage && (
+          <Button
+            disabled={!canAddImage}
+            onClick={() => fileInput.current?.click()}
+            title="PNG/JPEG до 32 МиБ; изображение также можно вставить через Ctrl+V"
+          >
+            <ImagePlus size={15} />
+            Из файла
+          </Button>
+        )}
         <span>
           Enter — отправить <span className="secondary-hint"> / Shift+Enter — новая строка</span>
         </span>

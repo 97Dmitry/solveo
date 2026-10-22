@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"image"
+	"image/png"
 	"os"
 	"testing"
 	"time"
@@ -14,9 +16,15 @@ import (
 
 type fakeCapture struct{}
 
-func (fakeCapture) SavePrimary(p string) error { return os.WriteFile(p, []byte("png"), 0600) }
+func (fakeCapture) SavePrimary(p string) error {
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		return err
+	}
+	return os.WriteFile(p, b.Bytes(), 0600)
+}
 func (fakeCapture) SaveRegion(p string, _ image.Rectangle) error {
-	return os.WriteFile(p, []byte("png"), 0600)
+	return (fakeCapture{}).SavePrimary(p)
 }
 
 type fakeHost struct {

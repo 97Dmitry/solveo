@@ -7,3 +7,5 @@
 - Run `go test -race ./internal/workstate ./internal/app` after changes.
 
 - Draft `reply_to_id`/`reply_to_kind` are optional additive v1 fields; preserve reference-only drafts even when text is empty. Validate identity/kind shape here; app checks target existence after restoration and clears confirmed unavailable targets with a notice. An archive read error preserves the reference for later recovery.
+
+- WriteImage receives validated PNG bytes and creates its own temporary file with O_EXCL through os.Root(work), then uses Commit. A failed exclusive open must never remove or follow somebody else's temporary file/link. Imported/reused images follow the same recovery and cleanup ownership as captures.

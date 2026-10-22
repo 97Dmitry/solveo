@@ -1085,3 +1085,43 @@ input[type="range"] {
   flex-wrap: wrap;
   justify-content: flex-start;
 }
+
+.queue-summary {
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.attachment.attachment-actions {
+  height: 82px;
+}
+.attachment-actions .thumbnail {
+  height: 52px;
+}
+.attachment-number {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--raised);
+  font-size: 11px;
+  pointer-events: none;
+}
+.attachment-tools {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 3px;
+}
+.attachment-tools .icon-button {
+  width: 27px;
+  height: 24px;
+  min-height: 24px;
+  padding: 2px;
+}
+.composer-footer {
+  flex-wrap: wrap;
+}
+.composer-footer > span {
+  flex: 1;
+}

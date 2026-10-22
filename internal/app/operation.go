@@ -67,6 +67,10 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 			c.mu.Unlock()
 			return "", errors.New("вопрос длиннее 1 МиБ")
 		}
+		if len(in.AttachmentIDs) > workstate.MaxQueue {
+			c.mu.Unlock()
+			return "", ErrQueueFull
+		}
 		wanted := map[string]bool{}
 		for _, id := range in.AttachmentIDs {
 			if wanted[id] {

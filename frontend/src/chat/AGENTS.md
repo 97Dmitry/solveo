@@ -9,3 +9,5 @@
 - Markdown forbids raw HTML and remote images. Run frontend checks/tests from the parent guide, including parallel.test.tsx.
 
 - FollowupActions prepares the editor for a selected complete ordinary answer or parallel block; commands do not submit automatically. AnswerReference displays a local target and supports scrolling/focus; no references to previews/recovered text. Reuse copies question text/reference only, without attaching historical PNGs or changing old messages. Keep the next draft editable while waiting/streaming/saving; save-pending recovery remains blocking.
+
+- Composer image paste consumes clipboard files only, preserving ordinary text paste; reject multiple files explicitly. File input resets after selection for same-file reuse. Queue numbering and earlier/later controls use the current confirmed order. Historical strips expose a distinct add-to-question action and preserve Message.attachment_ids order. Preview remains usable when mutation buttons are disabled.
