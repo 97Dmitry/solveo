@@ -47,6 +47,7 @@ export function AppSettings({
   return (
     <div className="settings-form">
       <GlobalInstructions settings={snapshot.settings} onSettings={onSettings} />
+      <RecognitionDictionary settings={snapshot.settings} onSettings={onSettings} />
       <label>
         Тема
         <select
@@ -261,6 +262,50 @@ function GlobalInstructions({
         }}
       >
         Сохранить общие инструкции
+      </Button>
+      <div className="form-divider" />
+    </>
+  );
+}
+
+// The dictionary is a plain list, one term per line; Go trims, deduplicates and limits it.
+function RecognitionDictionary({
+  settings,
+  onSettings,
+}: {
+  settings: Config;
+  onSettings: (config: Config) => void;
+}) {
+  const saved = settings.audio.context_phrases.join("\n");
+  const [draft, setDraft] = useState({ base: saved, text: saved });
+  if (draft.base !== saved)
+    setDraft({ base: saved, text: draft.text === draft.base ? saved : draft.text });
+  const phrases = draft.text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  const tooMany = phrases.length > 256;
+  return (
+    <>
+      <label>
+        Словарь терминов для распознавания
+        <textarea
+          rows={5}
+          value={draft.text}
+          aria-describedby="dictionary-help"
+          onChange={(event) => setDraft({ ...draft, text: event.target.value })}
+        />
+      </label>
+      <p id="dictionary-help" className="form-intro">
+        По одному термину на строку: названия технологий, библиотек и аббревиатуры, которые нужно
+        писать точно. Применяется при следующем запуске прослушивания.
+      </p>
+      {tooMany && <p role="alert">Не более 256 терминов</p>}
+      <Button
+        disabled={tooMany || phrases.join("\n") === saved}
+        onClick={() => onSettings({ ...settings, audio: { context_phrases: phrases } })}
+      >
+        Сохранить словарь
       </Button>
       <div className="form-divider" />
     </>

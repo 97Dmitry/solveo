@@ -130,3 +130,31 @@ it("keeps newer edits while a settings save completes", async () => {
   rerender(view({ ...snapshot, settings: { ...snapshot.settings, global_instructions: "A" } }));
   expect(screen.getByLabelText<HTMLTextAreaElement>("Общие инструкции").value).toBe("AB");
 });
+
+it("saves the recognition dictionary as trimmed phrases, one per line", async () => {
+  const snapshot = snapshotFixture();
+  snapshot.settings.audio.context_phrases = ["NestJS"];
+  const save = vi.fn();
+  render(
+    <AppSettings
+      snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
+      connection={connection()}
+      onSettings={save}
+      onCheck={vi.fn()}
+      onLog={vi.fn()}
+      onRetrySave={vi.fn()}
+      onDiscard={vi.fn()}
+      onExit={vi.fn()}
+    />,
+  );
+  const field = screen.getByLabelText<HTMLTextAreaElement>("Словарь терминов для распознавания");
+  expect(field.value).toBe("NestJS");
+  await userEvent.type(field, "{Enter}  JWT  {Enter}{Enter}PostgreSQL");
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
+  expect(save).toHaveBeenCalledWith({
+    ...snapshot.settings,
+    audio: { context_phrases: ["NestJS", "JWT", "PostgreSQL"] },
+  });
+  expect(screen.getByText(/Применяется при следующем запуске прослушивания/)).toBeTruthy();
+});

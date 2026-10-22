@@ -6,6 +6,7 @@ import {
   History,
   Image,
   Layers,
+  Mic,
   Pin,
   PinOff,
   Plus,
@@ -31,15 +32,37 @@ import { lastAnswerText, latestCode } from "../chat/code";
 import { ChatSettings } from "../settings/ChatSettings";
 import { AppSettings } from "../settings/AppSettings";
 import { HistoryDrawer } from "../history/HistoryDrawer";
+import { AudioPanel, type AudioActions } from "../audio/AudioPanel";
 import { Button, IconButton } from "../ui/Button";
 import { Drawer } from "../ui/Drawer";
 import "./theme.css";
 type Panel = "closed" | "configuration" | "settings" | "history" | "images";
+const audioActions: AudioActions = {
+  refresh: () => void actions.refreshAudio(),
+  prepare: () => void actions.prepareAudio(),
+  startModel: () => void actions.startAudioModel(),
+  stopModel: () => void actions.stopAudioModel(),
+  startListening: () => void actions.startListening(),
+  stopListening: () => void actions.stopListening(),
+  clear: () => void actions.clearTranscript(),
+  send: (ids) => void client.submitTranscript(ids),
+  insert: () => {},
+};
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getState);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [panel, setPanel] = useState<Panel>("closed");
   const [captureMenu, setCaptureMenu] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const panelActions = useCallback(
+    (): AudioActions => ({
+      ...audioActions,
+      insert: (text) => {
+        if (client.insertTranscript(text)) composerRef.current?.focus();
+      },
+    }),
+    [],
+  );
   const [notice, setNotice] = useState("");
   // 0 hides conversation search; every Ctrl+F increments it to refocus the field.
   const [chatSearch, setChatSearch] = useState(0);
@@ -196,6 +219,16 @@ export default function App() {
           >
             <Search size={17} />
           </IconButton>
+          <IconButton
+            label={
+              state.audio.listening ? "Распознавание речи (идёт запись)" : "Распознавание речи"
+            }
+            className={`audio-toggle ${audioOpen ? "selected" : ""} ${state.audio.listening ? "recording" : ""}`}
+            aria-expanded={audioOpen}
+            onClick={() => setAudioOpen((v) => !v)}
+          >
+            <Mic size={17} />
+          </IconButton>
           <IconButton label="История чатов" onClick={() => setPanel("history")}>
             <History size={18} />
           </IconButton>
@@ -273,6 +306,14 @@ export default function App() {
         onCopy={copy}
         onOpenLink={actions.openLink}
       />
+      {audioOpen && (
+        <AudioPanel
+          audio={state.audio}
+          disabled={busy}
+          canSend={!busy && s.controls.can_submit}
+          actions={panelActions()}
+        />
+      )}
       <section className="input-area">
         <div className="capture-toolbar">
           <div className="capture-group">

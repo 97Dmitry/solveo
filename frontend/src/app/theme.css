@@ -1299,3 +1299,132 @@ input[type="range"] {
   font-size: 12px;
   color: var(--danger);
 }
+.audio-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 45vh;
+  min-height: 0;
+  padding: 10px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 13px;
+  flex-shrink: 0;
+  overflow: auto;
+}
+.audio-checks,
+.audio-sources,
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.audio-checks .check {
+  display: grid;
+  grid-template-columns: auto 9em 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.audio-checks .check.ok {
+  color: var(--text);
+}
+.audio-checks .check.error {
+  color: var(--danger);
+}
+.audio-checks .check-message,
+.audio-note,
+.transcript-empty,
+.audio-sources {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.audio-controls,
+.transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.audio-controls .listening {
+  color: var(--danger);
+}
+.audio-progress {
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.audio-error {
+  margin: 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.audio-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.audio-sources .active {
+  color: var(--text);
+}
+.transcript-empty {
+  margin: 0;
+}
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 24vh;
+  min-height: 3em;
+  overflow-y: auto;
+}
+.segment {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  cursor: pointer;
+}
+.segment[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.segment.partial {
+  color: var(--muted);
+  cursor: default;
+  font-style: italic;
+}
+.segment.mic {
+  background: var(--raised);
+}
+.segment-meta {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.segment-text {
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.header-actions .audio-toggle.recording::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.header-actions .audio-toggle {
+  position: relative;
+}
