@@ -22,6 +22,8 @@ type Descriptor struct {
 }
 type Image struct{ ID, Path string }
 type Request struct {
+	// ChatID identifies the local conversation for optional background preparation.
+	ChatID             string
 	GlobalInstructions string
 	// Purpose is empty for ordinary chat, or an answer kind for parallel requests.
 	Purpose        string

@@ -1,0 +1,22 @@
+{"at":"2026-10-21T21:43:24.4961935Z","image_sha256":"066ccf5641207fc8d467cbca4f7936c74f99f44c344d5f37c1b576b8f1bbbbac","label":"baseline"}
+{"ms":2647,"stage":"protocol_ready"}
+{"answer":"46","completed_ms":3203,"first_ms":3060,"label":"immediate","run":1,"stage":"protocol_turn","status":"completed","thread_ms":65,"turn":0}
+{"answer":"Сумма элементов массива: 4 + 19 + 23 = 46.","completed_ms":1166,"first_ms":905,"label":"immediate","run":1,"stage":"protocol_turn","status":"completed","thread_ms":65,"turn":1}
+{"answer":"46","completed_ms":2083,"first_ms":1926,"label":"prepared","run":1,"stage":"protocol_turn","status":"completed","thread_ms":64,"turn":0}
+{"answer":"Сумма чисел массива: 4 + 19 + 23 = 46.","completed_ms":1405,"first_ms":1140,"label":"prepared","run":1,"stage":"protocol_turn","status":"completed","thread_ms":64,"turn":1}
+{"answer":"46","completed_ms":3777,"first_ms":3425,"label":"prepared","run":2,"stage":"protocol_turn","status":"completed","thread_ms":78,"turn":0}
+{"answer":"Сумма чисел массива равна 46: 4 + 19 + 23 = 46.","completed_ms":1676,"first_ms":1284,"label":"prepared","run":2,"stage":"protocol_turn","status":"completed","thread_ms":78,"turn":1}
+{"answer":"46","completed_ms":3795,"first_ms":3587,"label":"immediate","run":2,"stage":"protocol_turn","status":"completed","thread_ms":75,"turn":0}
+{"answer":"Сумма элементов массива равна 4 + 19 + 23 = 46.","completed_ms":1671,"first_ms":1399,"label":"immediate","run":2,"stage":"protocol_turn","status":"completed","thread_ms":75,"turn":1}
+{"answer":"46","completed_ms":3392,"first_ms":3216,"label":"immediate","run":3,"stage":"protocol_turn","status":"completed","thread_ms":72,"turn":0}
+{"answer":"Сумма чисел 4, 19 и 23 равна 46.","completed_ms":1375,"first_ms":1100,"label":"immediate","run":3,"stage":"protocol_turn","status":"completed","thread_ms":72,"turn":1}
+{"answer":"46","completed_ms":34688,"first_ms":34525,"label":"prepared","run":3,"stage":"protocol_turn","status":"completed","thread_ms":74,"turn":0}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1398,"first_ms":1148,"label":"prepared","run":3,"stage":"protocol_turn","status":"completed","thread_ms":74,"turn":1}
+{"answer":"46","completed_ms":2027,"first_ms":1886,"label":"prepared","run":4,"stage":"protocol_turn","status":"completed","thread_ms":61,"turn":0}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1276,"first_ms":968,"label":"prepared","run":4,"stage":"protocol_turn","status":"completed","thread_ms":61,"turn":1}
+{"answer":"46","completed_ms":2978,"first_ms":2812,"label":"immediate","run":4,"stage":"protocol_turn","status":"completed","thread_ms":67,"turn":0}
+{"answer":"Сумма чисел массива: 4 + 19 + 23 = 46.","completed_ms":1286,"first_ms":1022,"label":"immediate","run":4,"stage":"protocol_turn","status":"completed","thread_ms":67,"turn":1}
+{"answer":"46","completed_ms":3198,"first_ms":3009,"label":"immediate","run":5,"stage":"protocol_turn","status":"completed","thread_ms":62,"turn":0}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1501,"first_ms":1256,"label":"immediate","run":5,"stage":"protocol_turn","status":"completed","thread_ms":62,"turn":1}
+{"answer":"Сумма массива: 46.","completed_ms":2077,"first_ms":1870,"label":"prepared","run":5,"stage":"protocol_turn","status":"completed","thread_ms":65,"turn":0}
+{"answer":"Складываем числа массива: 4 + 19 + 23 = 46.","completed_ms":1378,"first_ms":1092,"label":"prepared","run":5,"stage":"protocol_turn","status":"completed","thread_ms":65,"turn":1}

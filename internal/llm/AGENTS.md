@@ -6,3 +6,5 @@
 - Generate may run concurrently for two independent Requests within one application operation. Adapters must isolate mutable subprocess configuration. Purpose is empty for ordinary chat, approach/solution for parallel outputs; ContextText supplies the standalone approach with bounded history. Only the main request receives and updates chat continuation state.
 
 - Request.GlobalInstructions is the immutable chat snapshot; Config is the frozen user-turn preconfiguration. Both main and standalone approach receive it. Instruction synchronization and its persistent state belong entirely to the adapter.
+
+- Optional ChatPreparer owns an empty-chat preparation until Generate consumes it or its context is canceled; cleanup finishes before it returns. ChatPreparation carries only local ChatID and immutable config/global-instruction snapshots, never a question. Request.ChatID is a local correlation key, not provider state. Preparation cannot generate answers or start model turns; provider-native generate=false transport warmup is allowed.

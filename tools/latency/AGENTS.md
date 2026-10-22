@@ -1,0 +1,10 @@
+# Opt-in Codex latency measurements
+
+- This command makes real provider requests only when explicitly run; never invoke it from tests, CI, make check or application startup. Automated tests use appserver/appservertest.
+- Run the Windows executable on a local Windows disk with an existing Solveo-owned home/keyring login and empty work directory. Never copy credentials, configuration or model metadata from the user's Codex profile.
+- Keep model, reasoning, GlobalInstructions, questions and PNG identical across variants. The bundled PNG is synthetic, including its image-only marker. JSONL contains answer text and timings, never credentials.
+- `-prepare-idle 2s` simulates typing while PrepareChat runs. Measure from Generate, excluding typing, and report preparation time separately. Zero disables thread preparation. The first process Prepare only readies/isolate/authenticates the process.
+- Preparation may use Codex's own generate=false network warmup, explicitly allowed by the user; it must never start an answer/model turn. Never add dummy prompts to warm a model.
+- Build: `GOOS=windows GOARCH=amd64 go build -o <local-windows-path>/latency.exe ./tools/latency`. Invoke `latency.exe -home <solveo-home> -work <empty-cwd> -image <task.png> -codex <codex.exe> -repeats 5 -label <variant> [-prepare-idle 2s]`.
+- `-alternate-preparation -prepare-idle 2s -repeats 10` compares five immediate and five prepared chats in one process. Both variants get the same typing interval. Use `-between-chats 15s` to reduce burst pressure; keep that delay outside the measured pair. Preserve 429/backoff outliers and report them; never silently exclude them or attribute upstream changes to the patch.
+- `-balanced-preparation -prepare-idle 2s -repeats 8 -between-chats 15s` uses ABBA order, changing which variant comes first within successive pairs. It is mutually exclusive with historical `-alternate-preparation`. JSONL header records timing/ordering flags, model and effort. Do not confuse ordering balance with proof that remote latency is constant.

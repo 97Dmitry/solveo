@@ -10,3 +10,4 @@
 - Timing tests must allow zero elapsed durations: Windows clock resolution can put sending and fast fake responses in the same tick. Check nonnegative durations and event ordering instead of strict positivity.
 
 - The fake persists developerInstructions per thread and explicit user-turn preference updates across process restarts; `[show-instructions]` returns effective preferences without a real model. Keep resume from silently overriding loaded instructions.
+- The fake's EnvThreadGate holds thread/start until a release file, EnvThreadError rejects its first start, and EnvUnsubscribeError rejects cleanup. Use these to exercise preparation races and resource retirement; none runs a real model.

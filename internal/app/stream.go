@@ -184,6 +184,8 @@ func (c *Controller) StartLogin() (Snapshot, error) {
 			c.login.State, c.login.Error = loginDone, ""
 			if e != nil {
 				c.login.State, c.login.Error = loginFailed, e.Error()
+			} else {
+				c.prepareChatLocked()
 			}
 			c.changedLocked()
 		}

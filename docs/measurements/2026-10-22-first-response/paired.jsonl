@@ -1,0 +1,42 @@
+{"at":"2026-10-21T21:53:57.0042152Z","image_sha256":"066ccf5641207fc8d467cbca4f7936c74f99f44c344d5f37c1b576b8f1bbbbac","label":"paired"}
+{"ms":2720,"stage":"process_isolation_account"}
+{"run":1,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=cold launched_ms=2100 ready_ms=2717 account_ms=2 thread_ms=56 prepared_thread=false first_text_ms=2761 first_readable_ms=- completed_ms=2947","turn":0}
+{"answer":"46","completed_ms":3007,"first_ms":2820,"label":"paired-immediate","run":1,"turn":0}
+{"run":1,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=false first_text_ms=1331 first_readable_ms=- completed_ms=1633","turn":1}
+{"answer":"Сумма элементов массива равна 4 + 19 + 23 = 46.","completed_ms":1636,"first_ms":1335,"label":"paired-immediate","run":1,"turn":1}
+{"run":2,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=true first_text_ms=2008 first_readable_ms=- completed_ms=2146","turn":0}
+{"answer":"46","completed_ms":2149,"first_ms":2012,"label":"paired-prepared","run":2,"turn":0}
+{"run":2,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=- prepared_thread=false first_text_ms=1952 first_readable_ms=- completed_ms=2113","turn":1}
+{"answer":"Сумма чисел 4, 19 и 23 равна 46.","completed_ms":2116,"first_ms":1954,"label":"paired-prepared","run":2,"turn":1}
+{"run":3,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=4 thread_ms=64 prepared_thread=false first_text_ms=3265 first_readable_ms=- completed_ms=3441","turn":0}
+{"answer":"46","completed_ms":3509,"first_ms":3333,"label":"paired-immediate","run":3,"turn":0}
+{"run":3,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=- prepared_thread=false first_text_ms=1226 first_readable_ms=- completed_ms=1472","turn":1}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1475,"first_ms":1229,"label":"paired-immediate","run":3,"turn":1}
+{"run":4,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=true first_text_ms=2445 first_readable_ms=- completed_ms=2613","turn":0}
+{"answer":"46","completed_ms":2617,"first_ms":2449,"label":"paired-prepared","run":4,"turn":0}
+{"run":4,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=- prepared_thread=false first_text_ms=1082 first_readable_ms=- completed_ms=1344","turn":1}
+{"answer":"Складываем числа массива: 4 + 19 + 23 = 46.","completed_ms":1347,"first_ms":1084,"label":"paired-prepared","run":4,"turn":1}
+{"run":5,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=66 prepared_thread=false first_text_ms=2911 first_readable_ms=- completed_ms=3081","turn":0}
+{"answer":"46","completed_ms":3150,"first_ms":2981,"label":"paired-immediate","run":5,"turn":0}
+{"run":5,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=false first_text_ms=986 first_readable_ms=- completed_ms=1253","turn":1}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1256,"first_ms":989,"label":"paired-immediate","run":5,"turn":1}
+{"run":6,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=true first_text_ms=36608 first_readable_ms=- completed_ms=36755","turn":0}
+{"answer":"46","completed_ms":36759,"first_ms":36612,"label":"paired-prepared","run":6,"turn":0}
+{"run":6,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=false first_text_ms=1542 first_readable_ms=- completed_ms=1828","turn":1}
+{"answer":"Я сложил числа массива: 4 + 19 + 23 = 46.","completed_ms":1832,"first_ms":1546,"label":"paired-prepared","run":6,"turn":1}
+{"run":7,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=60 prepared_thread=false first_text_ms=3075 first_readable_ms=- completed_ms=3246","turn":0}
+{"answer":"46","completed_ms":3310,"first_ms":3139,"label":"paired-immediate","run":7,"turn":0}
+{"run":7,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=- prepared_thread=false first_text_ms=964 first_readable_ms=- completed_ms=1225","turn":1}
+{"answer":"Сумма чисел 4, 19 и 23 равна 46.","completed_ms":1229,"first_ms":966,"label":"paired-immediate","run":7,"turn":1}
+{"run":8,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=true first_text_ms=2277 first_readable_ms=- completed_ms=2443","turn":0}
+{"answer":"46","completed_ms":2446,"first_ms":2280,"label":"paired-prepared","run":8,"turn":0}
+{"run":8,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=- prepared_thread=false first_text_ms=1084 first_readable_ms=- completed_ms=1345","turn":1}
+{"answer":"Сумма чисел 4, 19 и 23 равна 46.","completed_ms":1349,"first_ms":1088,"label":"paired-prepared","run":8,"turn":1}
+{"run":9,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=2 thread_ms=74 prepared_thread=false first_text_ms=2958 first_readable_ms=- completed_ms=3124","turn":0}
+{"answer":"46","completed_ms":3203,"first_ms":3037,"label":"paired-immediate","run":9,"turn":0}
+{"run":9,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=false first_text_ms=1004 first_readable_ms=- completed_ms=1274","turn":1}
+{"answer":"Сумма чисел массива равна 4 + 19 + 23 = 46.","completed_ms":1277,"first_ms":1007,"label":"paired-immediate","run":9,"turn":1}
+{"run":10,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=true first_text_ms=1937 first_readable_ms=- completed_ms=2118","turn":0}
+{"answer":"46","completed_ms":2121,"first_ms":1940,"label":"paired-prepared","run":10,"turn":0}
+{"run":10,"stage":"adapter_timing","timing":"Codex timing: purpose=chat process=warm account_ms=3 thread_ms=- prepared_thread=false first_text_ms=1369 first_readable_ms=- completed_ms=1643","turn":1}
+{"answer":"Сумма чисел массива: 4 + 19 + 23 = 46.","completed_ms":1646,"first_ms":1372,"label":"paired-prepared","run":10,"turn":1}

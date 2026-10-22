@@ -109,7 +109,7 @@ func (c *Controller) runParallel(ctx context.Context, opID string, doc chat.Chat
 		}
 		remaining++
 		isolated := chat.Clone(doc)
-		req := llm.Request{GlobalInstructions: isolated.GlobalInstructions, Purpose: answer.Kind, Turn: isolated.Messages[last], Config: cfg, ConfigRevision: turn.ConfigRevision, History: isolated.Messages[:last], State: isolated.ProviderState, Images: append([]llm.Image(nil), images...)}
+		req := llm.Request{ChatID: isolated.ID, GlobalInstructions: isolated.GlobalInstructions, Purpose: answer.Kind, Turn: isolated.Messages[last], Config: cfg, ConfigRevision: turn.ConfigRevision, History: isolated.Messages[:last], State: isolated.ProviderState, Images: append([]llm.Image(nil), images...)}
 		req.Turn.Answers = nil
 		req.Turn.RequestConfig = nil
 		reqCtx := ctx

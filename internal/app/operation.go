@@ -217,6 +217,7 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 	attemptID := turn.Attempts[len(turn.Attempts)-1].ID
 	if e == nil {
 		req := llm.Request{
+			ChatID:             doc.ID,
 			GlobalInstructions: doc.GlobalInstructions,
 			History:            append([]chat.Message(nil), doc.Messages[:len(doc.Messages)-1]...),
 			Turn:               turn,
@@ -421,6 +422,7 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 		c.err += ". Новый чат пока не сохранён в историю: " + e.Error()
 	}
 	c.op = operation{Operation: Operation{Phase: phaseIdle}}
+	c.prepareChatLocked()
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -470,6 +472,7 @@ func (c *Controller) CheckConnection() (string, error) {
 			c.err = ""
 		}
 		c.op = operation{Operation: Operation{Phase: phaseIdle, Message: out.Text}}
+		c.prepareChatLocked()
 		c.changedLocked()
 		c.mu.Unlock()
 		c.appendLog(fmt.Sprintf("Connection check: %s\n", out.Text))

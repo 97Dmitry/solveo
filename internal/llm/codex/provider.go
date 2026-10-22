@@ -132,8 +132,15 @@ func (c *Client) Generate(ctx context.Context, r llm.Request, emit func(llm.Even
 			break
 		}
 	}
+	// Prevent a late background worker from preparing an already submitted chat.
+	if r.Purpose != chat.AnswerApproach && r.ChatID != "" {
+		c.app.mu.Lock()
+		c.app.lastSubmittedChat = r.ChatID
+		c.app.mu.Unlock()
+	}
 	// The approach is a one-off session; only the main request continues the chat.
 	return c.run(ctx, turnSpec{
+		chatID:           r.ChatID,
 		purpose:          r.Purpose,
 		instructions:     instructions,
 		instructionsHash: hash,

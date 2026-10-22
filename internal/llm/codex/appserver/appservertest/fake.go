@@ -34,7 +34,12 @@ const (
 	// EnvModels names a JSON file with an array of model/list results, one per
 	// page; page N is served for cursor "N". A non-array value is returned as an
 	// RPC error object.
-	EnvModels = "SOLVEO_FAKE_MODELS"
+	EnvModels            = "SOLVEO_FAKE_MODELS"
+	EnvThreadGate        = "SOLVEO_FAKE_THREAD_GATE"
+	EnvThreadError       = "SOLVEO_FAKE_THREAD_ERROR"
+	EnvUnsubscribeError  = "SOLVEO_FAKE_UNSUBSCRIBE_ERROR"
+	EnvUnsubscribeGate   = "SOLVEO_FAKE_UNSUBSCRIBE_GATE"
+	EnvAccountAfterStart = "SOLVEO_FAKE_ACCOUNT_AFTER_START"
 )
 
 type server struct {
@@ -155,6 +160,29 @@ func (s *server) handle(id json.RawMessage, method string, params json.RawMessag
 	case "mcpServerStatus/list":
 		s.reply(id, map[string]any{"data": []any{}})
 	case "account/read":
+		if s.exists("thread-started") {
+			switch mode := os.Getenv(EnvAccountAfterStart); {
+			case mode == "error":
+				s.fail(id, -32600, "account read rejected")
+				return
+			case mode == "none":
+				s.reply(id, map[string]any{"account": nil})
+				return
+			case strings.HasPrefix(mode, "gate:"):
+				go func() {
+					gate := strings.TrimPrefix(mode, "gate:")
+					_ = os.WriteFile(gate+".entered", nil, 0o600)
+					for {
+						if _, err := os.Stat(gate + ".release"); err == nil {
+							break
+						}
+						time.Sleep(time.Millisecond)
+					}
+					s.reply(id, map[string]any{"account": map[string]any{"type": "chatgpt"}})
+				}()
+				return
+			}
+		}
 		if s.exists("account") {
 			s.reply(id, map[string]any{"account": map[string]any{"type": "chatgpt", "email": "secret@example.com"}, "requiresOpenaiAuth": true})
 		} else {
@@ -181,6 +209,21 @@ func (s *server) handle(id json.RawMessage, method string, params json.RawMessag
 		s.touch("login-cancelled")
 		s.reply(id, map[string]any{"status": "canceled"})
 	case "thread/start":
+		if gate := os.Getenv(EnvThreadGate); gate != "" {
+			_ = os.WriteFile(gate+".entered", nil, 0o600)
+			for {
+				if _, err := os.Stat(gate + ".release"); err == nil {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+		if os.Getenv(EnvThreadError) != "" && !s.exists("thread-error-returned") {
+			s.touch("thread-error-returned")
+			s.fail(id, -32600, "preparation rejected")
+			return
+		}
+		s.touch("thread-started")
 		thread := s.id("01a1")
 		if eph, _ := p["ephemeral"].(bool); !eph {
 			instructions, _ := p["developerInstructions"].(string)
@@ -202,7 +245,22 @@ func (s *server) handle(id json.RawMessage, method string, params json.RawMessag
 	case "model/list":
 		s.models(id, p)
 	case "thread/unsubscribe":
-		s.reply(id, map[string]any{"status": "unsubscribed"})
+		go func() {
+			if gate := os.Getenv(EnvUnsubscribeGate); gate != "" {
+				_ = os.WriteFile(gate+".entered", nil, 0o600)
+				for {
+					if _, err := os.Stat(gate + ".release"); err == nil {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
+			if os.Getenv(EnvUnsubscribeError) != "" {
+				s.fail(id, -32600, "release failed")
+				return
+			}
+			s.reply(id, map[string]any{"status": "unsubscribed"})
+		}()
 	case "turn/start":
 		s.turn(id, p)
 	case "turn/interrupt":
