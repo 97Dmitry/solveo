@@ -3,7 +3,7 @@ package secrets
 import "testing"
 
 func TestMemoryStoreRoundTrip(t *testing.T) {
-	var s Store = NewMemory()
+	s := NewMemory()
 	if _, ok, err := s.Get("Solveo/stt-grok"); ok || err != nil {
 		t.Fatalf("empty store: %v %v", ok, err)
 	}

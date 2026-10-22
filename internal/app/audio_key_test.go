@@ -15,7 +15,7 @@ import (
 
 type keyedRuntime struct{ fakeRuntime }
 
-func (keyedRuntime) Describe() stt.Description {
+func (*keyedRuntime) Describe() stt.Description {
 	return stt.Description{ID: "cloud", Label: "Облако", NeedsKey: true, StartLabel: "Подключить", StopLabel: "Отключить", MaxPhrases: 100, MaxPhraseRunes: 50}
 }
 
