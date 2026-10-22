@@ -111,3 +111,48 @@ func TestUpdateSettingsKeepsTheProviderChoice(t *testing.T) {
 		t.Fatal("provider changed outside SetAudioProvider")
 	}
 }
+
+func TestProviderSwitchWaitsForRunningWork(t *testing.T) {
+	c, local, _, _ := setupTwoProviders(t, "")
+	local.gate = make(chan struct{})
+	if err := c.PrepareAudio(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetAudioProvider("cloud"); err == nil {
+		t.Fatal("switched while a preparation was running")
+	}
+	close(local.gate)
+	waitAudio(t, c, "prepared", func(v AudioView) bool { return v.Busy == "" })
+	if c.AudioSnapshot().Provider.ID != "local" {
+		t.Fatal("provider changed under running work")
+	}
+	if err := c.SetAudioProvider("cloud"); err != nil {
+		t.Fatal(err)
+	}
+	if v := c.AudioSnapshot(); v.Provider.ID != "cloud" || v.Busy != "" {
+		t.Fatalf("after switch %+v busy %q", v.Provider, v.Busy)
+	}
+}
+
+// Run with -race: the provider of a starting session must be chosen under the audio lock.
+func TestProviderSwitchAndStartDoNotRace(t *testing.T) {
+	c, _, _, _ := setupTwoProviders(t, "")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 50 {
+			_ = c.SetAudioProvider([]string{"cloud", "local"}[i%2])
+		}
+	}()
+	for range 50 {
+		if c.StartAudioModel() == nil {
+			waitAudio(t, c, "settled", func(v AudioView) bool { return v.Busy == "" })
+			v := c.AudioSnapshot()
+			if v.Model == "ready" {
+				_ = c.StopAudioModel()
+				waitAudio(t, c, "stopped", func(v AudioView) bool { return v.Busy == "" })
+			}
+		}
+	}
+	<-done
+}

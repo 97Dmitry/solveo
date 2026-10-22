@@ -41,6 +41,8 @@ type Description struct {
 	Preparable bool `json:"preparable"`
 	// NeedsKey providers read an API key stored under KeyName(ID).
 	NeedsKey bool `json:"needs_key"`
+	// Vendor receives the audio of a cloud provider, e.g. "xAI"; empty for local providers.
+	Vendor string `json:"vendor"`
 	// KeyLabel names the key in the UI, e.g. "API-ключ xAI".
 	KeyLabel       string `json:"key_label"`
 	StartLabel     string `json:"start_label"`

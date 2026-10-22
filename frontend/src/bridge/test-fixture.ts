@@ -8,6 +8,7 @@ export function audioFixture(): AudioState {
       local: true,
       preparable: true,
       needs_key: false,
+      vendor: "",
       key_label: "",
       start_label: "Запустить модель",
       stop_label: "Выгрузить модель",

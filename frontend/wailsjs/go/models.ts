@@ -988,6 +988,7 @@ export namespace stt {
 	    local: boolean;
 	    preparable: boolean;
 	    needs_key: boolean;
+	    vendor: string;
 	    key_label: string;
 	    start_label: string;
 	    stop_label: string;
@@ -1005,6 +1006,7 @@ export namespace stt {
 	        this.local = source["local"];
 	        this.preparable = source["preparable"];
 	        this.needs_key = source["needs_key"];
+	        this.vendor = source["vendor"];
 	        this.key_label = source["key_label"];
 	        this.start_label = source["start_label"];
 	        this.stop_label = source["stop_label"];

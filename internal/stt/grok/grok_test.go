@@ -400,3 +400,131 @@ func TestBackpressure(t *testing.T) {
 	}
 	t.Fatal("no back-pressure")
 }
+
+func TestNonFatalErrorKeepsStream(t *testing.T) {
+	f := newFakeXAI(t, func(ctx context.Context, c *websocket.Conn) {
+		readUntil(ctx, c, func(typ websocket.MessageType, _ []byte) bool { return typ == websocket.MessageBinary })
+		send(ctx, c, map[string]any{"type": "error", "message": "could not parse message"})
+		send(ctx, c, partial("всё ещё работает", true, true))
+		readUntil(ctx, c, func(websocket.MessageType, []byte) bool { return false })
+	})
+	s := start(t, provider(f, key))
+	_ = s.Open(context.Background(), "a", "system", nil)
+	_ = s.Push("a", 16000, 1, make([]float32, 1600))
+	for {
+		ev := next(t, s)
+		if e, ok := ev.(stt.StreamError); ok {
+			t.Fatalf("a parse error ended the stream: %+v", e)
+		}
+		if u := ev.(stt.Update); u.Kind == stt.KindFinal {
+			if u.Text != "всё ещё работает" {
+				t.Fatalf("final %q", u.Text)
+			}
+			return
+		}
+	}
+}
+
+func TestUnfinishedUtteranceIsFinalizedWhenTheStreamEnds(t *testing.T) {
+	f := newFakeXAI(t, func(ctx context.Context, c *websocket.Conn) {
+		readUntil(ctx, c, func(typ websocket.MessageType, _ []byte) bool { return typ == websocket.MessageBinary })
+		send(ctx, c, partial("Почему context", true, false))
+		send(ctx, c, partial("не остановил", false, false))
+	}) // the server drops the connection mid-utterance
+	s := start(t, provider(f, key))
+	_ = s.Open(context.Background(), "a", "system", nil)
+	_ = s.Push("a", 16000, 1, make([]float32, 1600))
+	var final string
+	for final == "" {
+		ev := next(t, s)
+		if u, ok := ev.(stt.Update); ok && u.Kind == stt.KindFinal {
+			final = u.Text
+		}
+		if _, ok := ev.(stt.StreamError); ok && final == "" {
+			t.Fatal("stream error arrived before the pending phrase was finalized")
+		}
+	}
+	if final != "Почему context не остановил" {
+		t.Fatalf("final %q", final)
+	}
+}
+
+func TestTranscriptDoneFinalizesPending(t *testing.T) {
+	f := newFakeXAI(t, func(ctx context.Context, c *websocket.Conn) {
+		readUntil(ctx, c, func(typ websocket.MessageType, _ []byte) bool { return typ == websocket.MessageBinary })
+		send(ctx, c, partial("последняя фраза", true, false))
+		readUntil(ctx, c, func(typ websocket.MessageType, data []byte) bool {
+			return typ == websocket.MessageText && strings.Contains(string(data), "audio.done")
+		})
+		send(ctx, c, map[string]any{"type": "transcript.done", "text": "последняя фраза", "duration": 1.2})
+	})
+	s := start(t, provider(f, key))
+	_ = s.Open(context.Background(), "a", "system", nil)
+	_ = s.Push("a", 16000, 1, make([]float32, 1600))
+	updates(t, s, 2) // started, partial
+	if err := s.CloseStream("a"); err != nil {
+		t.Fatal(err)
+	}
+	u := updates(t, s, 1)[0]
+	if u.Kind != stt.KindFinal || u.Text != "последняя фраза" {
+		t.Fatalf("update %+v", u)
+	}
+}
+
+func TestAssemblerComparesWordsNotBytes(t *testing.T) {
+	cases := []struct {
+		locked, final, want string
+	}{
+		{"so the answer is", "So the answer is 42.", "So the answer is 42."},
+		{"привет", "приветствую всех", "привет приветствую всех"},
+		{"Почему context,", "почему context cancellation?", "почему context cancellation?"},
+	}
+	for _, tc := range cases {
+		a := &assembler{stream: "a"}
+		a.apply(xaiEvent{Text: tc.locked, IsFinal: true})
+		got := a.apply(xaiEvent{Text: tc.final, IsFinal: true, SpeechFinal: true})
+		if text := got[len(got)-1].Text; text != tc.want {
+			t.Errorf("%q + %q = %q, want %q", tc.locked, tc.final, text, tc.want)
+		}
+	}
+}
+
+func TestHandshakeErrorsShowStatusAndReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate limit exceeded for team"}`))
+	}))
+	defer srv.Close()
+	p := New(keys(key))
+	p.URL = "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/stt"
+	checks := p.Status(context.Background())
+	if msg := checks[1].Message; !strings.Contains(msg, "429") || !strings.Contains(msg, "rate limit exceeded for team") || strings.Contains(msg, key) {
+		t.Fatalf("message %q", msg)
+	}
+}
+
+func TestErrorInsteadOfSessionStartIsShown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		if r.URL.Query().Get("sample_rate") == "22050" {
+			send(r.Context(), c, map[string]any{"type": "error", "message": "unsupported sample rate"})
+		} else {
+			send(r.Context(), c, map[string]any{"type": "transcript.created"})
+		}
+		_ = c.CloseNow()
+	}))
+	defer srv.Close()
+	p := New(keys(key))
+	p.URL = "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/stt"
+	s := start(t, p)
+	_ = s.Open(context.Background(), "a", "system", nil)
+	_ = s.Push("a", 22050, 1, make([]float32, 100))
+	ev := next(t, s)
+	if e, ok := ev.(stt.StreamError); !ok || !strings.Contains(e.Message, "unsupported sample rate") {
+		t.Fatalf("event %#v", ev)
+	}
+}

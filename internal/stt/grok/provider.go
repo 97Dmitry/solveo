@@ -4,10 +4,13 @@ package grok
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -25,7 +28,7 @@ const (
 	defaultFlushWait = 3 * time.Second
 )
 
-var errRejected = errors.New("Ключ отклонён xAI: проверьте его в настройках")
+var errRejected = errors.New("Ключ отклонён xAI: проверьте его в панели распознавания")
 
 type Provider struct {
 	keys func() (string, bool, error)
@@ -38,7 +41,7 @@ func New(keys func() (string, bool, error)) *Provider { return &Provider{keys: k
 
 func (p *Provider) Describe() stt.Description {
 	return stt.Description{
-		ID: "grok", Label: "Grok STT (облако xAI)", Local: false, Preparable: false, NeedsKey: true, KeyLabel: "API-ключ xAI",
+		ID: "grok", Label: "Grok STT (облако xAI)", Local: false, Preparable: false, NeedsKey: true, KeyLabel: "API-ключ xAI", Vendor: "xAI",
 		StartLabel: "Подключить", StopLabel: "Отключить", MaxPhrases: maxKeyTerms, MaxPhraseRunes: maxTermRunes,
 	}
 }
@@ -49,7 +52,7 @@ func (p *Provider) key() (string, error) {
 		return "", err
 	}
 	if !ok || k == "" {
-		return "", errors.New("Сначала задайте ключ xAI в настройках")
+		return "", errors.New("Сначала задайте ключ xAI в панели распознавания")
 	}
 	return k, nil
 }
@@ -62,12 +65,53 @@ func (p *Provider) handshake(ctx context.Context, key string, query url.Values) 
 		HTTPHeader: http.Header{"Authorization": {"Bearer " + key}},
 	})
 	if err != nil {
-		if resp != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
-			return nil, errRejected
+		if resp == nil {
+			return nil, fmt.Errorf("нет доступа к api.x.ai: %v", err)
 		}
-		return nil, fmt.Errorf("нет доступа к api.x.ai: %v", err)
+		reason := responseReason(resp)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return nil, errRejected
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("xAI отказал в доступе (403): %s", reason)
+		default:
+			return nil, fmt.Errorf("xAI ответил %d: %s", resp.StatusCode, reason)
+		}
 	}
 	return conn, nil
+}
+
+// responseReason extracts xAI's error text from a rejected handshake; request headers never appear in it.
+func responseReason(resp *http.Response) string {
+	if resp.Body == nil {
+		return http.StatusText(resp.StatusCode)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	var parsed struct {
+		Error   any    `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &parsed) == nil {
+		switch e := parsed.Error.(type) {
+		case string:
+			return e
+		case map[string]any:
+			if m, ok := e["message"].(string); ok {
+				return m
+			}
+		}
+		if parsed.Message != "" {
+			return parsed.Message
+		}
+	}
+	text := strings.TrimSpace(string(body))
+	if r := []rune(text); len(r) > 200 {
+		text = string(r[:200]) + "…"
+	}
+	if text == "" {
+		return http.StatusText(resp.StatusCode)
+	}
+	return text
 }
 
 func baseQuery(rate int) url.Values {
@@ -83,7 +127,7 @@ func (p *Provider) Status(ctx context.Context) []stt.Check {
 		keyCheck.State, keyCheck.Message = stt.StateError, err.Error()
 		return []stt.Check{keyCheck, network}
 	case !ok || k == "":
-		keyCheck.State, keyCheck.Message = stt.StateMissing, "Ключ xAI не задан в настройках"
+		keyCheck.State, keyCheck.Message = stt.StateMissing, "Ключ xAI не задан: введите его в панели распознавания"
 		return []stt.Check{keyCheck, network}
 	}
 	conn, err := p.handshake(ctx, k, baseQuery(16000))

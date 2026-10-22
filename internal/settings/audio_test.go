@@ -45,6 +45,20 @@ func TestAudioDictionaryNormalizesAndRoundTrips(t *testing.T) {
 	}
 }
 
+func TestMalformedProviderIDFallsBackInsteadOfBlockingStartup(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"schema_version":1,"theme":"dark","font_size":17,"ui_scale":100,"audio":{"provider":"Bad ID!","context_phrases":["JWT"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Open(dir).Load()
+	if err != nil {
+		t.Fatalf("settings with a malformed provider must still load: %v", err)
+	}
+	if c.Audio.Provider != "" || len(c.Audio.ContextPhrases) != 1 {
+		t.Fatalf("audio %+v", c.Audio)
+	}
+}
+
 func TestAudioDictionaryLimits(t *testing.T) {
 	base := Config{Theme: "dark", FontSize: 17, UIScale: 100, Hotkeys: hotkeys.Defaults()}
 	many := make([]string, 257)

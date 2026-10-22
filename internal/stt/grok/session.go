@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
@@ -225,7 +226,15 @@ func (s *Session) run(st *stream) {
 	readCtx, readCancel := context.WithTimeout(ctx, dialTimeout)
 	_, first, err := conn.Read(readCtx)
 	readCancel()
-	if err != nil || !strings.Contains(string(first), "transcript.created") {
+	var created xaiEvent
+	if err == nil {
+		_ = json.Unmarshal(first, &created)
+	}
+	switch {
+	case created.Type == "error":
+		s.fail(st, "xAI: "+created.Message)
+		return
+	case created.Type != "transcript.created":
 		s.fail(st, "xAI не начал сессию распознавания")
 		return
 	}
@@ -260,11 +269,20 @@ type xaiEvent struct {
 
 func (s *Session) read(ctx context.Context, conn *websocket.Conn, st *stream) {
 	a := &assembler{stream: st.id}
+	lastErr := ""
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
+			// A phrase cut by the end of the stream still becomes final, so it can be sent.
+			for _, u := range a.finish() {
+				s.emit(u)
+			}
 			if s.ctx.Err() == nil && !s.closing(st) {
-				s.fail(st, "соединение с xAI прервано")
+				if lastErr != "" {
+					s.fail(st, "xAI: "+lastErr)
+				} else {
+					s.fail(st, "соединение с xAI прервано")
+				}
 			}
 			return
 		}
@@ -283,9 +301,13 @@ func (s *Session) read(ctx context.Context, conn *websocket.Conn, st *stream) {
 				default:
 				}
 			}
+		case "transcript.done":
+			for _, u := range a.finish() {
+				s.emit(u)
+			}
 		case "error":
-			s.fail(st, "xAI: "+ev.Message)
-			return
+			// Most xAI errors close the connection (reported above); parse errors keep it open.
+			lastErr = ev.Message
 		}
 	}
 }
@@ -305,6 +327,8 @@ type assembler struct {
 	n, rev int
 	active bool
 	locked string
+	last   string // text of the latest update of the active utterance
+	ev     xaiEvent
 }
 
 func join(a, b string) string {
@@ -318,15 +342,35 @@ func join(a, b string) string {
 	return a + " " + b
 }
 
+// words compares texts the way a reader would: case, punctuation and spacing do not matter.
+func words(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+}
+
+// covers reports whether text already starts with the locked words (xAI may repeat them, restyled).
+func covers(text, locked string) bool {
+	lw, tw := words(locked), words(text)
+	if len(lw) == 0 || len(lw) > len(tw) {
+		return false
+	}
+	for i, w := range lw {
+		if tw[i] != w {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *assembler) with(text string) string {
 	text = strings.TrimSpace(text)
-	if a.locked != "" && strings.HasPrefix(text, a.locked) {
+	if covers(text, a.locked) {
 		return text
 	}
 	return join(a.locked, text)
 }
 
 func (a *assembler) update(kind, text string, ev xaiEvent) stt.Update {
+	a.last, a.ev = text, ev
 	a.rev++
 	if kind == stt.KindStarted {
 		a.rev = 0
@@ -334,6 +378,16 @@ func (a *assembler) update(kind, text string, ev xaiEvent) stt.Update {
 	start := int64(ev.Start * 16000)
 	return stt.Update{StreamID: a.stream, UtteranceID: fmt.Sprintf("%s:%d", a.stream, a.n), Revision: a.rev, Kind: kind,
 		StartSample: start, EndSample: start + int64(ev.Duration*16000), Text: text}
+}
+
+// finish closes the active utterance with its latest text.
+func (a *assembler) finish() []stt.Update {
+	if !a.active {
+		return nil
+	}
+	u := a.update(stt.KindFinal, a.last, a.ev)
+	a.active, a.locked = false, ""
+	return []stt.Update{u}
 }
 
 func (a *assembler) apply(ev xaiEvent) []stt.Update {

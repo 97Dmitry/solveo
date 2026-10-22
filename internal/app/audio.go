@@ -94,6 +94,7 @@ const (
 	audioBusyStarting  = "starting"
 	audioBusyStopping  = "stopping"
 	audioBusyOpening   = "opening"
+	audioBusySwitching = "switching"
 	audioModelStopped  = "stopped"
 	audioModelStarting = "starting"
 	audioModelReady    = "ready"
@@ -163,7 +164,11 @@ func (c *Controller) audioViewLocked() AudioView {
 		d := p.Describe()
 		v.Providers = append(v.Providers, AudioProviderOption{ID: d.ID, Label: d.Label, Local: d.Local})
 	}
-	if p := c.audioProvider(); p != nil {
+	p := a.provider // the running session's provider
+	if p == nil {
+		p = c.audioProvider()
+	}
+	if p != nil {
 		v.Provider = p.Describe()
 		v.KeyConfigured = a.keys[v.Provider.ID]
 	}
@@ -210,11 +215,21 @@ func (c *Controller) SetSTTKey(providerID, key string) error {
 	if err := c.deps.Audio.Secrets.Set(stt.KeyName(d.ID), key); err != nil {
 		return err
 	}
-	c.audio.mu.Lock()
-	c.audio.keys[d.ID] = true
-	c.audioChangedLocked()
-	c.audio.mu.Unlock()
+	c.keyChanged(d.ID, true)
 	return nil
+}
+
+// keyChanged records the key state and re-checks the active provider when nothing else runs.
+func (c *Controller) keyChanged(providerID string, stored bool) {
+	a := &c.audio
+	a.mu.Lock()
+	a.keys[providerID] = stored
+	c.audioChangedLocked()
+	active := c.audioProvider() != nil && c.audioProvider().Describe().ID == providerID && a.busy == "" && a.session == nil
+	a.mu.Unlock()
+	if active {
+		_ = c.RefreshAudio()
+	}
 }
 
 // DeleteSTTKey forgets a provider's API key.
@@ -226,15 +241,12 @@ func (c *Controller) DeleteSTTKey(providerID string) error {
 	if err := c.deps.Audio.Secrets.Delete(stt.KeyName(d.ID)); err != nil {
 		return err
 	}
-	c.audio.mu.Lock()
-	c.audio.keys[d.ID] = false
-	c.audioChangedLocked()
-	c.audio.mu.Unlock()
+	c.keyChanged(d.ID, false)
 	return nil
 }
 
 // audioProvider is the provider used for the next check, preparation or start: the selected one, or the
-// first when the stored choice is empty or no longer exists. Callers may hold audio.mu.
+// first when the stored choice is empty or no longer exists. Callers hold audio.mu.
 func (c *Controller) audioProvider() stt.Provider {
 	if len(c.deps.Audio.Providers) == 0 {
 		return nil
@@ -261,11 +273,14 @@ func (c *Controller) SetAudioProvider(id string) error {
 	}
 	a := &c.audio
 	a.mu.Lock()
-	running := a.busy != "" || a.listening || a.model == audioModelReady || a.model == audioModelStarting
-	a.mu.Unlock()
-	if running {
+	if a.busy != "" || a.listening || a.model == audioModelReady || a.model == audioModelStarting {
+		a.mu.Unlock()
 		return errors.New("Сначала остановите распознавание")
 	}
+	// Busy for the whole switch: no start can pick the old provider while settings are written.
+	a.busy = audioBusySwitching
+	c.audioChangedLocked()
+	a.mu.Unlock()
 	c.settingsMu.Lock()
 	c.mu.Lock()
 	cfg := c.settings
@@ -273,14 +288,14 @@ func (c *Controller) SetAudioProvider(id string) error {
 	cfg.Audio.Provider = id
 	_, err := c.saveSettingsLocked(cfg)
 	c.settingsMu.Unlock()
-	if err != nil {
-		return err
-	}
 	a.mu.Lock()
-	a.providerID, a.checks, a.err, a.model = id, nil, "", audioModelStopped
+	a.busy = ""
+	if err == nil {
+		a.providerID, a.checks, a.err, a.model = id, nil, "", audioModelStopped
+	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
-	return nil
+	return err
 }
 
 // audioChangedLocked bumps the revision and schedules one coalesced solveo:audio event.
@@ -367,8 +382,8 @@ func (c *Controller) audioProgress(line string) {
 	c.audio.mu.Unlock()
 }
 
-func (c *Controller) refreshAudioChecks(ctx context.Context) {
-	checks := c.audioProvider().Status(ctx)
+func (c *Controller) refreshAudioChecks(ctx context.Context, provider stt.Provider) {
+	checks := provider.Status(ctx)
 	view := make([]stt.Check, 0, len(checks))
 	for _, ch := range checks {
 		ch.Message = uiText(ch.Message)
@@ -380,16 +395,17 @@ func (c *Controller) refreshAudioChecks(ctx context.Context) {
 	c.audio.mu.Unlock()
 }
 
-func (c *Controller) beginAudio(busy string) error {
+// beginAudio claims the busy slot and returns the provider the work must use, both under audio.mu.
+func (c *Controller) beginAudio(busy string) (stt.Provider, error) {
 	a := &c.audio
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := c.audioReadyLocked(); err != nil {
-		return err
+		return nil, err
 	}
 	a.busy, a.err = busy, ""
 	c.audioChangedLocked()
-	return nil
+	return c.audioProvider(), nil
 }
 
 func (c *Controller) setAudioError(err error) {
@@ -402,22 +418,24 @@ func (c *Controller) setAudioError(err error) {
 
 // RefreshAudio re-runs the readiness checks in the background.
 func (c *Controller) RefreshAudio() error {
-	if err := c.beginAudio(audioBusyChecking); err != nil {
+	provider, err := c.beginAudio(audioBusyChecking)
+	if err != nil {
 		return err
 	}
-	return c.goAudio(c.refreshAudioChecks)
+	return c.goAudio(func(ctx context.Context) { c.refreshAudioChecks(ctx, provider) })
 }
 
 // PrepareAudio builds the image and downloads the model when missing.
 func (c *Controller) PrepareAudio() error {
-	if err := c.beginAudio(audioBusyPreparing); err != nil {
+	provider, err := c.beginAudio(audioBusyPreparing)
+	if err != nil {
 		return err
 	}
 	return c.goAudio(func(ctx context.Context) {
-		if err := c.audioProvider().Prepare(ctx, c.audioProgress); err != nil {
+		if err := provider.Prepare(ctx, c.audioProgress); err != nil {
 			c.setAudioError(err)
 		}
-		c.refreshAudioChecks(ctx)
+		c.refreshAudioChecks(ctx, provider)
 	})
 }
 
@@ -433,18 +451,19 @@ func (c *Controller) StartAudioModel() error {
 		a.mu.Unlock()
 		return errors.New("модель уже запущена")
 	}
-	a.busy, a.model, a.err = audioBusyStarting, audioModelStarting, ""
+	provider := c.audioProvider()
+	// The view describes the provider being started, whatever the selection does meanwhile.
+	a.busy, a.model, a.err, a.provider = audioBusyStarting, audioModelStarting, "", provider
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	return c.goAudio(func(ctx context.Context) {
-		provider := c.audioProvider()
 		session, err := provider.Start(ctx, c.audioProgress)
 		if err != nil {
 			c.appendLog(err.Error() + "\n")
 		}
 		a.mu.Lock()
 		if err != nil {
-			a.model, a.err = audioModelFailed, uiText(err.Error())
+			a.model, a.err, a.provider = audioModelFailed, uiText(err.Error()), nil
 		} else {
 			a.model, a.session, a.provider = audioModelReady, session, provider
 		}

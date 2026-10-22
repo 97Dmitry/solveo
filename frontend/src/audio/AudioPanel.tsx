@@ -93,7 +93,7 @@ export function AudioPanel({
         <span className={provider.local ? "privacy local" : "privacy cloud"}>
           {provider.local
             ? "Локально: звук не покидает компьютер"
-            : `Облако: звук отправляется в ${provider.label}`}
+            : `Облако: звук отправляется в ${provider.vendor || provider.label}`}
         </span>
       </div>
       {provider.needs_key && !ready && (

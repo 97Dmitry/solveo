@@ -30,7 +30,7 @@ func setupKeyed(t *testing.T) (*Controller, secrets.Store, *[]string) {
 	c, e := New(Dependencies{
 		Store: s, SettingsStore: settings.Open(s.Dir), Work: openWork(t, s),
 		Provider: &fakeProvider{started: make(chan llm.Request, 5), finish: make(chan error, 5), store: s},
-		Audio:    AudioDeps{Providers: []stt.Provider{&keyedRuntime{}}, Capturer: newFakeCapturer(), Secrets: store},
+		Audio:    AudioDeps{Providers: []stt.Provider{&keyedRuntime{fakeRuntime: fakeRuntime{checks: readyChecks()}}}, Capturer: newFakeCapturer(), Secrets: store},
 		Emit: func(name string, data interface{}) {
 			b, _ := json.Marshal(data)
 			events = append(events, string(b))
@@ -89,4 +89,15 @@ func TestSTTKeyValidation(t *testing.T) {
 			t.Errorf("%s: error repeats the key", name)
 		}
 	}
+}
+
+func TestKeyChangeRefreshesChecks(t *testing.T) {
+	c, _, _ := setupKeyed(t)
+	if len(c.AudioSnapshot().Checks) != 0 {
+		t.Fatal("no checks before the first refresh")
+	}
+	if err := c.SetSTTKey("cloud", "xai-key"); err != nil {
+		t.Fatal(err)
+	}
+	waitAudio(t, c, "checks after saving the key", func(v AudioView) bool { return len(v.Checks) > 0 && v.Busy == "" })
 }

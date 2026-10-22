@@ -158,6 +158,7 @@ const grok = {
   preparable: false,
   needs_key: true,
   key_label: "API-ключ xAI",
+  vendor: "xAI",
   start_label: "Подключить",
   stop_label: "Отключить",
   max_phrases: 100,
@@ -187,7 +188,7 @@ it("marks a cloud provider and takes button wording from it", () => {
       checks: [{ id: "key", label: "Ключ xAI", state: "ok", message: "Ключ задан" }],
     }),
   );
-  expect(screen.getByText(/Облако: звук отправляется в Grok STT/)).toBeTruthy();
+  expect(screen.getByText("Облако: звук отправляется в xAI")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Подключить" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Подготовить" })).toBeNull();

@@ -39,8 +39,12 @@ const (
 	MaxContextPhrasesBytes = 3800
 )
 
+func validProviderID(id string) bool {
+	return len(id) <= 64 && strings.Trim(id, "abcdefghijklmnopqrstuvwxyz0123456789-") == ""
+}
+
 func validateAudio(a Audio) error {
-	if len(a.Provider) > 64 || strings.Trim(a.Provider, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
+	if !validProviderID(a.Provider) {
 		return errors.New("некорректный идентификатор распознавателя")
 	}
 	if len(a.ContextPhrases) > MaxContextPhrases {
@@ -72,7 +76,11 @@ func normalizeAudio(a Audio) Audio {
 			out = append(out, p)
 		}
 	}
-	return Audio{Provider: strings.TrimSpace(a.Provider), ContextPhrases: out}
+	provider := strings.TrimSpace(a.Provider)
+	if !validProviderID(provider) {
+		provider = "" // a hand-edited or future ID must not block startup; the default provider applies
+	}
+	return Audio{Provider: provider, ContextPhrases: out}
 }
 
 type Store struct{ Dir string }
