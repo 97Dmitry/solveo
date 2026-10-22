@@ -18,6 +18,9 @@ type Check struct {
 	Message string `json:"message"`
 }
 
+// KeyName is where a provider's API key lives in the secret store.
+func KeyName(providerID string) string { return "Solveo/stt-" + providerID }
+
 // Ready reports whether every check passed.
 func Ready(checks []Check) bool {
 	for _, c := range checks {
@@ -35,7 +38,9 @@ type Description struct {
 	// Local providers keep audio on this computer; cloud providers send it to their service.
 	Local bool `json:"local"`
 	// Preparable providers install something before the first start (image, model).
-	Preparable     bool   `json:"preparable"`
+	Preparable bool `json:"preparable"`
+	// NeedsKey providers read an API key stored under KeyName(ID).
+	NeedsKey       bool   `json:"needs_key"`
 	StartLabel     string `json:"start_label"`
 	StopLabel      string `json:"stop_label"`
 	MaxPhrases     int    `json:"max_phrases"`

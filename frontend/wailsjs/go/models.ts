@@ -83,6 +83,7 @@ export namespace app {
 	    sources: AudioSourceView[];
 	    segments: TranscriptSegment[];
 	    error: string;
+	    key_configured: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AudioView(source);
@@ -102,6 +103,7 @@ export namespace app {
 	        this.sources = this.convertValues(source["sources"], AudioSourceView);
 	        this.segments = this.convertValues(source["segments"], TranscriptSegment);
 	        this.error = source["error"];
+	        this.key_configured = source["key_configured"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -983,6 +985,7 @@ export namespace stt {
 	    label: string;
 	    local: boolean;
 	    preparable: boolean;
+	    needs_key: boolean;
 	    start_label: string;
 	    stop_label: string;
 	    max_phrases: number;
@@ -998,6 +1001,7 @@ export namespace stt {
 	        this.label = source["label"];
 	        this.local = source["local"];
 	        this.preparable = source["preparable"];
+	        this.needs_key = source["needs_key"];
 	        this.start_label = source["start_label"];
 	        this.stop_label = source["stop_label"];
 	        this.max_phrases = source["max_phrases"];

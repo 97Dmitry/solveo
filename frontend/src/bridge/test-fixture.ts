@@ -7,6 +7,7 @@ export function audioFixture(): AudioState {
       label: "Qwen3-ASR (локально)",
       local: true,
       preparable: true,
+      needs_key: false,
       start_label: "Запустить модель",
       stop_label: "Выгрузить модель",
       max_phrases: 256,
@@ -22,6 +23,7 @@ export function audioFixture(): AudioState {
     sources: [],
     segments: [],
     error: "",
+    key_configured: false,
   };
 }
 export function snapshotFixture(): Snapshot {

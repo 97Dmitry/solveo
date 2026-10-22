@@ -288,6 +288,7 @@ const audioProviderSchema = z.object({
   label: z.string().max(256),
   local: z.boolean(),
   preparable: z.boolean(),
+  needs_key: z.boolean(),
   start_label: z.string().max(128),
   stop_label: z.string().max(128),
   max_phrases: z.number().int().min(0),
@@ -324,6 +325,7 @@ export const audioSchema = z.object({
   sources: z.array(audioSourceSchema).max(2),
   segments: z.array(transcriptSegmentSchema).max(300),
   error: z.string().max(8192),
+  key_configured: z.boolean(),
 } satisfies Shape<app.AudioView>);
 export type AudioState = z.infer<typeof audioSchema>;
 export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
@@ -335,6 +337,7 @@ export const emptyAudio: AudioState = {
     label: "",
     local: true,
     preparable: false,
+    needs_key: false,
     start_label: "",
     stop_label: "",
     max_phrases: 0,
@@ -350,6 +353,7 @@ export const emptyAudio: AudioState = {
   sources: [],
   segments: [],
   error: "",
+  key_configured: false,
 };
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type ChatConfig = z.infer<typeof configSchema>;

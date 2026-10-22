@@ -104,6 +104,7 @@ func New(d Dependencies) (*Controller, error) {
 		checkpoints: map[streamKey]workstate.Block{},
 	}
 	c.audio.init()
+	c.loadAudioKeys()
 	c.loadProfiles()
 	c.initPersisters()
 	c.err = joinNotices(c.restoreWork())

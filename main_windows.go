@@ -32,6 +32,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/platform"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 	"github.com/97Dmitry/solveo/internal/profiles"
+	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/stt"
 	"github.com/97Dmitry/solveo/internal/stt/qwen"
@@ -152,6 +153,7 @@ func run() error {
 	speech := core.AudioDeps{
 		Providers: []stt.Provider{qwen.New(filepath.Join(dir, "models"), os.Getenv)},
 		Capturer:  audio.NewCapturer(),
+		Secrets:   secrets.NewCredentialManager(),
 	}
 	controller, e := core.New(core.Dependencies{
 		Store:         store,

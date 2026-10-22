@@ -112,3 +112,5 @@ func (a *App) ClearTranscript() error        { return a.controller.ClearTranscri
 func (a *App) SubmitTranscript(in core.SubmitTranscriptInput) (string, error) {
 	return a.controller.SubmitTranscript(in)
 }
+func (a *App) SetSTTKey(provider, key string) error { return a.controller.SetSTTKey(provider, key) }
+func (a *App) DeleteSTTKey(provider string) error   { return a.controller.DeleteSTTKey(provider) }

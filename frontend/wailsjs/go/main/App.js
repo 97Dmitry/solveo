@@ -46,6 +46,10 @@ export function DeleteProfile(arg1, arg2) {
   return window['go']['main']['App']['DeleteProfile'](arg1, arg2);
 }
 
+export function DeleteSTTKey(arg1) {
+  return window['go']['main']['App']['DeleteSTTKey'](arg1);
+}
+
 export function DiscardUnsaved() {
   return window['go']['main']['App']['DiscardUnsaved']();
 }
@@ -148,6 +152,10 @@ export function SetChatPinned(arg1, arg2) {
 
 export function SetDraft(arg1) {
   return window['go']['main']['App']['SetDraft'](arg1);
+}
+
+export function SetSTTKey(arg1, arg2) {
+  return window['go']['main']['App']['SetSTTKey'](arg1, arg2);
 }
 
 export function ShowLog() {

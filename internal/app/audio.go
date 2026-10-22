@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/97Dmitry/solveo/internal/audio"
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/stt"
 )
 
@@ -33,7 +35,11 @@ const (
 type AudioDeps struct {
 	Providers []stt.Provider
 	Capturer  audio.Capturer
+	// Secrets keeps provider API keys; required when a provider NeedsKey.
+	Secrets secrets.Store
 }
+
+const maxSTTKeyBytes = 512
 
 // AudioProviderOption lists a provider the user can choose.
 type AudioProviderOption struct {
@@ -71,6 +77,8 @@ type AudioView struct {
 	Sources   []AudioSourceView     `json:"sources"`
 	Segments  []TranscriptSegment   `json:"segments"`
 	Error     string                `json:"error"`
+	// KeyConfigured tells whether the active provider's key is stored; the key itself never leaves Go.
+	KeyConfigured bool `json:"key_configured"`
 }
 
 type SubmitTranscriptInput struct {
@@ -116,6 +124,7 @@ type audioState struct {
 	segments  []TranscriptSegment
 	revisions map[string]int
 	emitTimer *time.Timer
+	keys      map[string]bool // provider ID → key stored
 }
 
 func (a *audioState) init() {
@@ -154,8 +163,72 @@ func (c *Controller) audioViewLocked() AudioView {
 	}
 	if p := c.audioProvider(); p != nil {
 		v.Provider = p.Describe()
+		v.KeyConfigured = a.keys[v.Provider.ID]
 	}
 	return v
+}
+
+// loadAudioKeys records which providers have a stored key; values are never kept here.
+func (c *Controller) loadAudioKeys() {
+	a := &c.audio
+	a.keys = map[string]bool{}
+	if c.deps.Audio.Secrets == nil {
+		return
+	}
+	for _, p := range c.deps.Audio.Providers {
+		if d := p.Describe(); d.NeedsKey {
+			_, ok, _ := c.deps.Audio.Secrets.Get(stt.KeyName(d.ID))
+			a.keys[d.ID] = ok
+		}
+	}
+}
+
+func (c *Controller) keyedProvider(id string) (stt.Description, error) {
+	for _, p := range c.deps.Audio.Providers {
+		if d := p.Describe(); d.ID == id && d.NeedsKey {
+			if c.deps.Audio.Secrets == nil {
+				return d, errors.New("хранилище ключей недоступно")
+			}
+			return d, nil
+		}
+	}
+	return stt.Description{}, errors.New("у этого распознавателя нет ключа")
+}
+
+// SetSTTKey stores a provider's API key; it does not contact the provider.
+func (c *Controller) SetSTTKey(providerID, key string) error {
+	d, err := c.keyedProvider(providerID)
+	if err != nil {
+		return err
+	}
+	key = strings.TrimSpace(key)
+	if key == "" || len(key) > maxSTTKeyBytes || strings.ContainsAny(key, "\x00\r\n") {
+		return fmt.Errorf("ключ %s пустой, длиннее %d байт или содержит переводы строк", d.Label, maxSTTKeyBytes)
+	}
+	if err := c.deps.Audio.Secrets.Set(stt.KeyName(d.ID), key); err != nil {
+		return err
+	}
+	c.audio.mu.Lock()
+	c.audio.keys[d.ID] = true
+	c.audioChangedLocked()
+	c.audio.mu.Unlock()
+	return nil
+}
+
+// DeleteSTTKey forgets a provider's API key.
+func (c *Controller) DeleteSTTKey(providerID string) error {
+	d, err := c.keyedProvider(providerID)
+	if err != nil {
+		return err
+	}
+	if err := c.deps.Audio.Secrets.Delete(stt.KeyName(d.ID)); err != nil {
+		return err
+	}
+	c.audio.mu.Lock()
+	c.audio.keys[d.ID] = false
+	c.audioChangedLocked()
+	c.audio.mu.Unlock()
+	return nil
 }
 
 // audioProvider is the provider used for the next check, preparation or start.

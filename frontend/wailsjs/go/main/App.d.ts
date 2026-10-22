@@ -27,6 +27,8 @@ export function DeleteChats(arg1:Array<string>):Promise<app.DeleteResult>;
 
 export function DeleteProfile(arg1:string,arg2:number):Promise<app.Snapshot>;
 
+export function DeleteSTTKey(arg1:string):Promise<void>;
+
 export function DiscardUnsaved():Promise<app.Snapshot>;
 
 export function Exit():Promise<void>;
@@ -78,6 +80,8 @@ export function SetAlwaysOnTop(arg1:boolean):Promise<app.Snapshot>;
 export function SetChatPinned(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetDraft(arg1:app.DraftInput):Promise<void>;
+
+export function SetSTTKey(arg1:string,arg2:string):Promise<void>;
 
 export function ShowLog():Promise<void>;
 
