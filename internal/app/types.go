@@ -114,6 +114,7 @@ type Dependencies struct {
 	Work          WorkStore
 	Emit          func(string, interface{})
 	Now           func() time.Time
+	Audio         AudioDeps
 }
 type Draft struct {
 	ReplyToID   string `json:"reply_to_id,omitempty"`

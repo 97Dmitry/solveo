@@ -11,7 +11,7 @@ import (
 
 func TestSettingsRoundTrip(t *testing.T) {
 	s := Open(t.TempDir())
-	want := Config{Theme: "light", FontSize: 18, UIScale: 100, AlwaysOnTop: true, Hotkeys: hotkeys.Defaults()}
+	want := Config{Theme: "light", FontSize: 18, UIScale: 100, AlwaysOnTop: true, Hotkeys: hotkeys.Defaults(), Audio: Audio{ContextPhrases: []string{}}}
 	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRemovedStreamingSettingIsIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.Load()
-	if err != nil || !reflect.DeepEqual(got, Config{Theme: "light", FontSize: 18, UIScale: 110, Hotkeys: hotkeys.Defaults()}) {
+	if err != nil || !reflect.DeepEqual(got, Config{Theme: "light", FontSize: 18, UIScale: 110, Hotkeys: hotkeys.Defaults(), Audio: Audio{ContextPhrases: []string{}}}) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }

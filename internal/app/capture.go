@@ -182,7 +182,7 @@ func (c *Controller) finishSelection(e platform.Event) {
 		}
 		c.publish()
 		if mode != "queue-region" {
-			_, err = c.submit(SubmitInput{RequestID: chat.ID(), ChatID: chatID, AttachmentIDs: []string{id}}, e.OperationID)
+			_, err = c.submit(SubmitInput{RequestID: chat.ID(), ChatID: chatID, AttachmentIDs: []string{id}}, submitOrigin{kind: originCapture, captureID: e.OperationID})
 			if err != nil {
 				c.captureError(e.OperationID, err)
 			}

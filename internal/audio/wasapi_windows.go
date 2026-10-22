@@ -85,9 +85,6 @@ type waveFormatEx struct {
 // WAVEFORMATEXTENSIBLE.SubFormat sits at byte 24: the C header packs WAVEFORMATEX to 18 bytes, Go pads it to 20.
 const subFormatOffset = 24
 
-// ErrNoDevice means Windows has no default endpoint for the source.
-var ErrNoDevice = errors.New("устройство звука не найдено")
-
 func hresult(r uintptr, what string) error {
 	if int32(r) >= 0 {
 		return nil

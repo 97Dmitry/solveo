@@ -3,8 +3,11 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/hotkeys"
@@ -19,7 +22,54 @@ type Config struct {
 	AlwaysOnTop        bool   `json:"always_on_top"`
 	// Hotkeys maps every hotkeys.Actions entry to canonical text; "" disables it.
 	Hotkeys map[string]string `json:"hotkeys"`
+	Audio   Audio             `json:"audio"`
 }
+
+// Audio holds speech recognition preferences; ContextPhrases is the term dictionary sent at listening start.
+type Audio struct {
+	ContextPhrases []string `json:"context_phrases"`
+}
+
+// Dictionary limits; the worker additionally caps the full context at 4 KiB including its template.
+const (
+	MaxContextPhrases      = 256
+	MaxContextPhraseRunes  = 128
+	MaxContextPhrasesBytes = 3800
+)
+
+func validateAudio(a Audio) error {
+	if len(a.ContextPhrases) > MaxContextPhrases {
+		return fmt.Errorf("в словаре распознавания больше %d терминов", MaxContextPhrases)
+	}
+	total := 0
+	for _, p := range a.ContextPhrases {
+		if !utf8.ValidString(p) || strings.ContainsRune(p, 0) || strings.TrimSpace(p) == "" {
+			return errors.New("термин словаря распознавания пустой или содержит недопустимые символы")
+		}
+		if utf8.RuneCountInString(p) > MaxContextPhraseRunes {
+			return fmt.Errorf("термин словаря распознавания длиннее %d символов", MaxContextPhraseRunes)
+		}
+		total += len(p) + 1
+	}
+	if total > MaxContextPhrasesBytes {
+		return fmt.Errorf("словарь распознавания больше %d байт", MaxContextPhrasesBytes)
+	}
+	return nil
+}
+
+func normalizeAudio(a Audio) Audio {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, p := range a.ContextPhrases {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return Audio{ContextPhrases: out}
+}
+
 type Store struct{ Dir string }
 type storedSettings struct {
 	Config
@@ -47,7 +97,7 @@ func Validate(c Config) error {
 	if !maps.Equal(normal, c.Hotkeys) {
 		return errors.New("горячие клавиши не приведены к стандартной записи")
 	}
-	return nil
+	return validateAudio(c.Audio)
 }
 
 // Normalize brings user-entered settings to the stored form before Validate.
@@ -57,10 +107,11 @@ func Normalize(c Config) (Config, error) {
 		return c, e
 	}
 	c.Hotkeys = normal
+	c.Audio = normalizeAudio(c.Audio)
 	return c, nil
 }
 func (s *Store) Load() (Config, error) {
-	c := Config{Theme: "dark", FontSize: 17, UIScale: 100, Hotkeys: hotkeys.Defaults()}
+	c := Config{Theme: "dark", FontSize: 17, UIScale: 100, Hotkeys: hotkeys.Defaults(), Audio: Audio{ContextPhrases: []string{}}}
 	root, e := os.OpenRoot(s.Dir)
 	if e != nil {
 		return c, e

@@ -34,6 +34,9 @@ type Capturer interface {
 
 var errUnsupportedFormat = errors.New("неподдерживаемый формат звука")
 
+// ErrNoDevice means Windows has no default endpoint for the source.
+var ErrNoDevice = errors.New("устройство звука не найдено")
+
 type sampleFormat int
 
 const (

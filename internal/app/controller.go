@@ -63,6 +63,9 @@ type Controller struct {
 	streamPersist *persister
 	stateErr      string
 	streamErr     string
+
+	// Speech recognition (audio.go), guarded by audio.mu.
+	audio audioState
 }
 
 var errNoConnection = errors.New("подключение LLM не поддерживает вход")
@@ -100,6 +103,7 @@ func New(d Dependencies) (*Controller, error) {
 		submitted:   map[string]workstate.Submitted{},
 		checkpoints: map[streamKey]workstate.Block{},
 	}
+	c.audio.init()
 	c.loadProfiles()
 	c.initPersisters()
 	c.err = joinNotices(c.restoreWork())
@@ -446,6 +450,8 @@ func (c *Controller) Close(ctx context.Context) error {
 		c.resumeTimer.Stop()
 	}
 	c.mu.Unlock()
+	// Capture, the worker session and Solveo's container never outlive the application.
+	c.shutdownAudio(ctx)
 	done := make(chan struct{})
 	go func() { c.workers.Wait(); close(done) }()
 	select {
