@@ -71,6 +71,16 @@ docker run --rm --gpus all --network none --shm-size 2g --memory 12g --user "$(i
 
 Варианты для сравнения: `--chunk-sec 2`, `--context none`, `--language Russian`. Без сети контейнер не может ничего скачать: успешный прогон подтверждает отсутствие ленивых загрузок. `--audio a.wav b.wav` вместо `--manifest` — быстрый smoke без оценки.
 
+### Сравнение с Grok STT (облако xAI)
+
+Записи отправляются в xAI. Ключ передаётся только через окружение:
+
+```bash
+cd tools/audio-bench && XAI_API_KEY=... python3 -m audio_bench.run_grok --manifest corpus/manifest.json --out corpus/results/grok-ctx.jsonl
+```
+
+`--context none` — без словаря, `--language ru` — подсказка языка. Это пакетная загрузка каждого файла (REST), а не потоковый режим приложения: задержка в отчёте означает время ответа на целый файл. Результат оценивается тем же `report.py`.
+
 ### Сравнение с Nemotron 3.5 ASR
 
 ```bash
