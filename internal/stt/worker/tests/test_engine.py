@@ -152,6 +152,25 @@ class TrackTest(unittest.TestCase):
         self.assertEqual(self.track.feed(silence(500)), [])
         self.assertFalse(self.track.has_work())
 
+    def test_job_split_runs_model_outside_track_state(self):
+        self.track.feed(speech(int(1.5 * CHUNK / WINDOW)))
+        job = self.track.take_job()
+        self.assertEqual(job.kind, "step")
+        self.assertIsNone(self.track.take_job())  # one job per track at a time
+        self.track.feed(silence(1))  # the utterance ends while the step runs
+        updates = self.track.finish_job(job, self.track.run_job(job))
+        self.assertEqual([u.kind for u in updates], ["partial"])
+        self.assertEqual([u.kind for u in drain(self.track)], ["final"])
+
+    def test_has_final_and_busy_reflect_jobs(self):
+        self.track.feed(np.concatenate([speech(10), silence(1)]))
+        self.assertTrue(self.track.has_final())
+        job = self.track.take_job()
+        self.assertTrue(self.track.busy)
+        self.assertFalse(self.track.has_final())
+        self.track.finish_job(job, self.track.run_job(job))
+        self.assertFalse(self.track.busy)
+
     def test_update_json_shape(self):
         update = engine.Update("st", "st:1", 3, "partial", 10, 20, "t")
         self.assertEqual(

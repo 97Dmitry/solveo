@@ -82,6 +82,7 @@ class Track:
         self._utterance: _Utterance | None = None
         self._finals: list[_Utterance] = []
         self._counter = 0
+        self._busy = False
 
     def _start(self, start: int, audio: np.ndarray) -> Update:
         self._counter += 1
@@ -137,26 +138,61 @@ class Track:
         u = self._utterance
         return u is not None and not u.stalled and u.pending_length >= CHUNK
 
-    def has_work(self) -> bool:
-        return bool(self._finals) or self._can_step()
+    @property
+    def busy(self) -> bool:
+        return self._busy
 
-    def work(self) -> list[Update]:
+    def has_final(self) -> bool:
+        return not self._busy and bool(self._finals)
+
+    def has_work(self) -> bool:
+        return not self._busy and (bool(self._finals) or self._can_step())
+
+    def take_job(self) -> "Job | None":
+        """Next model call for this track; at most one is outstanding. Finals go first."""
+        if self._busy:
+            return None
         if self._finals:
             u = self._finals.pop(0)
-            text = self.model.transcribe(_concat(u.audio), self.context)
+            job = Job("final", u, _concat(u.audio))
+        elif self._can_step():
+            u = self._utterance
+            job = Job("step", u, _concat(u.pending))
+            u.pending, u.pending_length = [], 0
+        else:
+            return None
+        self._busy = True
+        return job
+
+    def run_job(self, job: "Job"):
+        """The model call; safe to run on another thread while feed() continues."""
+        if job.kind == "final":
+            return self.model.transcribe(job.pcm, self.context), False
+        if job.utterance.state is None:
+            job.utterance.state = self.model.init_state(self.context)
+        return self.model.step(job.utterance.state, job.pcm)
+
+    def finish_job(self, job: "Job", result) -> list[Update]:
+        self._busy = False
+        text, truncated = result
+        u = job.utterance
+        if job.kind == "final":
             u.revision += 1
             return [Update(self.stream_id, u.id, u.revision, "final", u.start, u.end, text)]
-        if not self._can_step():
-            return []
-        u = self._utterance
-        if u.state is None:
-            u.state = self.model.init_state(self.context)
-        pcm = _concat(u.pending)
-        u.pending, u.pending_length = [], 0
-        text, truncated = self.model.step(u.state, pcm)
         if truncated:
             # The decode ran into the token cap: later steps would repeat it. The final still comes offline.
             u.stalled = True
             return []
         u.revision += 1
         return [Update(self.stream_id, u.id, u.revision, "partial", u.start, u.start + u.length, text)]
+
+    def work(self) -> list[Update]:
+        job = self.take_job()
+        return self.finish_job(job, self.run_job(job)) if job else []
+
+
+@dataclass
+class Job:
+    kind: Literal["final", "step"]
+    utterance: _Utterance
+    pcm: np.ndarray
