@@ -1,0 +1,8 @@
+# Speech recognition worker
+
+- Python package `solveo_stt` runs inside the `solveo-stt` image built from this directory; `embed.go` ships the build context inside Solveo.exe. Tests and anything outside the embedded file list never reach the image.
+- `engine.Track` owns utterance boundaries: Silero VAD on 512-sample windows, 300 ms pre-roll, 1 s of new audio per streaming step, 20 s forced final. The final is always one offline `transcribe()` over the whole utterance (hybrid final); `finish_streaming_transcribe` is never called. A step that hits the 32-token cap stalls partials for that utterance, never the final.
+- `qwen.py` is bound to qwen-asr 0.0.6: `step` moves backlog into `state.audio_accum`/`state.buffer` so one decode covers it. Re-read upstream `qwen_asr/inference/qwen3_asr.py` before changing the pin. Token caps swap `sampling_params` clones; never mutate the shared object.
+- vLLM settings, model revision and the context template are fixed by the stage plan («Решения 9.0»); change them only with a new measurement in `docs/roadmap/2026-10-22-local-stt-evaluation.md`.
+- Serving never downloads (`HF_HUB_OFFLINE=1`); only the `download` subcommand touches the network. Check model registration with `qwen.check_registered()` before loading.
+- Tests: `make stt-worker-test` (uv, Python 3.12, numpy pinned to the base image). Fakes mirror qwen-asr semantics; no torch, GPU or model in unit tests.

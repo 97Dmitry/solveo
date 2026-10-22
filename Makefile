@@ -15,7 +15,7 @@ endif
 GO_VERSION := $(firstword $(subst :, ,$(subst -, ,$(shell go env GOVERSION))))
 GOLANGCI_LINT_DIR := .tools/$(GOLANGCI_LINT_VERSION)-$(GO_VERSION)
 GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint$(EXE)
-.PHONY: help bindings frontend-check frontend-test frontend-build test lint vet build check dev audio-bench-test audio-bench-image audio-bench-nemotron-image
+.PHONY: help bindings frontend-check frontend-test frontend-build test lint vet build check dev audio-bench-test audio-bench-image audio-bench-nemotron-image stt-worker-test
 help:
 	@echo make dev: Run desktop development on Windows
 	@echo make build: Build build/bin/Solveo.exe
@@ -54,6 +54,10 @@ build: frontend-build
 check: frontend-check frontend-test test lint vet build
 dev:
 	$(WAILS) dev
+# Worker unit tests run with the worker's runtime pins (numpy of the pinned base image), never the GPU stack.
+STT_WORKER_PY := uv run --no-project --python 3.12 --with numpy==2.2.6
+stt-worker-test:
+	cd internal/stt/worker && $(STT_WORKER_PY) python -m unittest discover -s tests -t .
 # Stage 9.0 STT benchmark: opt-in, not part of check (needs python3 + numpy; the image needs Docker).
 audio-bench-test:
 	cd tools/audio-bench && python3 -m unittest discover -s tests -t .
