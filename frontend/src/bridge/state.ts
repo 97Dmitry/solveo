@@ -12,24 +12,62 @@ export type Wire<T> = T extends readonly (infer U)[]
     : T;
 type Shape<T> = { [K in keyof Wire<T>]: z.ZodType<Wire<T>[K]> };
 const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const configText = z
+  .string()
+  .refine(
+    (text) =>
+      !text.includes("\0") &&
+      !/[\uD800-\uDFFF]/u.test(text) &&
+      new TextEncoder().encode(text).length <= 1048576,
+    "Не более 1 МиБ текста без NUL и некорректных символов Unicode",
+  );
 export const configSchema = z.object({
+  position: configText,
+  stack: configText,
+  interview_format: configText,
+  experience: configText,
   parallel_answers: z.boolean(),
-  fast_model: z.string(),
+  fast_model: configText,
   fast_reasoning: z
     .string()
     .max(64)
     .regex(/^[a-z0-9_-]*$/),
-  context: z.string(),
-  instructions: z.string(),
-  response_language: z.string(),
-  code_language: z.string(),
+  context: configText,
+  instructions: configText,
+  response_language: configText,
+  code_language: configText,
   detail: z.enum(["brief", "normal", "detailed"]),
-  model: z.string(),
+  model: configText,
   reasoning: z
     .string()
     .max(64)
     .regex(/^[a-z0-9_-]*$/),
 } satisfies Shape<chat.Config>);
+export const profileNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(
+    (text) =>
+      Array.from(text).length <= 160 && !text.includes("\0") && !/[\uD800-\uDFFF]/u.test(text),
+    "Название: от 1 до 160 символов без NUL",
+  );
+export const profileSchema = z.object({
+  id: z.string().regex(/^[a-f0-9]{32}$/),
+  name: profileNameSchema,
+  config: configSchema,
+  revision: revision.min(1),
+  created_at: z.iso.datetime(),
+  updated_at: z.iso.datetime(),
+} satisfies Shape<app.ProfileView>);
+export const profileInputSchema = z.object({
+  id: z.union([z.literal(""), z.string().regex(/^[a-f0-9]{32}$/)]),
+  name: profileNameSchema,
+  config: configSchema,
+  expected_revision: revision,
+} satisfies Shape<app.ProfileInput>);
+export type Profile = z.infer<typeof profileSchema>;
+export type ProfileInput = z.infer<typeof profileInputSchema>;
 const effortSchema = z.object({
   id: z
     .string()
@@ -148,6 +186,8 @@ const streamBlockSchema = z.object({
   text: z.string(),
 } satisfies Shape<app.StreamBlock>);
 export const snapshotSchema = z.object({
+  profiles: z.array(profileSchema).max(100),
+  profiles_error: z.string(),
   revision,
   active_chat_id: z.string(),
   title: z.string(),

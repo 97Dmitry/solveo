@@ -1,0 +1,2 @@
+# Wails emits tabs on empty lines. Keep generated files as emitted by make bindings.
+frontend/wailsjs/** whitespace=-blank-at-eol

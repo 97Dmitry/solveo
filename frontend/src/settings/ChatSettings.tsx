@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatConfig, Model, Snapshot } from "../bridge/state";
 import { configSchema, errorText } from "../bridge/state";
 import { Button } from "../ui/Button";
+import { ProfileControls, type ProfileActions } from "./ProfileControls";
 
 const responseLanguages = [
   "Русский",
@@ -144,15 +145,28 @@ export function ChatSettings({
   onSave,
   onClose,
   loadModels,
+  profileActions,
+  busy = false,
 }: {
+  profileActions?: ProfileActions;
+  busy?: boolean;
   snapshot: Snapshot;
   onSave: (title: string, config: ChatConfig) => Promise<boolean>;
   onClose: () => void;
   loadModels: () => Promise<Model[]>;
 }) {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [title, setTitle] = useState(snapshot.title);
   const [form, setForm] = useState(snapshot.config);
+  const [formBaseline, setFormBaseline] = useState(snapshot.config);
   const [saving, setSaving] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
   const [error, setError] = useState("");
   const [catalog, setCatalog] = useState<Catalog>({ status: "loading" });
   const [refresh, setRefresh] = useState(0);
@@ -181,6 +195,11 @@ export function ChatSettings({
       (reasoning !== "" && !model?.reasoning_efforts.some((effort) => effort.id === reasoning))
     );
   };
+  const canUseConfig = (cfg: ChatConfig) =>
+    catalog.status !== "ready" ||
+    (!unavailable(cfg.model, cfg.reasoning) &&
+      (!cfg.parallel_answers || !unavailable(cfg.fast_model, cfg.fast_reasoning)));
+  const disabled = saving || profileBusy || busy;
   const invalidSelection =
     catalog.status === "ready" &&
     (unavailable(form.model, form.reasoning) ||
@@ -192,7 +211,7 @@ export function ChatSettings({
       className="settings-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (invalidSelection || saving) return;
+        if (invalidSelection || disabled) return;
         const parsed = configSchema.safeParse(form);
         if (!parsed.success) {
           setError("Проверьте параметры ответа");
@@ -200,6 +219,7 @@ export function ChatSettings({
         }
         setSaving(true);
         void onSave(title, parsed.data).then((ok) => {
+          if (!mounted.current) return;
           setSaving(false);
           if (ok) onClose();
         });
@@ -208,10 +228,59 @@ export function ChatSettings({
       <p className="form-intro">
         Подготовьте контекст до начала работы. Сохранение настроек не отправляет запрос модели.
       </p>
+      {profileActions && (
+        <ProfileControls
+          snapshot={snapshot}
+          config={form}
+          dirty={JSON.stringify(form) !== JSON.stringify(formBaseline)}
+          navigationDirty={
+            JSON.stringify(form) !== JSON.stringify(formBaseline) || title !== snapshot.title
+          }
+          disabled={disabled || !snapshot.controls.can_switch}
+          actions={profileActions}
+          onLoad={(config) => {
+            setForm(config);
+            setFormBaseline(config);
+          }}
+          onClose={onClose}
+          canUseConfig={canUseConfig}
+          onBusy={setProfileBusy}
+        />
+      )}
       <label>
         Название чата
         <input value={title} maxLength={160} onChange={(event) => setTitle(event.target.value)} />
       </label>
+      <div className="form-row">
+        <label>
+          Позиция
+          <input value={form.position} onChange={(e) => change("position", e.target.value)} />
+        </label>
+        <label>
+          Стек
+          <input value={form.stack} onChange={(e) => change("stack", e.target.value)} />
+        </label>
+      </div>
+      <label>
+        Формат интервью
+        <input
+          value={form.interview_format}
+          onChange={(e) => change("interview_format", e.target.value)}
+        />
+      </label>
+      <label>
+        Реальный опыт и проекты / текст резюме
+        <textarea
+          rows={6}
+          value={form.experience}
+          placeholder="Вставьте текст резюме или опишите свой реальный опыт и проекты."
+          onChange={(e) => change("experience", e.target.value)}
+        />
+      </label>
+      <p className="form-intro">
+        Только предоставленные вами факты. Если сведений об опыте нет, помощник должен уточнить их
+        или дать явно обозначенную заготовку.
+      </p>
       <label>
         Что будет происходить
         <textarea
@@ -283,7 +352,7 @@ export function ChatSettings({
         reasoning={form.reasoning}
         modelLabel="Модель"
         effortLabel="Усилие рассуждения"
-        disabled={catalog.status !== "ready" || saving}
+        disabled={catalog.status !== "ready" || disabled}
         supportsReasoning={snapshot.provider.capabilities.reasoning}
         onModel={(model) => setForm((previous) => ({ ...previous, model, reasoning: "" }))}
         onReasoning={(reasoning) => change("reasoning", reasoning)}
@@ -293,7 +362,7 @@ export function ChatSettings({
         <input
           type="checkbox"
           checked={form.parallel_answers}
-          disabled={saving}
+          disabled={disabled}
           onChange={(event) => change("parallel_answers", event.target.checked)}
         />
         Параллельные подход и решение
@@ -315,7 +384,7 @@ export function ChatSettings({
             reasoning={form.fast_reasoning}
             modelLabel="Быстрая модель"
             effortLabel="Рассуждение быстрой модели"
-            disabled={catalog.status !== "ready" || saving}
+            disabled={catalog.status !== "ready" || disabled}
             supportsReasoning={snapshot.provider.capabilities.reasoning}
             onModel={(fast_model) =>
               setForm((previous) => ({ ...previous, fast_model, fast_reasoning: "" }))
@@ -331,7 +400,7 @@ export function ChatSettings({
         </p>
       )}
       <Button
-        disabled={catalog.status === "loading" || saving}
+        disabled={catalog.status === "loading" || disabled}
         onClick={() => {
           setCatalog({ status: "loading" });
           setRefresh((value) => value + 1);
@@ -341,13 +410,13 @@ export function ChatSettings({
       </Button>
       {error && <p role="alert">{error}</p>}
       <div className="form-actions">
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={onClose} disabled={disabled}>
           Отмена
         </Button>
         <Button
           type="submit"
           className="primary"
-          disabled={saving || invalidSelection || !snapshot.controls.can_edit_config}
+          disabled={disabled || invalidSelection || !snapshot.controls.can_edit_config}
         >
           {saving ? "Сохраняю…" : "Сохранить преднастройку"}
         </Button>

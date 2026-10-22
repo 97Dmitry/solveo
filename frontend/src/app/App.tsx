@@ -158,7 +158,7 @@ export default function App() {
         <Button
           className="config-chip"
           onClick={() => setPanel("configuration")}
-          disabled={busy || !s.controls.can_edit_config}
+          disabled={busy || !s.controls.can_switch}
         >
           <SlidersHorizontal size={14} />
           <span>Преднастройка</span>
@@ -323,6 +323,13 @@ export default function App() {
           {panel === "configuration" && (
             <ChatSettings
               loadModels={loadModels}
+              busy={state.working}
+              profileActions={{
+                save: actions.saveProfile,
+                remove: actions.deleteProfile,
+                reload: actions.reloadProfiles,
+                create: actions.newChatFromProfile,
+              }}
               key={`${s.active_chat_id}:${s.config_revision}`}
               snapshot={s}
               onClose={close}

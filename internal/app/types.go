@@ -11,6 +11,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
+	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
@@ -66,6 +67,10 @@ type WorkStore interface {
 	Has(string) (bool, error)
 	Prune(map[string]bool) error
 }
+type ProfilesStore interface {
+	Load() ([]profiles.Profile, error)
+	Save([]profiles.Profile) error
+}
 type SettingsStore interface {
 	Load() (settings.Config, error)
 	Save(settings.Config) error
@@ -90,6 +95,7 @@ type Window interface {
 	Toggle()
 }
 type Dependencies struct {
+	ProfilesStore ProfilesStore
 	Store         Archive
 	SettingsStore SettingsStore
 	Provider      llm.Provider
@@ -112,6 +118,20 @@ type DraftInput struct {
 	ChatID      string `json:"chat_id"`
 	Text        string `json:"text"`
 	Revision    uint64 `json:"revision"`
+}
+type ProfileView struct {
+	ID        string      `json:"id"`
+	Name      string      `json:"name"`
+	Config    chat.Config `json:"config"`
+	Revision  uint64      `json:"revision"`
+	CreatedAt string      `json:"created_at"`
+	UpdatedAt string      `json:"updated_at"`
+}
+type ProfileInput struct {
+	ID               string      `json:"id"`
+	Name             string      `json:"name"`
+	Config           chat.Config `json:"config"`
+	ExpectedRevision uint64      `json:"expected_revision"`
 }
 type ConfigInput struct {
 	ChatID           string      `json:"chat_id"`
@@ -164,6 +184,8 @@ type HistorySummary struct {
 	Prepared   bool   `json:"prepared"`
 }
 type Snapshot struct {
+	Profiles       []ProfileView    `json:"profiles"`
+	ProfilesError  string           `json:"profiles_error"`
 	Revision       uint64           `json:"revision"`
 	ActiveChatID   string           `json:"active_chat_id"`
 	Title          string           `json:"title"`

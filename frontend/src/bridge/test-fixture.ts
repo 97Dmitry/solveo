@@ -1,11 +1,17 @@
 import type { Snapshot } from "./state";
 export function snapshotFixture(): Snapshot {
   return {
+    profiles: [],
+    profiles_error: "",
     revision: 1,
     active_chat_id: "first",
     title: "Новый чат",
     provider_id: "codex",
     config: {
+      position: "",
+      stack: "",
+      interview_format: "",
+      experience: "",
       parallel_answers: false,
       fast_model: "",
       fast_reasoning: "",

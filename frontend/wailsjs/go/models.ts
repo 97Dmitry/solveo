@@ -172,6 +172,82 @@ export namespace app {
 	        this.message = source["message"];
 	    }
 	}
+	export class ProfileInput {
+	    id: string;
+	    name: string;
+	    config: chat.Config;
+	    expected_revision: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProfileInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.config = this.convertValues(source["config"], chat.Config);
+	        this.expected_revision = source["expected_revision"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ProfileView {
+	    id: string;
+	    name: string;
+	    config: chat.Config;
+	    revision: number;
+	    created_at: string;
+	    updated_at: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProfileView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.config = this.convertValues(source["config"], chat.Config);
+	        this.revision = source["revision"];
+	        this.created_at = source["created_at"];
+	        this.updated_at = source["updated_at"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StreamBlock {
 	    chat_id: string;
 	    operation_id: string;
@@ -195,6 +271,8 @@ export namespace app {
 	    }
 	}
 	export class Snapshot {
+	    profiles: ProfileView[];
+	    profiles_error: string;
 	    revision: number;
 	    active_chat_id: string;
 	    title: string;
@@ -222,6 +300,8 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.profiles = this.convertValues(source["profiles"], ProfileView);
+	        this.profiles_error = source["profiles_error"];
 	        this.revision = source["revision"];
 	        this.active_chat_id = source["active_chat_id"];
 	        this.title = source["title"];
@@ -391,6 +471,10 @@ export namespace chat {
 	    }
 	}
 	export class Config {
+	    position: string;
+	    stack: string;
+	    interview_format: string;
+	    experience: string;
 	    parallel_answers: boolean;
 	    fast_model: string;
 	    fast_reasoning: string;
@@ -408,6 +492,10 @@ export namespace chat {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.position = source["position"];
+	        this.stack = source["stack"];
+	        this.interview_format = source["interview_format"];
+	        this.experience = source["experience"];
 	        this.parallel_answers = source["parallel_answers"];
 	        this.fast_model = source["fast_model"];
 	        this.fast_reasoning = source["fast_reasoning"];

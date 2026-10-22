@@ -30,6 +30,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/llm/codex"
 	"github.com/97Dmitry/solveo/internal/platform"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
+	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
@@ -147,6 +148,7 @@ func run() error {
 	controller, e := core.New(core.Dependencies{
 		Store:         store,
 		SettingsStore: settings.Open(dir),
+		ProfilesStore: profiles.New(dir),
 		Provider:      provider,
 		Capturer:      screenCapture{},
 		NativeHost:    host,

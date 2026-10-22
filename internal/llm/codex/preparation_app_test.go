@@ -10,6 +10,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/app"
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
@@ -103,5 +104,60 @@ func TestControllerConsumesPreparationAndResumesExactThread(t *testing.T) {
 	lines := readLog(t, env.log)
 	if count(lines, "thread/start") != 1 || count(lines, "thread/resume") != 1 || count(lines, "turn/start") != 2 {
 		t.Fatalf("unexpected lifecycle %+v", lines)
+	}
+}
+
+func TestProfileCreationPreparesWithoutModelTurn(t *testing.T) {
+	var env fakeEnv
+	provider := fakeClient(t, &env)
+	store, err := history.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	work, err := workstate.Open(filepath.Join(store.Dir, "work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller, err := app.New(app.Dependencies{Store: store, SettingsStore: settings.Open(store.Dir), ProfilesStore: profiles.New(store.Dir), Provider: provider, Work: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close(context.Background()) })
+	prepared := awaitPreparation(t, provider)
+	original := controller.Snapshot()
+	cfg := original.Config
+	cfg.Experience = "Built billing"
+	saved, err := controller.SaveProfile(app.ProfileInput{Name: "Backend", Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.app.mu.Lock()
+	same := provider.app.prepared == prepared
+	provider.app.mu.Unlock()
+	if !same {
+		t.Fatal("profile save disturbed current preparation")
+	}
+	p := saved.Profiles[0]
+	created, err := controller.NewChatFromProfile(p.ID, p.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		next := awaitPreparation(t, provider)
+		if next.key.chatID == created.ActiveChatID {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("profile preparation missing")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if count(readLog(t, env.log), "turn/start") != 0 {
+		t.Fatal("profile creation generated a model turn")
+	}
+	if len(created.Messages) != 0 || created.Config.Experience != "Built billing" {
+		t.Fatal("profile was not copied")
 	}
 }

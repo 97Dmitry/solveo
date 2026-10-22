@@ -6,6 +6,8 @@ import {
   accountSchema,
   configSchema,
   modelsSchema,
+  profileInputSchema,
+  type ProfileInput,
   settingsSchema,
   type AppSettings,
   type ChatConfig,
@@ -37,6 +39,13 @@ export const actions = {
         ),
       true,
     ),
+  saveProfile: (input: ProfileInput) =>
+    client.run(() => api.SaveProfile(new app.ProfileInput(profileInputSchema.parse(input))), true),
+  deleteProfile: (id: string, revision: number) =>
+    client.run(() => api.DeleteProfile(id, revision), true),
+  reloadProfiles: () => client.run(api.ReloadProfiles, true),
+  newChatFromProfile: (id: string, revision: number) =>
+    client.run(() => api.NewChatFromProfile(id, revision), true, true),
   settings: (input: AppSettings) =>
     client.run(() => api.UpdateSettings(new settings.Config(settingsSchema.parse(input))), true),
   pin: (value: boolean) => client.run(() => api.SetAlwaysOnTop(value), true),

@@ -66,3 +66,36 @@ it("validates global instructions by Unicode code points", () => {
   snapshot.settings.global_instructions = "\uD800";
   expect(() => parseSnapshot(snapshot)).toThrow();
 });
+
+it("validates profile metadata and preparation text without silently dropping fields", () => {
+  const snapshot = snapshotFixture();
+  const profile = {
+    id: "a".repeat(32),
+    name: "Interview",
+    config: { ...snapshot.config, experience: "Built billing" },
+    revision: 1,
+    created_at: "2026-10-22T10:00:00Z",
+    updated_at: "2026-10-22T10:00:00Z",
+  };
+  snapshot.profiles = [profile];
+  expect(parseSnapshot(snapshot).profiles[0]?.config.experience).toBe("Built billing");
+  expect(() => parseSnapshot({ ...snapshot, profiles: [{ ...profile, revision: 0 }] })).toThrow();
+  expect(() =>
+    parseSnapshot({ ...snapshot, profiles: [{ ...profile, id: "../escape" }] }),
+  ).toThrow();
+  expect(() =>
+    parseSnapshot({ ...snapshot, config: { ...snapshot.config, experience: "\uD800" } }),
+  ).toThrow();
+  expect(() =>
+    parseSnapshot({ ...snapshot, config: { ...snapshot.config, experience: "x\u0000" } }),
+  ).toThrow();
+  expect(() =>
+    parseSnapshot({ ...snapshot, config: { ...snapshot.config, experience: "я".repeat(524289) } }),
+  ).toThrow();
+});
+
+it("rejects an invalid primary model token before saving preparation", () => {
+  const snapshot = snapshotFixture();
+  snapshot.config.model = "model\0";
+  expect(() => parseSnapshot(snapshot)).toThrow();
+});

@@ -13,11 +13,14 @@ import (
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
 type Controller struct {
+	profiles          []profiles.Profile
+	profilesErr       string
 	settingsMu        sync.Mutex
 	mu                sync.Mutex
 	deps              Dependencies
@@ -92,6 +95,7 @@ func New(d Dependencies) (*Controller, error) {
 		submitted:   map[string]workstate.Submitted{},
 		checkpoints: map[streamKey]workstate.Block{},
 	}
+	c.loadProfiles()
 	c.initPersisters()
 	c.err = joinNotices(c.restoreWork())
 	doc := newChat(cfg.GlobalInstructions)
@@ -192,6 +196,8 @@ func (c *Controller) Snapshot() Snapshot {
 		workErr = c.streamErr
 	}
 	return Snapshot{
+		Profiles:       c.profileViewsLocked(),
+		ProfilesError:  c.profilesErr,
 		Revision:       c.revision,
 		ActiveChatID:   doc.ID,
 		Title:          doc.Title,
@@ -249,22 +255,7 @@ func (c *Controller) SetDraft(in DraftInput) error {
 	c.publish()
 	return nil
 }
-func validateConfig(cfg chat.Config) error {
-	for _, v := range []string{cfg.Context, cfg.Instructions, cfg.Model, cfg.FastModel, cfg.ResponseLanguage, cfg.CodeLanguage} {
-		if len(v) > 1<<20 || strings.ContainsRune(v, 0) {
-			return errors.New("некорректная преднастройка чата")
-		}
-	}
-	if !llm.ValidReasoning(cfg.Reasoning) || !llm.ValidReasoning(cfg.FastReasoning) {
-		return errors.New("неподдерживаемый уровень рассуждения")
-	}
-	switch cfg.Detail {
-	case "brief", "normal", "detailed":
-	default:
-		return errors.New("некорректная подробность ответа")
-	}
-	return nil
-}
+func validateConfig(cfg chat.Config) error { return chat.ValidateConfig(cfg) }
 func (c *Controller) SaveChatConfig(in ConfigInput) (Snapshot, error) {
 	if e := validateConfig(in.Config); e != nil {
 		return Snapshot{}, e
@@ -307,13 +298,22 @@ func (c *Controller) SaveChatConfig(in ConfigInput) (Snapshot, error) {
 	c.publish()
 	return c.Snapshot(), e
 }
-func (c *Controller) NewChat() (Snapshot, error)           { return c.switchChat("") }
-func (c *Controller) OpenChat(id string) (Snapshot, error) { return c.switchChat(id) }
-func (c *Controller) switchChat(id string) (Snapshot, error) {
+func (c *Controller) NewChat() (Snapshot, error)           { return c.switchChat("", "", 0) }
+func (c *Controller) OpenChat(id string) (Snapshot, error) { return c.switchChat(id, "", 0) }
+func (c *Controller) switchChat(id, profileID string, profileRevision uint64) (Snapshot, error) {
 	c.mu.Lock()
 	if e := c.availableLocked(); e != nil {
 		c.mu.Unlock()
 		return Snapshot{}, e
+	}
+	var profile profiles.Profile
+	if profileID != "" {
+		var err error
+		profile, err = c.profileLocked(profileID, profileRevision)
+		if err != nil {
+			c.mu.Unlock()
+			return Snapshot{}, err
+		}
 	}
 	if c.preparationCancel != nil {
 		c.preparationCancel()
@@ -327,7 +327,12 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 	var doc chat.Chat
 	var e error
 	if id == "" {
-		doc, e = c.deps.Store.Save(history.SaveInput{Chat: newChat(globalInstructions)})
+		doc = newChat(globalInstructions)
+		if profileID != "" {
+			doc.Config = profile.Config
+			doc.Title = profile.Name
+		}
+		doc, e = c.deps.Store.Save(history.SaveInput{Chat: doc})
 	} else {
 		doc, e = c.deps.Store.Load(id)
 	}
