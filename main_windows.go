@@ -23,6 +23,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/audio"
 	"github.com/97Dmitry/solveo/internal/capture"
 	"github.com/97Dmitry/solveo/internal/config"
 	"github.com/97Dmitry/solveo/internal/history"
@@ -32,6 +33,8 @@ import (
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/stt"
+	sttdocker "github.com/97Dmitry/solveo/internal/stt/docker"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
@@ -145,6 +148,18 @@ func run() error {
 	defer func() { _ = host.Close() }()
 	// Codex keeps Solveo's own state, login and sessions beside the archive.
 	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
+	// Local speech recognition: Docker Desktop's CLI drives the solveo-stt container; weights stay beside the archive.
+	speech := core.AudioDeps{
+		Runtime: &sttdocker.Manager{Runner: sttdocker.ExecRunner{Binary: "docker"}, ModelsDir: filepath.Join(dir, "models"), Getenv: os.Getenv, Health: stt.Health},
+		Dial: func(ctx context.Context, addr, token string) (core.STTSession, error) {
+			s, err := stt.Dial(ctx, addr, token)
+			if err != nil {
+				return nil, err // never a typed nil inside the interface
+			}
+			return s, nil
+		},
+		Capturer: audio.NewCapturer(),
+	}
 	controller, e := core.New(core.Dependencies{
 		Store:         store,
 		SettingsStore: settings.Open(dir),
@@ -154,6 +169,7 @@ func run() error {
 		NativeHost:    host,
 		Window:        window,
 		Work:          work,
+		Audio:         speech,
 		Emit: func(name string, data interface{}) {
 			window.mu.Lock()
 			runtimeCtx := window.ctx
