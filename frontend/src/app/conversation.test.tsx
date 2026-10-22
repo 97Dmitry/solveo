@@ -21,6 +21,8 @@ vi.mock("../bridge/wails", async () => {
       setDraft: async () => {},
       submit: transport.submit,
       streamSnapshot: async () => ({ revision: 0, blocks: [] }),
+      audioSnapshot: async () => ({}),
+      submitTranscript: async () => "op",
       on: (name, cb) => {
         transport.listeners.set(name, cb);
         return () => {

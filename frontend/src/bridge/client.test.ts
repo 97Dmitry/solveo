@@ -29,6 +29,8 @@ function setup() {
         },
       ],
     }),
+    audioSnapshot: async () => ({}),
+    submitTranscript: async () => "op",
   } satisfies Transport;
   return { client: new SolveoClient(api), listeners, submit, setDraft: api.setDraft };
 }

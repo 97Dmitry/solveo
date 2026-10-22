@@ -100,3 +100,15 @@ func (a *App) ReorderAttachments(chatID string, ids []string) error {
 
 func (a *App) SuspendHotkeys(suspend bool) error { return a.controller.SuspendHotkeys(suspend) }
 func (a *App) DefaultHotkeys() map[string]string { return hotkeys.Defaults() }
+
+func (a *App) AudioSnapshot() core.AudioView { return a.controller.AudioSnapshot() }
+func (a *App) RefreshAudio() error           { return a.controller.RefreshAudio() }
+func (a *App) PrepareAudio() error           { return a.controller.PrepareAudio() }
+func (a *App) StartAudioModel() error        { return a.controller.StartAudioModel() }
+func (a *App) StopAudioModel() error         { return a.controller.StopAudioModel() }
+func (a *App) StartListening() error         { return a.controller.StartListening() }
+func (a *App) StopListening() error          { return a.controller.StopListening() }
+func (a *App) ClearTranscript() error        { return a.controller.ClearTranscript() }
+func (a *App) SubmitTranscript(in core.SubmitTranscriptInput) (string, error) {
+	return a.controller.SubmitTranscript(in)
+}

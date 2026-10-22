@@ -6,6 +6,10 @@ export function Account() {
   return window['go']['main']['App']['Account']();
 }
 
+export function AudioSnapshot() {
+  return window['go']['main']['App']['AudioSnapshot']();
+}
+
 export function BeginCapture(arg1) {
   return window['go']['main']['App']['BeginCapture'](arg1);
 }
@@ -24,6 +28,10 @@ export function CheckConnection() {
 
 export function ClearQueue(arg1) {
   return window['go']['main']['App']['ClearQueue'](arg1);
+}
+
+export function ClearTranscript() {
+  return window['go']['main']['App']['ClearTranscript']();
 }
 
 export function DefaultHotkeys() {
@@ -74,8 +82,16 @@ export function OpenImage(arg1, arg2) {
   return window['go']['main']['App']['OpenImage'](arg1, arg2);
 }
 
+export function PrepareAudio() {
+  return window['go']['main']['App']['PrepareAudio']();
+}
+
 export function Ready() {
   return window['go']['main']['App']['Ready']();
+}
+
+export function RefreshAudio() {
+  return window['go']['main']['App']['RefreshAudio']();
 }
 
 export function ReloadProfiles() {
@@ -142,8 +158,24 @@ export function Snapshot() {
   return window['go']['main']['App']['Snapshot']();
 }
 
+export function StartAudioModel() {
+  return window['go']['main']['App']['StartAudioModel']();
+}
+
+export function StartListening() {
+  return window['go']['main']['App']['StartListening']();
+}
+
 export function StartLogin() {
   return window['go']['main']['App']['StartLogin']();
+}
+
+export function StopAudioModel() {
+  return window['go']['main']['App']['StopAudioModel']();
+}
+
+export function StopListening() {
+  return window['go']['main']['App']['StopListening']();
 }
 
 export function StreamSnapshot() {
@@ -152,6 +184,10 @@ export function StreamSnapshot() {
 
 export function Submit(arg1) {
   return window['go']['main']['App']['Submit'](arg1);
+}
+
+export function SubmitTranscript(arg1) {
+  return window['go']['main']['App']['SubmitTranscript'](arg1);
 }
 
 export function SuspendHotkeys(arg1) {

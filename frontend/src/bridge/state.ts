@@ -143,6 +143,10 @@ export const hotkeysSchema = z.object({
   submit: hotkeyText,
   "quick-full": hotkeyText,
 });
+// Go normalizes and limits the dictionary; the renderer checks only the shape.
+export const audioSettingsSchema = z.object({
+  context_phrases: z.array(z.string().min(1).max(512)).max(256),
+} satisfies Shape<settings.Audio>);
 export const settingsSchema = z.object({
   global_instructions: globalInstructionsSchema,
   ui_scale: z.number().int().min(80).max(150),
@@ -150,6 +154,7 @@ export const settingsSchema = z.object({
   font_size: z.number().int().min(14).max(30),
   always_on_top: z.boolean(),
   hotkeys: hotkeysSchema,
+  audio: audioSettingsSchema,
 } satisfies Shape<settings.Config>);
 const capabilities = z.object({
   images: z.boolean(),
@@ -270,6 +275,52 @@ export const intentSchema = z.object({
   draft_revision: revision,
   expires_at: revision,
 } satisfies Shape<app.SubmitIntent>);
+const audioTrack = z.enum(["system", "mic"]);
+const audioCheckSchema = z.object({
+  id: z.enum(["docker", "engine", "image", "gpu", "model"]),
+  state: z.enum(["ok", "missing", "error", "unknown"]),
+  message: z.string().max(8192),
+} satisfies Shape<app.AudioCheck>);
+const audioSourceSchema = z.object({
+  track: audioTrack,
+  device: z.string().max(1024),
+  active: z.boolean(),
+  error: z.string().max(8192),
+} satisfies Shape<app.AudioSourceView>);
+const transcriptSegmentSchema = z.object({
+  id: z.string().min(1).max(256),
+  track: audioTrack,
+  started_at: z.iso.datetime(),
+  text: z.string().max(65536),
+  final: z.boolean(),
+} satisfies Shape<app.TranscriptSegment>);
+export const audioSchema = z.object({
+  available: z.boolean(),
+  revision,
+  checks: z.array(audioCheckSchema).max(5),
+  busy: z.enum(["", "checking", "preparing", "starting", "stopping", "opening"]),
+  progress: z.string().max(2048),
+  model: z.enum(["stopped", "starting", "ready", "failed"]),
+  listening: z.boolean(),
+  sources: z.array(audioSourceSchema).max(2),
+  segments: z.array(transcriptSegmentSchema).max(300),
+  error: z.string().max(8192),
+} satisfies Shape<app.AudioView>);
+export type AudioState = z.infer<typeof audioSchema>;
+export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
+// Before the first AudioSnapshot: revision -1 accepts any real state.
+export const emptyAudio: AudioState = {
+  available: false,
+  revision: -1,
+  checks: [],
+  busy: "",
+  progress: "",
+  model: "stopped",
+  listening: false,
+  sources: [],
+  segments: [],
+  error: "",
+};
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type ChatConfig = z.infer<typeof configSchema>;
 export type AppSettings = z.infer<typeof settingsSchema>;

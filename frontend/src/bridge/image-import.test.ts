@@ -13,6 +13,7 @@ vi.mock("../../wailsjs/go/main/App", async () => {
     SetDraft: async () => {},
     Submit: async () => "operation",
     StreamSnapshot: async () => ({ revision: 0, blocks: [] }),
+    AudioSnapshot: async () => ({}),
     ImportAttachment: native.importImage,
   };
 });

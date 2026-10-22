@@ -25,6 +25,8 @@ export const client = new SolveoClient({
   setDraft: api.SetDraft,
   submit: api.Submit,
   streamSnapshot: api.StreamSnapshot,
+  audioSnapshot: api.AudioSnapshot,
+  submitTranscript: (input) => api.SubmitTranscript(new app.SubmitTranscriptInput(input)),
 });
 export const actions = {
   exit: () => client.run(api.Exit),
@@ -75,6 +77,13 @@ export const actions = {
   check: () => client.run(api.CheckConnection),
   image: (chatID: string, id: string) => client.run(() => api.OpenImage(chatID, id)),
   log: () => client.run(api.ShowLog),
+  refreshAudio: () => client.run(api.RefreshAudio),
+  prepareAudio: () => client.run(api.PrepareAudio),
+  startAudioModel: () => client.run(api.StartAudioModel),
+  stopAudioModel: () => client.run(api.StopAudioModel),
+  startListening: () => client.run(api.StartListening),
+  stopListening: () => client.run(api.StopListening),
+  clearTranscript: () => client.run(api.ClearTranscript),
   startLogin: () => client.run(api.StartLogin, true),
   cancelLogin: () => client.run(api.CancelLogin, true),
   copy: async (text: string) => {

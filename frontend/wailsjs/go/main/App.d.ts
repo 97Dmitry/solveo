@@ -7,6 +7,8 @@ import {settings} from '../models';
 
 export function Account():Promise<llm.Account>;
 
+export function AudioSnapshot():Promise<app.AudioView>;
+
 export function BeginCapture(arg1:string):Promise<void>;
 
 export function Cancel(arg1:string):Promise<void>;
@@ -16,6 +18,8 @@ export function CancelLogin():Promise<app.Snapshot>;
 export function CheckConnection():Promise<string>;
 
 export function ClearQueue(arg1:string):Promise<void>;
+
+export function ClearTranscript():Promise<void>;
 
 export function DefaultHotkeys():Promise<Record<string, string>>;
 
@@ -41,7 +45,11 @@ export function OpenChat(arg1:string):Promise<app.Snapshot>;
 
 export function OpenImage(arg1:string,arg2:string):Promise<void>;
 
+export function PrepareAudio():Promise<void>;
+
 export function Ready():Promise<void>;
+
+export function RefreshAudio():Promise<void>;
 
 export function ReloadProfiles():Promise<app.Snapshot>;
 
@@ -75,11 +83,21 @@ export function ShowLog():Promise<void>;
 
 export function Snapshot():Promise<app.Snapshot>;
 
+export function StartAudioModel():Promise<void>;
+
+export function StartListening():Promise<void>;
+
 export function StartLogin():Promise<app.Snapshot>;
+
+export function StopAudioModel():Promise<void>;
+
+export function StopListening():Promise<void>;
 
 export function StreamSnapshot():Promise<app.StreamSnapshot>;
 
 export function Submit(arg1:app.SubmitInput):Promise<string>;
+
+export function SubmitTranscript(arg1:app.SubmitTranscriptInput):Promise<string>;
 
 export function SuspendHotkeys(arg1:boolean):Promise<void>;
 

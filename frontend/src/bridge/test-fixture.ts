@@ -1,4 +1,18 @@
-import type { Snapshot } from "./state";
+import type { AudioState, Snapshot } from "./state";
+export function audioFixture(): AudioState {
+  return {
+    available: true,
+    revision: 5,
+    checks: [],
+    busy: "",
+    progress: "",
+    model: "stopped",
+    listening: false,
+    sources: [],
+    segments: [],
+    error: "",
+  };
+}
 export function snapshotFixture(): Snapshot {
   return {
     profiles: [],
@@ -51,6 +65,7 @@ export function snapshotFixture(): Snapshot {
         submit: "Ctrl+Alt+Enter",
         "quick-full": "Ctrl+Alt+F",
       },
+      audio: { context_phrases: [] },
     },
     provider: {
       id: "codex",
