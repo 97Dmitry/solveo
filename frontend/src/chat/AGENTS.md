@@ -7,3 +7,5 @@
 - Retry targets the original user message and repeats only the solution. Only the last failed user turn can expose retry; Go owns eligibility and operation lifecycle.
 - Last-code selection must use the latest complete solution or ordinary assistant text, never the preliminary approach. Keep scroll-to-bottom responsive to nested block completion as well as message count; preserve reading position.
 - Markdown forbids raw HTML and remote images. Run frontend checks/tests from the parent guide, including parallel.test.tsx.
+
+- FollowupActions prepares the editor for a selected complete ordinary answer or parallel block; commands do not submit automatically. AnswerReference displays a local target and supports scrolling/focus; no references to previews/recovered text. Reuse copies question text/reference only, without attaching historical PNGs or changing old messages. Keep the next draft editable while waiting/streaming/saving; save-pending recovery remains blocking.

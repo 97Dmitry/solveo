@@ -6,3 +6,5 @@
 - Never share Chat slices, raw provider state or config pointers between controller, workers and snapshots; use Clone at ownership boundaries. Persist UTC via Now.
 
 - `Chat.GlobalInstructions` is the immutable creation-time snapshot supplied by app; missing archive fields mean empty. Keep chat independent of application settings. Retry uses the same snapshot plus the frozen RequestConfig.
+
+- `Message.reply_to_id`/`reply_to_kind` are additive user-turn metadata. Empty kind addresses an ordinary assistant message; approach/solution addresses a completed block on a prior user turn. `ReferencedAnswer`/`ValidReference` resolve only complete, nonempty answers. Retry preserves the original reference.

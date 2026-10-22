@@ -14,6 +14,7 @@ import (
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/llm/codex/appserver"
 	"github.com/97Dmitry/solveo/internal/llm/codex/appserver/appservertest"
 )
 
@@ -416,5 +417,66 @@ func TestCheckUsesOneOffSessionAndShortPrompt(t *testing.T) {
 	}
 	if count(lines, "thread/unsubscribe") != 1 {
 		t.Fatal("check thread was not released")
+	}
+}
+
+// Preparation and an arriving question share the same launch, never a hidden
+// model turn. Deliberately hold launch so all callers overlap deterministically.
+func TestPrepareConcurrentWithFirstSubmission(t *testing.T) {
+	var env fakeEnv
+	c := fakeClient(t, &env)
+	start := c.app.start
+	entered, release := make(chan struct{}), make(chan struct{})
+	c.app.start = func(ctx context.Context, o appserver.Options) (*appserver.Conn, error) {
+		close(entered)
+		<-release
+		return start(ctx, o)
+	}
+	prepared := make(chan error, 1)
+	go func() { prepared <- c.Prepare(context.Background()) }()
+	<-entered
+	generated := make(chan error, 1)
+	go func() { _, err := c.Generate(context.Background(), request("only-question"), nil); generated <- err }()
+	close(release)
+	if err := <-prepared; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-generated; err != nil {
+		t.Fatal(err)
+	}
+	lines := readLog(t, env.log)
+	if count(lines, "start") != 1 || count(lines, "thread/start") != 1 || count(lines, "turn/start") != 1 {
+		t.Fatalf("unexpected launches/turns: %+v", lines)
+	}
+}
+
+func TestUnusedProcessPreparationHasNoThreadAndCanRestart(t *testing.T) {
+	var env fakeEnv
+	c := fakeClient(t, &env)
+	if err := c.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.app.mu.Lock()
+	lost := c.app.conn
+	c.app.mu.Unlock()
+	lost.Kill()
+	if err := c.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	lines := readLog(t, env.log)
+	if count(lines, "start") != 2 || count(lines, "thread/start") != 0 || count(lines, "turn/start") != 0 {
+		t.Fatalf("preparation created a conversation: %+v", lines)
+	}
+	if err := c.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.app.mu.Lock()
+	retained := c.app.conn
+	c.app.mu.Unlock()
+	if retained != nil {
+		t.Fatal("closed preparation retained a connection")
+	}
+	if err := c.Prepare(context.Background()); err == nil {
+		t.Fatal("closed client prepared again")
 	}
 }

@@ -101,13 +101,17 @@ type Dependencies struct {
 	Now           func() time.Time
 }
 type Draft struct {
-	Text     string `json:"text"`
-	Revision uint64 `json:"revision"`
+	ReplyToID   string `json:"reply_to_id,omitempty"`
+	ReplyToKind string `json:"reply_to_kind,omitempty"`
+	Text        string `json:"text"`
+	Revision    uint64 `json:"revision"`
 }
 type DraftInput struct {
-	ChatID   string `json:"chat_id"`
-	Text     string `json:"text"`
-	Revision uint64 `json:"revision"`
+	ReplyToID   string `json:"reply_to_id,omitempty"`
+	ReplyToKind string `json:"reply_to_kind,omitempty"`
+	ChatID      string `json:"chat_id"`
+	Text        string `json:"text"`
+	Revision    uint64 `json:"revision"`
 }
 type ConfigInput struct {
 	ChatID           string      `json:"chat_id"`
@@ -116,6 +120,8 @@ type ConfigInput struct {
 	ExpectedRevision uint64      `json:"expected_revision"`
 }
 type SubmitInput struct {
+	ReplyToID      string   `json:"reply_to_id,omitempty"`
+	ReplyToKind    string   `json:"reply_to_kind,omitempty"`
 	RequestID      string   `json:"request_id"`
 	IntentID       string   `json:"intent_id"`
 	ChatID         string   `json:"chat_id"`

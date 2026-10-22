@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/storage"
 )
 
@@ -41,8 +42,10 @@ var ErrUnsupported = errors.New("рабочее состояние создан�
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
 type Draft struct {
-	Text     string `json:"text"`
-	Revision uint64 `json:"revision"`
+	ReplyToID   string `json:"reply_to_id,omitempty"`
+	ReplyToKind string `json:"reply_to_kind,omitempty"`
+	Text        string `json:"text"`
+	Revision    uint64 `json:"revision"`
 }
 
 // Item is a queued PNG stored as queue/<ID>.png; order is the send order.
@@ -109,6 +112,9 @@ func validateState(chats map[string]Chat) error {
 	for id, c := range chats {
 		if !ValidID(id) {
 			return errors.New("некорректный ID чата")
+		}
+		if (c.Draft.ReplyToID != "" && !ValidID(c.Draft.ReplyToID)) || (c.Draft.ReplyToID == "" && c.Draft.ReplyToKind != "") || (c.Draft.ReplyToKind != "" && c.Draft.ReplyToKind != chat.AnswerApproach && c.Draft.ReplyToKind != chat.AnswerSolution) {
+			return errors.New("некорректная ссылка черновика")
 		}
 		if len(c.Draft.Text) > maxDraftBytes {
 			return errors.New("черновик длиннее 1 МиБ")

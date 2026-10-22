@@ -39,12 +39,16 @@ type appServer struct {
 	binary, home, work string
 	start              func(context.Context, appserver.Options) (*appserver.Conn, error)
 
-	mu       sync.Mutex
-	conn     *appserver.Conn
-	starting chan struct{}
-	closed   bool
-	loaded   map[string]bool // threads loaded in the current process
-	login    *pendingLogin
+	mu                sync.Mutex
+	conn              *appserver.Conn
+	starting          chan struct{}
+	closed            bool
+	prepared          *preparedThread
+	lastSubmittedChat string
+	foreground        int
+	preparationGate   chan struct{}
+	loaded            map[string]bool // threads loaded in the current process
+	login             *pendingLogin
 	// unclaimed keeps login completions that arrived before StartLogin
 	// registered their login ID ("" for a completion without an ID).
 	unclaimed map[string]error
@@ -264,6 +268,9 @@ func (a *appServer) notify(method string, params json.RawMessage) {
 	}
 	a.mu.Lock()
 	login := a.login
+	if p.Success && a.prepared != nil {
+		a.prepared.cancel()
+	}
 	if login == nil || (id != "" && id != login.id) {
 		// The completion can arrive before StartLogin registers the login.
 		if a.unclaimed == nil || len(a.unclaimed) >= 8 {
@@ -295,6 +302,9 @@ func (a *appServer) isLoaded(conn *appserver.Conn, thread string) bool {
 func (a *appServer) close(ctx context.Context) error {
 	a.mu.Lock()
 	a.closed = true
+	if a.prepared != nil {
+		a.prepared.cancel()
+	}
 	conn := a.conn
 	login := a.login
 	a.conn, a.login = nil, nil
@@ -414,6 +424,7 @@ func threadParams(cwd string, cfg chat.Config) map[string]any {
 // turnSpec describes one request. An ephemeral one-off session neither
 // continues nor returns chat state.
 type turnSpec struct {
+	chatID           string
 	instructions     string
 	instructionsHash string
 	state            sessionState
@@ -428,6 +439,11 @@ type turnSpec struct {
 
 // run sends one request through the persistent connection.
 func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (llm.Result, error) {
+	// Reserve foreground ownership before a late preparation can publish a slot.
+	c.app.mu.Lock()
+	c.app.foreground++
+	c.app.mu.Unlock()
+	defer func() { c.app.mu.Lock(); c.app.foreground--; c.app.mu.Unlock() }()
 	timeout, threadID, ephemeral := spec.timeout, spec.threadID, spec.ephemeral
 	applied, pending := spec.state.InstructionsHash, spec.state.PendingInstructionsHash
 	newThread := threadID == ""
@@ -450,6 +466,30 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	if err != nil {
 		return keep(), fmt.Errorf("подключение Codex недоступно: %w", err)
 	}
+	var preparedID string
+	key := preparationKey{}
+	if newThread && !ephemeral && spec.chatID != "" {
+		key = preparationKey{chatID: spec.chatID, instructions: spec.instructionsHash, model: spec.config.Model, reasoning: spec.config.Reasoning}
+	}
+	preparedID, err = c.takePrepared(ctx, conn, key)
+	if err != nil {
+		return keep(), err
+	}
+	// A stale cleanup may have retired this process. No turn has been sent yet.
+	if conn.Err() != nil {
+		preparedID = ""
+		conn, err = c.app.connection(ctx)
+		if err != nil {
+			return keep(), fmt.Errorf("подключение Codex недоступно: %w", err)
+		}
+	}
+	// Ownership transfers at claim, including early cancellation/account errors.
+	// The already archived question can retain this exact thread and pending hash.
+	if preparedID != "" {
+		threadID = preparedID
+		pending = spec.instructionsHash
+		c.app.markLoaded(conn, threadID)
+	}
 	var info startInfo
 	c.app.mu.Lock()
 	if c.app.fresh != nil && c.app.conn == conn {
@@ -471,6 +511,7 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	accountReady := time.Since(accountStart)
 
 	threadStart := time.Now()
+	preparedThreadUsed := preparedID != ""
 	params := threadParams(c.app.work, spec.config)
 	var thread struct {
 		Thread struct {
@@ -494,17 +535,21 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 		}
 		c.app.markLoaded(conn, threadID)
 	default:
-		params["ephemeral"] = ephemeral
-		if spec.instructions != "" {
-			params["developerInstructions"] = spec.instructions
+		threadID = preparedID
+		preparedThreadUsed = threadID != ""
+		if threadID == "" {
+			params["ephemeral"] = ephemeral
+			if spec.instructions != "" {
+				params["developerInstructions"] = spec.instructions
+			}
+			if err = conn.Call(ctx, "thread/start", params, &thread); err != nil {
+				return llm.Result{}, fmt.Errorf("не удалось начать сессию Codex: %w", err)
+			}
+			if !validThreadID(thread.Thread.ID) {
+				return llm.Result{}, errors.New("Codex вернул некорректный ID сессии")
+			}
+			threadID = thread.Thread.ID
 		}
-		if err = conn.Call(ctx, "thread/start", params, &thread); err != nil {
-			return llm.Result{}, fmt.Errorf("не удалось начать сессию Codex: %w", err)
-		}
-		if !validThreadID(thread.Thread.ID) {
-			return llm.Result{}, errors.New("Codex вернул некорректный ID сессии")
-		}
-		threadID = thread.Thread.ID
 		// Codex defers model-visible initial context until the first turn.
 		// A thread/start reply alone is not durable instruction confirmation.
 		pending = spec.instructionsHash
@@ -539,7 +584,7 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 			emit(llm.Event{Kind: llm.EventAnswerText, Text: text})
 		}
 	})
-	progress(timingLine(spec.purpose, info, accountReady, threadReady, result.Timing))
+	progress(timingLine(spec.purpose, info, accountReady, threadReady, preparedThreadUsed, result.Timing))
 	if (newThread || updating) && err == nil && result.Status == appserver.StatusCompleted && strings.TrimSpace(result.Text) != "" {
 		applied, pending = spec.instructionsHash, ""
 	}
@@ -582,7 +627,7 @@ func unsubscribe(conn *appserver.Conn, threadID string) {
 }
 
 // timingLine is a content-free measurement record for the native log.
-func timingLine(purpose string, info startInfo, account, thread time.Duration, t appserver.Timing) string {
+func timingLine(purpose string, info startInfo, account, thread time.Duration, prepared bool, t appserver.Timing) string {
 	if purpose == "" {
 		purpose = "chat"
 	}
@@ -596,6 +641,6 @@ func timingLine(purpose string, info startInfo, account, thread time.Duration, t
 	if info.cold {
 		process = fmt.Sprintf("cold launched_ms=%s ready_ms=%s", ms(info.launched), ms(info.rdy))
 	}
-	return fmt.Sprintf("Codex timing: purpose=%s process=%s account_ms=%s thread_ms=%s first_text_ms=%s first_readable_ms=%s completed_ms=%s\n",
-		purpose, process, ms(account), ms(thread), ms(t.FirstText), ms(t.FirstReadable), ms(t.Completed))
+	return fmt.Sprintf("Codex timing: purpose=%s process=%s account_ms=%s thread_ms=%s prepared_thread=%t first_text_ms=%s first_readable_ms=%s completed_ms=%s\n",
+		purpose, process, ms(account), ms(thread), prepared, ms(t.FirstText), ms(t.FirstReadable), ms(t.Completed))
 }

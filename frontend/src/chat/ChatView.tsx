@@ -4,6 +4,9 @@ import { recoveredText, streamText, type Snapshot, type StreamSnapshot } from ".
 import { AnswerBlocks } from "./AnswerBlocks";
 import { Markdown } from "./Markdown";
 import { AttachmentStrip } from "./AttachmentStrip";
+import { AnswerReference } from "./AnswerReference";
+import { FollowupActions } from "./FollowupActions";
+import { answerElementID, type FollowupHandler } from "./followup";
 import { Button, IconButton } from "../ui/Button";
 export function ChatView({
   snapshot,
@@ -13,7 +16,13 @@ export function ChatView({
   onRetry,
   onCopy,
   onOpenLink,
+  onFollowup,
+  onReuse,
+  canPrepareFollowup = false,
 }: {
+  onFollowup?: FollowupHandler;
+  onReuse?: (id: string) => void;
+  canPrepareFollowup?: boolean;
   snapshot: Snapshot;
   stream: StreamSnapshot;
   onConfigure: () => void;
@@ -85,7 +94,11 @@ export function ChatView({
           <div className="messages">
             {snapshot.messages.map((message) => (
               <div key={message.id}>
-                <article className={`message ${message.role}`}>
+                <article
+                  className={`message ${message.role}`}
+                  id={answerElementID(message.id, "")}
+                  tabIndex={-1}
+                >
                   <div className="message-meta">
                     <span>{message.role === "assistant" ? "Solveo" : "Вы"}</span>
                     {message.role === "assistant" && (
@@ -101,6 +114,13 @@ export function ChatView({
                       </IconButton>
                     )}
                   </div>
+                  {message.reply_to_id && (
+                    <AnswerReference
+                      messages={snapshot.messages}
+                      messageID={message.reply_to_id}
+                      kind={message.reply_to_kind ?? ""}
+                    />
+                  )}
                   <div className="message-body">
                     {message.role === "assistant" ? (
                       <Markdown text={message.text} onCopy={onCopy} onOpenLink={onOpenLink} />
@@ -108,6 +128,26 @@ export function ChatView({
                       <p className="user-text">{message.text || "Задание на снимках"}</p>
                     )}
                   </div>
+                  {message.role === "assistant" &&
+                    message.status === "complete" &&
+                    message.text.trim() &&
+                    onFollowup && (
+                      <FollowupActions
+                        messageID={message.id}
+                        disabled={!canPrepareFollowup}
+                        onFollowup={onFollowup}
+                      />
+                    )}
+                  {message.role === "user" && message.text && onReuse && (
+                    <Button
+                      className="reuse-question"
+                      disabled={!canPrepareFollowup}
+                      title="Копировать текст в пустой редактор; прежние снимки не добавляются"
+                      onClick={() => onReuse(message.id)}
+                    >
+                      Изменить и отправить заново
+                    </Button>
+                  )}
                   {message.attachment_ids.length > 0 && (
                     <AttachmentStrip
                       items={snapshot.images.filter((image) =>
@@ -136,6 +176,9 @@ export function ChatView({
                 </article>
                 {message.answers ? (
                   <AnswerBlocks
+                    messageID={message.id}
+                    {...(onFollowup ? { onFollowup } : {})}
+                    canPrepareFollowup={canPrepareFollowup}
                     answers={message.answers}
                     previews={{
                       approach: streamText(snapshot, stream, message, "approach"),

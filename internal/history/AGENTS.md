@@ -6,3 +6,5 @@
 - Parallel answer blocks are additive fields in v2 user messages, with frozen request_config and independent attempt IDs/statuses. Preserve them during atomic saves; on load mark only requesting blocks interrupted, retaining completed approaches. Do not assume answers are always separate assistant messages. Run parallel_test.go for crash recovery coverage.
 
 - `global_instructions` is additive in v2; missing means empty, never filled from current settings. Validate the 16384 code-point limit on load/save and preserve the snapshot on every write.
+
+- User-turn reply_to_id/reply_to_kind must resolve to an earlier complete answer in the same archive, including individual parallel blocks. Reject forward/missing/unfinished targets and references on assistant messages. Missing fields preserve legacy behavior; run reference_test.go.

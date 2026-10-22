@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   Camera,
   ChevronDown,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { actions, client, loadAccount, loadModels } from "../bridge/wails";
 import { ChatView } from "../chat/ChatView";
+import { AnswerReference } from "../chat/AnswerReference";
 import { Composer } from "../chat/Composer";
 import { AttachmentStrip } from "../chat/AttachmentStrip";
 import { lastAnswerText, latestCode } from "../chat/code";
@@ -27,6 +28,7 @@ import "./theme.css";
 type Panel = "closed" | "configuration" | "settings" | "history" | "images";
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getState);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [panel, setPanel] = useState<Panel>("closed");
   const [captureMenu, setCaptureMenu] = useState(false);
   const [notice, setNotice] = useState("");
@@ -70,6 +72,29 @@ export default function App() {
   const lastAnswer = lastAnswerText(s.messages);
   const code = latestCode(lastAnswer);
   const error = state.error || s.error;
+  const editorDisabled = (busy && !state.submitting) || s.operation.phase === "save-pending";
+  const canPrepareFollowup =
+    !busy &&
+    !state.editor.composing &&
+    s.controls.can_submit &&
+    state.editor.text === "" &&
+    !state.editor.replyToID;
+  const receiving =
+    s.operation.phase === "requesting" &&
+    state.stream.blocks.some(
+      (b) => b.chat_id === s.active_chat_id && b.operation_id === s.operation.id && b.text !== "",
+    );
+  const operationLabel =
+    state.submitting && s.operation.phase === "idle"
+      ? "Подготавливаю запрос…"
+      : receiving
+        ? "Получаю ответ…"
+        : s.operation.message ||
+          (error
+            ? "Ошибка запроса"
+            : s.provider_id === s.provider.id
+              ? "Готов к работе"
+              : "Архив доступен для чтения");
   const panelTitle = {
     configuration: "Преднастройка чата",
     settings: "Настройки Solveo",
@@ -176,6 +201,13 @@ export default function App() {
         key={s.active_chat_id}
         snapshot={s}
         stream={state.stream}
+        canPrepareFollowup={canPrepareFollowup}
+        onFollowup={(id, kind, text) => {
+          if (client.prepareFollowup(id, kind, text)) composerRef.current?.focus();
+        }}
+        onReuse={(id) => {
+          if (client.reuseQuestion(id)) composerRef.current?.focus();
+        }}
         onConfigure={() => setPanel("configuration")}
         onOpenImage={(id) => {
           void actions.image(s.active_chat_id, id);
@@ -253,11 +285,22 @@ export default function App() {
             void actions.remove(s.active_chat_id, id);
           }}
         />
+        {state.editor.replyToID && (
+          <AnswerReference
+            messages={s.messages}
+            messageID={state.editor.replyToID}
+            kind={state.editor.replyToKind}
+            {...(!editorDisabled ? { onClear: () => client.clearReference() } : {})}
+          />
+        )}
         <Composer
+          textareaRef={composerRef}
           text={state.editor.text}
-          disabled={busy || s.operation.phase === "saving" || s.operation.phase === "save-pending"}
+          disabled={editorDisabled}
           canSend={
-            s.controls.can_submit && (state.editor.text.trim().length > 0 || s.queue.length > 0)
+            !busy &&
+            s.controls.can_submit &&
+            (state.editor.text.trim().length > 0 || s.queue.length > 0)
           }
           busy={s.controls.can_cancel}
           onChange={(text) => client.edit(text)}
@@ -271,10 +314,7 @@ export default function App() {
         />
         <footer className="status-bar">
           <span className={`status-dot ${s.operation.phase !== "idle" ? "active" : ""}`} />
-          <span aria-live="polite">
-            {s.operation.message ||
-              (s.provider_id === s.provider.id ? "Готов к работе" : "Архив доступен для чтения")}
-          </span>
+          <span aria-live="polite">{operationLabel}</span>
           <span className="hide-hint">Ctrl+Alt+O — скрыть</span>
         </footer>
       </section>

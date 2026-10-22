@@ -18,27 +18,28 @@ import (
 )
 
 type Controller struct {
-	settingsMu      sync.Mutex
-	mu              sync.Mutex
-	deps            Dependencies
-	ctx             context.Context
-	cancel          context.CancelFunc
-	workers         sync.WaitGroup
-	revision        uint64
-	active          chat.Chat
-	settings        settings.Config
-	summaries       []history.Summary
-	drafts          map[string]Draft
-	queues          map[string][]queued
-	op              operation
-	pending         *pendingSave
-	requests        map[string]bool
-	intent          *SubmitIntent
-	err             string
-	logs            string
-	logFlushPending bool
-	closed          bool
-	selectionMode   string
+	settingsMu        sync.Mutex
+	mu                sync.Mutex
+	deps              Dependencies
+	ctx               context.Context
+	cancel            context.CancelFunc
+	workers           sync.WaitGroup
+	preparationCancel context.CancelFunc
+	revision          uint64
+	active            chat.Chat
+	settings          settings.Config
+	summaries         []history.Summary
+	drafts            map[string]Draft
+	queues            map[string][]queued
+	op                operation
+	pending           *pendingSave
+	requests          map[string]bool
+	intent            *SubmitIntent
+	err               string
+	logs              string
+	logFlushPending   bool
+	closed            bool
+	selectionMode     string
 
 	streams            map[streamKey]StreamBlock
 	streamOpen         map[streamKey]bool
@@ -109,6 +110,9 @@ func New(d Dependencies) (*Controller, error) {
 	c.statePersist.resume()
 	c.streamPersist.resume()
 	c.prepareConnection()
+	c.mu.Lock()
+	c.prepareChatLocked()
+	c.mu.Unlock()
 	return c, nil
 }
 func (c *Controller) rememberLocked(doc chat.Chat) {
@@ -231,9 +235,13 @@ func (c *Controller) SetDraft(in DraftInput) error {
 		c.mu.Unlock()
 		return ErrStale
 	}
+	if !chat.ValidReference(c.active.Messages, in.ReplyToID, in.ReplyToKind) {
+		c.mu.Unlock()
+		return errors.New("выбранный ответ недоступен для уточнения")
+	}
 	old := c.drafts[in.ChatID]
 	if in.Revision >= old.Revision {
-		c.drafts[in.ChatID] = Draft{in.Text, in.Revision}
+		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.Revision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}
 		c.changedLocked()
 		c.statePersist.mark()
 	}
@@ -277,6 +285,9 @@ func (c *Controller) SaveChatConfig(in ConfigInput) (Snapshot, error) {
 	if doc.Title == "" {
 		doc.Title = chat.DefaultTitle
 	}
+	if c.preparationCancel != nil {
+		c.preparationCancel()
+	}
 	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindConfig, Phase: phaseSaving}}
 	c.changedLocked()
 	c.mu.Unlock()
@@ -290,6 +301,7 @@ func (c *Controller) SaveChatConfig(in ConfigInput) (Snapshot, error) {
 	} else {
 		c.err = e.Error()
 	}
+	c.prepareChatLocked()
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -302,6 +314,9 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 	if e := c.availableLocked(); e != nil {
 		c.mu.Unlock()
 		return Snapshot{}, e
+	}
+	if c.preparationCancel != nil {
+		c.preparationCancel()
 	}
 	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindOpen, Phase: phaseSaving}}
 	c.intent = nil
@@ -325,6 +340,7 @@ func (c *Controller) switchChat(id string) (Snapshot, error) {
 		c.err = e.Error()
 	}
 	c.op = operation{Operation: Operation{Phase: phaseIdle}}
+	c.prepareChatLocked()
 	c.changedLocked()
 	c.mu.Unlock()
 	c.publish()
@@ -449,6 +465,7 @@ func (c *Controller) Close(ctx context.Context) error {
 		c.mu.Lock()
 		c.closed = false
 		c.ctx, c.cancel = context.WithCancel(context.Background())
+		c.prepareChatLocked()
 		c.mu.Unlock()
 		return ctx.Err()
 	case <-done:
@@ -457,6 +474,7 @@ func (c *Controller) Close(ctx context.Context) error {
 	if c.pending != nil {
 		c.closed = false
 		c.ctx, c.cancel = context.WithCancel(context.Background())
+		c.prepareChatLocked()
 		c.mu.Unlock()
 		return ErrSavePending
 	}
@@ -468,6 +486,7 @@ func (c *Controller) Close(ctx context.Context) error {
 		c.mu.Lock()
 		c.closed = false
 		c.ctx, c.cancel = context.WithCancel(context.Background())
+		c.prepareChatLocked()
 		c.changedLocked()
 		c.mu.Unlock()
 		c.publish()

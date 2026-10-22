@@ -180,7 +180,7 @@ func (c *Controller) workStateLocked() workstate.State {
 		if s, ok := c.submitted[id]; ok {
 			w.Submitted = &s
 		}
-		if w.Draft.Text == "" && len(w.Queue) == 0 && w.Submitted == nil {
+		if w.Draft.Text == "" && w.Draft.ReplyToID == "" && len(w.Queue) == 0 && w.Submitted == nil {
 			continue
 		}
 		st.Chats[id] = w
@@ -343,6 +343,18 @@ func (c *Controller) restoreWork() []string {
 				c.rememberLocked(doc)
 				id = doc.ID
 				adopted++
+			}
+		}
+		if draft.ReplyToID != "" {
+			doc, err := c.deps.Store.Load(id)
+			if err != nil {
+				// A failed read is not evidence that the referenced answer disappeared.
+				notices = append(notices, "Не удалось проверить ссылку восстановленного черновика: "+err.Error())
+			} else if !chat.ValidReference(doc.Messages, draft.ReplyToID, draft.ReplyToKind) {
+				draft.ReplyToID, draft.ReplyToKind = "", ""
+				draft.Revision++
+				changed = true
+				notices = append(notices, "Ссылка на недоступный ответ убрана из восстановленного черновика")
 			}
 		}
 		c.drafts[id] = draft

@@ -32,10 +32,15 @@ func validateDocument(c chat.Chat) error {
 		}
 		attachments[a.ID] = true
 	}
-	messages := map[string]bool{}
+	messages := map[string]chat.Message{}
 	attempts := map[string]bool{}
 	for _, m := range c.Messages {
-		if !idPattern.MatchString(m.ID) || messages[m.ID] || (m.Role != chat.RoleUser && m.Role != chat.RoleAssistant) || !validStatus(m.Status) {
+		target := messages[m.ReplyToID]
+		if (m.ReplyToID != "" && m.Role != chat.RoleUser) || !chat.ValidReference([]chat.Message{target}, m.ReplyToID, m.ReplyToKind) {
+			return errors.New("в архиве некорректная ссылка на ответ")
+		}
+		_, duplicate := messages[m.ID]
+		if !idPattern.MatchString(m.ID) || duplicate || (m.Role != chat.RoleUser && m.Role != chat.RoleAssistant) || !validStatus(m.Status) {
 			return errors.New("в архиве некорректное сообщение")
 		}
 		if len(m.Answers) > 0 {
@@ -59,7 +64,7 @@ func validateDocument(c chat.Chat) error {
 				}
 			}
 		}
-		messages[m.ID] = true
+		messages[m.ID] = m
 		for _, id := range m.AttachmentIDs {
 			if !attachments[id] {
 				return errors.New("сообщение ссылается на отсутствующий снимок")

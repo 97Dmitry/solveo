@@ -5,3 +5,5 @@
 - Read the version envelope before decoding the v1 schema: a future version may change any payload field. `Load` sets a malformed file aside as `state.json.bad-<UTC>` and returns a notice; a newer version or unreadable file returns an error and the caller must not save over it. Missing files are empty state.
 - Captures are written to `<id>.png.tmp` and `Commit`ted (Sync + rename). `Prune` removes unreferenced PNGs, unfinished captures and leftover `.solveo-*` temporaries; call it only after a successful `Load`.
 - Run `go test -race ./internal/workstate ./internal/app` after changes.
+
+- Draft `reply_to_id`/`reply_to_kind` are optional additive v1 fields; preserve reference-only drafts even when text is empty. Validate identity/kind shape here; app checks target existence after restoration and clears confirmed unavailable targets with a notice. An archive read error preserves the reference for later recovery.

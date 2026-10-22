@@ -25,7 +25,7 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatal(st, notice, e)
 	}
 	want := State{Chats: map[string]Chat{"chat1": {
-		Draft:     Draft{Text: "next question", Revision: 7},
+		Draft:     Draft{Text: "next question", Revision: 7, ReplyToID: "m0", ReplyToKind: "solution"},
 		Queue:     []Item{{ID: "b", Label: "Снимок 1"}, {ID: "a", Label: "Снимок 2"}},
 		Submitted: &Submitted{MessageID: "m1", Revision: 5},
 	}}}

@@ -448,3 +448,46 @@ func TestParallelQuickCaptureFailureKeepsQueueAndNewDraft(t *testing.T) {
 		t.Fatal("success cleared unrelated queue/draft", s)
 	}
 }
+
+func TestParallelExplicitFollowupKeepsSelectedAnswerAndEarlierImages(t *testing.T) {
+	c, p, _ := parallelSetup(t)
+	c.deps.Capturer = fakeCapture{}
+	if err := c.BeginCapture("quick-full"); err != nil {
+		t.Fatal(err)
+	}
+	first := nextParallelRequest(t, p)
+	_ = nextParallelRequest(t, p)
+	originalImage := first.Images[0].ID
+	p.approach <- answerCompletion{result: llm.Result{Text: "old idea"}}
+	waitApproach(t, c)
+	p.solution <- answerCompletion{result: llm.Result{Text: "old solution"}}
+	waitIdle(t, c)
+	target := c.Snapshot().Messages[0].ID
+	if err := c.BeginCapture("quick-full"); err != nil {
+		t.Fatal(err)
+	}
+	first = nextParallelRequest(t, p)
+	_ = nextParallelRequest(t, p)
+	if first.Images[0].ID == originalImage {
+		t.Fatal("second image was not new")
+	}
+	p.approach <- answerCompletion{result: llm.Result{Text: "new idea"}}
+	p.solution <- answerCompletion{result: llm.Result{Text: "unrelated new solution"}}
+	waitIdle(t, c)
+	if _, err := c.Submit(SubmitInput{RequestID: chat.ID(), ChatID: c.Snapshot().ActiveChatID, Text: "shorter", ReplyToID: target, ReplyToKind: chat.AnswerSolution}); err != nil {
+		t.Fatal(err)
+	}
+	first, second := nextParallelRequest(t, p), nextParallelRequest(t, p)
+	for _, req := range []llm.Request{first, second} {
+		text, ok := chat.ReferencedAnswer(req.History, req.Turn.ReplyToID, req.Turn.ReplyToKind)
+		if !ok || text != "old solution" {
+			t.Fatalf("selected answer lost for %s: %+v", req.Purpose, req)
+		}
+		if req.Purpose == chat.AnswerApproach && (len(req.Images) != 1 || req.Images[0].ID != originalImage || strings.Contains(req.ContextText, "unrelated new solution")) {
+			t.Fatal("standalone followup received a later task", req)
+		}
+	}
+	p.approach <- answerCompletion{result: llm.Result{Text: "short idea"}}
+	p.solution <- answerCompletion{result: llm.Result{Text: "short solution"}}
+	waitIdle(t, c)
+}

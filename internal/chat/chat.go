@@ -73,6 +73,8 @@ type Answer struct {
 }
 
 type Message struct {
+	ReplyToID      string    `json:"reply_to_id,omitempty"`
+	ReplyToKind    string    `json:"reply_to_kind,omitempty"`
 	Answers        []Answer  `json:"answers,omitempty"`
 	RequestConfig  *Config   `json:"request_config,omitempty"`
 	ID             string    `json:"id"`

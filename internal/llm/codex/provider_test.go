@@ -82,3 +82,58 @@ func TestUnsupportedStateIsRejectedBeforeLaunch(t *testing.T) {
 		}
 	}
 }
+
+func TestFollowupPromptQuotesSelectedAnswer(t *testing.T) {
+	c := New("codex", "", time.Minute, "", "")
+	r := llm.Request{Turn: chat.Message{Text: "Короче", ReplyToID: "old"}, History: []chat.Message{
+		{ID: "old", Role: chat.RoleAssistant, Status: chat.StatusComplete, Text: "selected\n```go\ncode\n```"},
+		{ID: "new", Role: chat.RoleAssistant, Status: chat.StatusComplete, Text: "latest"},
+	}}
+	var payload struct {
+		Question   string `json:"question"`
+		Referenced *struct {
+			MessageID string `json:"message_id"`
+			Text      string `json:"text"`
+		} `json:"referenced_answer"`
+	}
+	if err := json.NewDecoder(strings.NewReader(c.prompt(r))).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Question != "Короче" || payload.Referenced == nil || payload.Referenced.MessageID != "old" || payload.Referenced.Text != r.History[0].Text {
+		t.Fatalf("%s", c.prompt(r))
+	}
+}
+
+func TestGenerateRejectsUnresolvedFollowupBeforeLaunch(t *testing.T) {
+	c := New(filepath.Join(t.TempDir(), "codex-must-not-run"), "", time.Second, t.TempDir(), t.TempDir())
+	_, err := c.Generate(context.Background(), llm.Request{Turn: chat.Message{Text: "shorter", ReplyToID: "missing"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "выбранный ответ") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestParallelSolutionFollowupDoesNotForceBriefFullSolution(t *testing.T) {
+	c := New("codex", "", time.Minute, "", "")
+	r := llm.Request{Purpose: chat.AnswerSolution, Turn: chat.Message{Text: "Раскрой ответ подробнее.", ReplyToID: "old"}, History: []chat.Message{{ID: "old", Role: chat.RoleAssistant, Status: chat.StatusComplete, Text: "selected"}}}
+	p := c.prompt(r)
+	if strings.Contains(p, "краткое пояснение") || !strings.Contains(p, "подробность") {
+		t.Fatalf("followup format conflicts with requested detail: %s", p)
+	}
+}
+
+func TestOrdinaryPromptUsesMainSolutionFormat(t *testing.T) {
+	c := New("codex", "", time.Minute, "", "")
+	for _, question := range []string{"Найди медиану двух отсортированных массивов за O(log(min(m,n)))", ""} {
+		t.Run(question, func(t *testing.T) {
+			request := llm.Request{Turn: chat.Message{Text: question}, Config: chat.New().Config}
+			ordinary := c.prompt(request)
+			request.Purpose = chat.AnswerSolution
+			if ordinary != c.prompt(request) {
+				t.Fatalf("ordinary request lost main solution instructions: %s", ordinary)
+			}
+			if !strings.Contains(ordinary, "код, если задача требует кода") || !strings.Contains(ordinary, "Для теории ответь прямо без ненужного кода") {
+				t.Fatalf("missing task-dependent answer format: %s", ordinary)
+			}
+		})
+	}
+}
