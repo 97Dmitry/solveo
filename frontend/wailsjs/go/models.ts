@@ -77,6 +77,8 @@ export namespace app {
 	    }
 	}
 	export class Draft {
+	    reply_to_id?: string;
+	    reply_to_kind?: string;
 	    text: string;
 	    revision: number;
 	
@@ -86,11 +88,15 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply_to_id = source["reply_to_id"];
+	        this.reply_to_kind = source["reply_to_kind"];
 	        this.text = source["text"];
 	        this.revision = source["revision"];
 	    }
 	}
 	export class DraftInput {
+	    reply_to_id?: string;
+	    reply_to_kind?: string;
 	    chat_id: string;
 	    text: string;
 	    revision: number;
@@ -101,6 +107,8 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply_to_id = source["reply_to_id"];
+	        this.reply_to_kind = source["reply_to_kind"];
 	        this.chat_id = source["chat_id"];
 	        this.text = source["text"];
 	        this.revision = source["revision"];
@@ -288,6 +296,8 @@ export namespace app {
 		}
 	}
 	export class SubmitInput {
+	    reply_to_id?: string;
+	    reply_to_kind?: string;
 	    request_id: string;
 	    intent_id: string;
 	    chat_id: string;
@@ -302,6 +312,8 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply_to_id = source["reply_to_id"];
+	        this.reply_to_kind = source["reply_to_kind"];
 	        this.request_id = source["request_id"];
 	        this.intent_id = source["intent_id"];
 	        this.chat_id = source["chat_id"];
@@ -409,6 +421,8 @@ export namespace chat {
 	    }
 	}
 	export class Message {
+	    reply_to_id?: string;
+	    reply_to_kind?: string;
 	    answers?: Answer[];
 	    request_config?: Config;
 	    id: string;
@@ -425,6 +439,8 @@ export namespace chat {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply_to_id = source["reply_to_id"];
+	        this.reply_to_kind = source["reply_to_kind"];
 	        this.answers = this.convertValues(source["answers"], Answer);
 	        this.request_config = this.convertValues(source["request_config"], Config);
 	        this.id = source["id"];

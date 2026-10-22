@@ -235,9 +235,13 @@ func (c *Controller) SetDraft(in DraftInput) error {
 		c.mu.Unlock()
 		return ErrStale
 	}
+	if !chat.ValidReference(c.active.Messages, in.ReplyToID, in.ReplyToKind) {
+		c.mu.Unlock()
+		return errors.New("выбранный ответ недоступен для уточнения")
+	}
 	old := c.drafts[in.ChatID]
 	if in.Revision >= old.Revision {
-		c.drafts[in.ChatID] = Draft{in.Text, in.Revision}
+		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.Revision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}
 		c.changedLocked()
 		c.statePersist.mark()
 	}

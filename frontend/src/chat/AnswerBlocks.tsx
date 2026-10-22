@@ -2,15 +2,23 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { Message } from "../bridge/state";
 import { IconButton } from "../ui/Button";
+import { FollowupActions } from "./FollowupActions";
+import { answerElementID, type FollowupHandler } from "./followup";
 import { Markdown } from "./Markdown";
 
 export function AnswerBlocks({
+  messageID,
+  onFollowup,
+  canPrepareFollowup = false,
   answers,
   previews,
   recovered = {},
   onCopy,
   onOpenLink,
 }: {
+  messageID?: string;
+  onFollowup?: FollowupHandler;
+  canPrepareFollowup?: boolean;
   answers: NonNullable<Message["answers"]>;
   // Unfinished text of requesting blocks; never copied or treated as complete.
   previews: Partial<Record<"approach" | "solution", string>>;
@@ -28,6 +36,8 @@ export function AnswerBlocks({
         return (
           <section
             key={answer.kind}
+            id={messageID ? answerElementID(messageID, answer.kind) : undefined}
+            tabIndex={-1}
             className={`message assistant answer-block ${answer.kind}`}
             aria-label={approach ? "Подход" : "Решение"}
           >
@@ -71,6 +81,14 @@ export function AnswerBlocks({
               <div className="message-body">
                 <Markdown text={answer.text} onCopy={onCopy} onOpenLink={onOpenLink} />
               </div>
+            )}
+            {answer.status === "complete" && answer.text.trim() && messageID && onFollowup && (
+              <FollowupActions
+                messageID={messageID}
+                kind={answer.kind}
+                disabled={!canPrepareFollowup}
+                onFollowup={onFollowup}
+              />
             )}
             {answer.status === "requesting" && previews[answer.kind] && (
               <div className="message-body streaming" aria-busy="true">

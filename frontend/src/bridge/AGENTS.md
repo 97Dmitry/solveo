@@ -9,3 +9,5 @@
 - Additive optional Message.answers/request_config fields support old archives. Wire explicitly permits undefined for optional generated fields to match Zod output under exactOptionalPropertyTypes; required fields remain required. Answer statuses/kinds/timings are validated before presentation.
 
 - settings.global_instructions is required on the current wire; globalInstructionsSchema accepts at most 16384 Unicode code points and rejects lone UTF-16 surrogates. Older disk files are normalized by Go, not the renderer.
+
+- SolveoClient preserves replyToID/replyToKind with the live editor revision through SetDraft/Submit and snapshots. prepareFollowup/reuseQuestion require an empty editor, no reference, idle submit eligibility and no IME; never replace unfinished work. submitting allows edits while the Submit RPC acknowledgement is pending; other run actions still lock edits to protect navigation.

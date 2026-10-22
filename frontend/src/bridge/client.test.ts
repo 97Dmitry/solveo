@@ -14,7 +14,7 @@ function setup() {
         listeners.delete(name);
       };
     },
-    setDraft: async () => {},
+    setDraft: vi.fn<Transport["setDraft"]>(async () => {}),
     submit,
     streamSnapshot: async () => ({
       revision: 3,
@@ -30,7 +30,7 @@ function setup() {
       ],
     }),
   } satisfies Transport;
-  return { client: new SolveoClient(api), listeners, submit };
+  return { client: new SolveoClient(api), listeners, submit, setDraft: api.setDraft };
 }
 describe("bridge lifecycle", () => {
   it("sends live text for native intent and ignores duplicates", async () => {
@@ -100,6 +100,67 @@ describe("answer stream", () => {
     const after = client.getState();
     expect(after.status === "ready" && after.stream.revision).toBe(5);
     expect(after.status === "ready" && after.error).toContain("Ошибка обмена");
+    off();
+  });
+});
+
+describe("follow-up editor", () => {
+  it("keeps a selected answer through edit and submit without rewriting history", async () => {
+    const { client, listeners, submit, setDraft } = setup();
+    const off = client.connect();
+    await vi.waitFor(() => expect(client.getState().status).toBe("ready"));
+    const fixture = snapshotFixture();
+    const answer = {
+      id: "answer",
+      role: "assistant",
+      text: "original answer",
+      status: "complete",
+      attachment_ids: [],
+      attempts: [],
+      config_revision: 1,
+    };
+    listeners.get("solveo:state")?.({ ...fixture, revision: 2, messages: [answer] });
+    expect(client.prepareFollowup("answer", "", "Короче")).toBe(true);
+    client.edit("Короче, пожалуйста");
+    await client.flushDraft();
+    expect(setDraft.mock.calls.at(-1)?.[0]).toMatchObject({
+      text: "Короче, пожалуйста",
+      reply_to_id: "answer",
+    });
+    await client.submit();
+    expect(submit.mock.calls[0]?.[0]).toMatchObject({
+      text: "Короче, пожалуйста",
+      reply_to_id: "answer",
+      reply_to_kind: "",
+    });
+    const state = client.getState();
+    expect(state.status === "ready" && state.snapshot.messages).toEqual([answer]);
+    expect(client.prepareFollowup("answer", "", "Подробнее")).toBe(false);
+    expect(client.getState()).toMatchObject({ editor: { text: "Короче, пожалуйста" } });
+    off();
+  });
+  it("preserves input typed while submit is awaiting its acknowledgement", async () => {
+    const { client, submit, listeners } = setup();
+    const off = client.connect();
+    await vi.waitFor(() => expect(client.getState().status).toBe("ready"));
+    let finish: ((id: string) => void) | undefined;
+    submit.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    client.edit("sent");
+    const pending = client.submit();
+    client.edit("next question");
+    finish?.("op");
+    await pending;
+    listeners.get("solveo:state")?.({
+      ...snapshotFixture(),
+      revision: 5,
+      draft: { text: "", revision: 2 },
+    });
+    expect(client.getState()).toMatchObject({ editor: { text: "next question" } });
     off();
   });
 });

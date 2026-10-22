@@ -45,12 +45,28 @@ func approachContext(messages []chat.Message) string {
 	return strings.Join(lines, "\n\n")
 }
 
+// approachHistory ends at the explicitly selected answer, so later tasks do not
+// displace its context or images in the independent approach request.
+func approachHistory(messages []chat.Message, replyToID string) []chat.Message {
+	if replyToID == "" {
+		return messages
+	}
+	for i, m := range messages {
+		if m.ID == replyToID {
+			return messages[:i+1]
+		}
+	}
+	return nil
+}
+
 func (c *Controller) approachImages(doc chat.Chat, current []llm.Image) ([]llm.Image, error) {
 	if len(current) > 0 {
 		return append([]llm.Image(nil), current...), nil
 	}
-	for i := len(doc.Messages) - 2; i >= 0; i-- {
-		m := doc.Messages[i]
+	last := len(doc.Messages) - 1
+	history := approachHistory(doc.Messages[:last], doc.Messages[last].ReplyToID)
+	for i := len(history) - 1; i >= 0; i-- {
+		m := history[i]
 		if m.Role != chat.RoleUser || len(m.AttachmentIDs) == 0 {
 			continue
 		}
@@ -117,8 +133,14 @@ func (c *Controller) runParallel(ctx context.Context, opID string, doc chat.Chat
 		if index == 0 {
 			reqCtx = fastCtx
 			req.State = nil
-			req.ContextText = approachContext(req.History)
+			contextHistory := approachHistory(req.History, turn.ReplyToID)
+			req.ContextText = approachContext(contextHistory)
 			req.History = nil
+			// The adapter needs the exact target for the quote, not an unbounded
+			// conversation duplicated alongside ContextText.
+			if turn.ReplyToID != "" && len(contextHistory) > 0 {
+				req.History = contextHistory[len(contextHistory)-1:]
+			}
 			req.Config.Model = cfg.FastModel
 			req.Config.Reasoning = cfg.FastReasoning
 			req.Config.Detail = "brief"

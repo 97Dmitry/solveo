@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useRef, type Ref } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { IconButton } from "../ui/Button";
 type Props = {
+  textareaRef?: Ref<HTMLTextAreaElement>;
   text: string;
   disabled: boolean;
   canSend: boolean;
@@ -12,6 +13,7 @@ type Props = {
   onComposition: (value: boolean) => void;
 };
 export function Composer({
+  textareaRef,
   text,
   disabled,
   canSend,
@@ -25,6 +27,7 @@ export function Composer({
   return (
     <div className="composer">
       <textarea
+        ref={textareaRef}
         aria-label="Вопрос"
         rows={2}
         value={text}

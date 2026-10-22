@@ -65,6 +65,8 @@ const answerSchema = z.object({
   elapsed_ms: revision,
 } satisfies Shape<chat.Answer>);
 export const messageSchema = z.object({
+  reply_to_id: z.string().optional(),
+  reply_to_kind: z.enum(["", "approach", "solution"]).optional(),
   answers: z.array(answerSchema).max(2).optional(),
   request_config: configSchema.optional(),
   id: z.string(),
@@ -124,7 +126,12 @@ const operationSchema = z.object({
   phase: z.enum(["idle", "selecting", "capturing", "saving", "requesting", "save-pending"]),
   message: z.string(),
 } satisfies Shape<app.Operation>);
-const draftSchema = z.object({ text: z.string(), revision } satisfies Shape<app.Draft>);
+const draftSchema = z.object({
+  text: z.string(),
+  revision,
+  reply_to_id: z.string().optional(),
+  reply_to_kind: z.enum(["", "approach", "solution"]).optional(),
+} satisfies Shape<app.Draft>);
 const loginSchema = z.object({
   id: z.string(),
   url: z.union([z.literal(""), z.url({ protocol: /^https$/ })]),
@@ -244,4 +251,14 @@ export function errorText(error: unknown): string {
     : typeof error === "string"
       ? error
       : "Не удалось выполнить действие";
+}
+
+// Resolve only finished answers, including independent parallel blocks.
+export function referencedAnswer(messages: Message[], id: string, kind: string): string {
+  const message = messages.find((m) => m.id === id);
+  if (kind === "")
+    return message?.role === "assistant" && message.status === "complete" ? message.text : "";
+  return message?.role === "user"
+    ? (message.answers?.find((a) => a.kind === kind && a.status === "complete")?.text ?? "")
+    : "";
 }

@@ -1,6 +1,7 @@
 import type { app } from "../../wailsjs/go/models";
 import {
   acceptSnapshot,
+  referencedAnswer,
   emptyStream,
   errorText,
   intentSchema,
@@ -19,7 +20,14 @@ export interface Transport {
   submit(input: SubmitInput): Promise<string>;
   streamSnapshot(): Promise<unknown>;
 }
-type Editor = { chatID: string; text: string; revision: number; composing: boolean };
+type Editor = {
+  chatID: string;
+  text: string;
+  revision: number;
+  composing: boolean;
+  replyToID: string;
+  replyToKind: string;
+};
 export type ClientState =
   | { status: "loading"; error: string }
   | { status: "error"; error: string }
@@ -28,6 +36,7 @@ export type ClientState =
       snapshot: Snapshot;
       editor: Editor;
       working: boolean;
+      submitting: boolean;
       error: string;
       // Unfinished answer text; presentation filters it by the running attempt.
       stream: StreamSnapshot;
@@ -77,12 +86,15 @@ export class SolveoClient {
               text: snapshot.draft.text,
               revision: snapshot.draft.revision,
               composing: false,
+              replyToID: snapshot.draft.reply_to_id ?? "",
+              replyToKind: snapshot.draft.reply_to_kind ?? "",
             };
       this.update({
         status: "ready",
         snapshot,
         editor,
         working: old.status === "ready" && old.working,
+        submitting: old.status === "ready" && old.submitting,
         error: old.error,
         stream: this.stream,
       });
@@ -145,13 +157,53 @@ export class SolveoClient {
     };
   };
   edit(text: string) {
-    if (this.state.status !== "ready" || this.state.working) return;
+    if (this.state.status !== "ready" || (this.state.working && !this.state.submitting)) return;
     const editor = { ...this.state.editor, text, revision: this.state.editor.revision + 1 };
     this.update({ ...this.state, editor });
     if (this.draftTimer !== undefined) clearTimeout(this.draftTimer);
     this.draftTimer = setTimeout(() => {
       void this.flushDraft().catch((error) => this.fail(error));
     }, 120);
+  }
+  prepareFollowup(messageID: string, kind: string, text: string) {
+    if (this.state.status !== "ready") return false;
+    if (!referencedAnswer(this.state.snapshot.messages, messageID, kind).trim()) return false;
+    return this.prepareEditor(text, messageID, kind);
+  }
+  reuseQuestion(messageID: string) {
+    if (this.state.status !== "ready") return false;
+    const question = this.state.snapshot.messages.find(
+      (m) => m.id === messageID && m.role === "user",
+    );
+    if (!question || !question.text) return false;
+    return this.prepareEditor(
+      question.text,
+      question.reply_to_id ?? "",
+      question.reply_to_kind ?? "",
+    );
+  }
+  private prepareEditor(text: string, replyToID: string, replyToKind: string) {
+    if (
+      this.state.status !== "ready" ||
+      this.state.working ||
+      this.state.editor.composing ||
+      !this.state.snapshot.controls.can_submit ||
+      this.state.editor.text !== "" ||
+      this.state.editor.replyToID !== ""
+    )
+      return false;
+    this.update({ ...this.state, editor: { ...this.state.editor, replyToID, replyToKind } });
+    this.edit(text);
+    return true;
+  }
+  clearReference() {
+    if (this.state.status !== "ready" || (this.state.working && !this.state.submitting)) return;
+    const text = this.state.editor.text;
+    this.update({
+      ...this.state,
+      editor: { ...this.state.editor, replyToID: "", replyToKind: "" },
+    });
+    this.edit(text);
   }
   setComposing(value: boolean) {
     if (this.state.status === "ready")
@@ -164,7 +216,13 @@ export class SolveoClient {
     }
     if (this.state.status !== "ready") return;
     const e = this.state.editor;
-    const input = { chat_id: e.chatID, text: e.text, revision: e.revision };
+    const input = {
+      chat_id: e.chatID,
+      text: e.text,
+      revision: e.revision,
+      reply_to_id: e.replyToID,
+      reply_to_kind: e.replyToKind,
+    };
     const write = this.writes.catch(() => {}).then(() => this.transport.setDraft(input));
     this.writes = write;
     await write;
@@ -206,12 +264,19 @@ export class SolveoClient {
       draft_revision: editor.revision,
       attachment_ids: snapshot.queue.map((a) => a.id),
       retry_message_id: retryMessageID,
+      reply_to_id: editor.replyToID,
+      reply_to_kind: editor.replyToKind,
     };
-    await this.run(() => this.transport.submit(input));
+    await this.run(() => this.transport.submit(input), false, false, true);
   }
-  async run(action: () => Promise<unknown>, snapshotResponse = false, flush = false) {
+  async run(
+    action: () => Promise<unknown>,
+    snapshotResponse = false,
+    flush = false,
+    submitting = false,
+  ) {
     if (this.state.status !== "ready" || this.state.working) return false;
-    this.update({ ...this.state, working: true, error: "" });
+    this.update({ ...this.state, working: true, submitting, error: "" });
     try {
       if (flush) await this.flushDraft();
       const result = await action();
@@ -221,7 +286,8 @@ export class SolveoClient {
       this.fail(error);
       return false;
     } finally {
-      if (this.state.status === "ready") this.update({ ...this.state, working: false });
+      if (this.state.status === "ready")
+        this.update({ ...this.state, working: false, submitting: false });
     }
   }
 }

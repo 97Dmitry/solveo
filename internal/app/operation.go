@@ -38,8 +38,9 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 			return "", ErrStale
 		}
 	}
-	if captureID == "" && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
-		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.DraftRevision}
+	if in.RetryMessageID == "" && !chat.ValidReference(c.active.Messages, in.ReplyToID, in.ReplyToKind) {
+		c.mu.Unlock()
+		return "", errors.New("выбранный ответ недоступен для уточнения")
 	}
 	doc := chat.Clone(c.active)
 	var turn chat.Message
@@ -105,7 +106,10 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 				doc.Title = "Задание на снимках"
 			}
 		}
-		turn = chat.Message{ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+		turn = chat.Message{ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+	}
+	if captureID == "" && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
+		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.DraftRevision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}
 	}
 	if turn.RequestConfig == nil {
 		cfg := doc.Config
@@ -152,7 +156,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	c.err = ""
 	c.changedLocked()
 	draft := c.drafts[doc.ID]
-	clearDraft := in.RetryMessageID == "" && draft.Text == in.Text && draft.Revision == in.DraftRevision
+	clearDraft := captureID == "" && in.RetryMessageID == "" && draft.Text == in.Text && draft.Revision == in.DraftRevision && draft.ReplyToID == in.ReplyToID && draft.ReplyToKind == in.ReplyToKind
 	c.workers.Add(1)
 	c.mu.Unlock()
 	c.publish()
@@ -321,6 +325,8 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	if p.clearDraft && c.drafts[saved.ID] == p.draft {
 		d := c.drafts[saved.ID]
 		d.Text = ""
+		d.ReplyToID = ""
+		d.ReplyToKind = ""
 		d.Revision++
 		c.drafts[saved.ID] = d
 	}
@@ -399,7 +405,13 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 	c.active = chat.Clone(doc)
 	c.queues[doc.ID] = c.queues[oldID]
 	delete(c.queues, oldID)
-	c.drafts[doc.ID] = c.drafts[oldID]
+	draft := c.drafts[oldID]
+	// A new chat cannot reference an answer from the discarded conversation.
+	if draft.ReplyToID != "" {
+		draft.ReplyToID, draft.ReplyToKind = "", ""
+		draft.Revision++
+	}
+	c.drafts[doc.ID] = draft
 	delete(c.drafts, oldID)
 	// The discarded question stays in the old chat's archive; keep the draft rather
 	// than clear it as a duplicate after a crash.
