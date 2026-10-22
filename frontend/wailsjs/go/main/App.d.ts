@@ -18,6 +18,8 @@ export function ClearQueue(arg1:string):Promise<void>;
 
 export function DeleteChat(arg1:string):Promise<app.Snapshot>;
 
+export function DeleteProfile(arg1:string,arg2:number):Promise<app.Snapshot>;
+
 export function DiscardUnsaved():Promise<app.Snapshot>;
 
 export function Exit():Promise<void>;
@@ -26,11 +28,15 @@ export function ListModels():Promise<Array<llm.Model>>;
 
 export function NewChat():Promise<app.Snapshot>;
 
+export function NewChatFromProfile(arg1:string,arg2:number):Promise<app.Snapshot>;
+
 export function OpenChat(arg1:string):Promise<app.Snapshot>;
 
 export function OpenImage(arg1:string,arg2:string):Promise<void>;
 
 export function Ready():Promise<void>;
+
+export function ReloadProfiles():Promise<app.Snapshot>;
 
 export function RemoveAttachment(arg1:string,arg2:string):Promise<void>;
 
@@ -41,6 +47,8 @@ export function RequestSubmit():Promise<app.SubmitIntent>;
 export function RetrySave():Promise<void>;
 
 export function SaveChatConfig(arg1:app.ConfigInput):Promise<app.Snapshot>;
+
+export function SaveProfile(arg1:app.ProfileInput):Promise<app.Snapshot>;
 
 export function SetAlwaysOnTop(arg1:boolean):Promise<app.Snapshot>;
 

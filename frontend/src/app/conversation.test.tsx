@@ -89,3 +89,38 @@ it("keeps the next question editable across preparation, waiting, streaming and 
   });
   expect(input).toHaveProperty("value", "next question while saving");
 });
+
+it("opens interview profiles from an existing read-only chat", async () => {
+  Element.prototype.scrollTo = vi.fn();
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.open = true;
+  });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.open = false;
+  });
+  render(<App />);
+  await screen.findByRole("textbox", { name: "Вопрос" });
+  const fixture = snapshotFixture();
+  act(() =>
+    transport.listeners.get("solveo:state")?.({
+      ...fixture,
+      revision: 100,
+      provider_id: "legacy",
+      controls: {
+        ...fixture.controls,
+        can_edit_config: false,
+        can_submit: false,
+        can_capture: false,
+        can_switch: true,
+      },
+    }),
+  );
+  const button = screen.getByRole("button", { name: "Преднастройка" });
+  expect(button).toHaveProperty("disabled", false);
+  await userEvent.click(button);
+  expect(screen.getByLabelText("Профили подготовки интервью")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Сохранить преднастройку" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+});

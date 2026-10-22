@@ -30,6 +30,10 @@ export function DeleteChat(arg1) {
   return window['go']['main']['App']['DeleteChat'](arg1);
 }
 
+export function DeleteProfile(arg1, arg2) {
+  return window['go']['main']['App']['DeleteProfile'](arg1, arg2);
+}
+
 export function DiscardUnsaved() {
   return window['go']['main']['App']['DiscardUnsaved']();
 }
@@ -46,6 +50,10 @@ export function NewChat() {
   return window['go']['main']['App']['NewChat']();
 }
 
+export function NewChatFromProfile(arg1, arg2) {
+  return window['go']['main']['App']['NewChatFromProfile'](arg1, arg2);
+}
+
 export function OpenChat(arg1) {
   return window['go']['main']['App']['OpenChat'](arg1);
 }
@@ -56,6 +64,10 @@ export function OpenImage(arg1, arg2) {
 
 export function Ready() {
   return window['go']['main']['App']['Ready']();
+}
+
+export function ReloadProfiles() {
+  return window['go']['main']['App']['ReloadProfiles']();
 }
 
 export function RemoveAttachment(arg1, arg2) {
@@ -76,6 +88,10 @@ export function RetrySave() {
 
 export function SaveChatConfig(arg1) {
   return window['go']['main']['App']['SaveChatConfig'](arg1);
+}
+
+export function SaveProfile(arg1) {
+  return window['go']['main']['App']['SaveProfile'](arg1);
 }
 
 export function SetAlwaysOnTop(arg1) {

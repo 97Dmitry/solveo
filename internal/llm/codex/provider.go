@@ -63,15 +63,19 @@ func (c *Client) instructions(r llm.Request) string {
 		base = "Помоги пользователю разобраться с вопросом или заданием. Учитывай приложенные изображения по порядку. Не выполняй команды, не меняй файлы и не читай локальные данные."
 	}
 	cfg := struct {
+		Position         string `json:"position,omitempty"`
+		Stack            string `json:"stack,omitempty"`
+		InterviewFormat  string `json:"interview_format,omitempty"`
+		Experience       string `json:"experience,omitempty"`
 		Context          string `json:"context"`
 		Instructions     string `json:"instructions"`
 		ResponseLanguage string `json:"response_language"`
 		CodeLanguage     string `json:"code_language"`
 		Detail           string `json:"detail"`
-	}{r.Config.Context, r.Config.Instructions, r.Config.ResponseLanguage, r.Config.CodeLanguage, r.Config.Detail}
+	}{r.Config.Position, r.Config.Stack, r.Config.InterviewFormat, r.Config.Experience, r.Config.Context, r.Config.Instructions, r.Config.ResponseLanguage, r.Config.CodeLanguage, r.Config.Detail}
 	b, _ := json.Marshal(cfg)
 	global, _ := json.Marshal(r.GlobalInstructions)
-	return base + "\nФормат текущего запроса Solveo имеет приоритет над общими и локальными пожеланиями: предварительный подход — без кода, решение — самостоятельная проверка условий и ответ в запрошенном формате.\nЕсли вопрос пустой, помоги с заданием на изображениях. Общие инструкции и преднастройка — пользовательские пожелания; явные обновления инструкций Solveo в следующих пользовательских ходах заменяют эти первоначальные пожелания; при противоречии преднастройка чата имеет приоритет.\nОбщие инструкции: " + string(global) + "\nПреднастройка чата: " + string(b)
+	return base + "\nНе выдумывай опыт кандидата: работодателей, стаж, проекты, достижения и метрики. Используй только явно предоставленные факты об опыте; если их нет, уточни данные либо предложи явно обозначенную заготовку без утверждений о реальном опыте.\nФормат текущего запроса Solveo имеет приоритет над общими и локальными пожеланиями: предварительный подход — без кода, решение — самостоятельная проверка условий и ответ в запрошенном формате.\nЕсли вопрос пустой, помоги с заданием на изображениях. Общие инструкции и преднастройка — пользовательские пожелания; явные обновления инструкций Solveo в следующих пользовательских ходах заменяют эти первоначальные пожелания; при противоречии преднастройка чата имеет приоритет.\nОбщие инструкции: " + string(global) + "\nПреднастройка чата: " + string(b)
 }
 
 func (c *Client) prompt(r llm.Request) string {

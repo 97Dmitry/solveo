@@ -42,6 +42,10 @@ const (
 )
 
 type Config struct {
+	Position         string `json:"position"`
+	Stack            string `json:"stack"`
+	InterviewFormat  string `json:"interview_format"`
+	Experience       string `json:"experience"`
 	ParallelAnswers  bool   `json:"parallel_answers"`
 	FastModel        string `json:"fast_model"`
 	FastReasoning    string `json:"fast_reasoning"`

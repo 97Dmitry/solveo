@@ -64,3 +64,14 @@ func (a *App) StreamSnapshot() core.StreamSnapshot { return a.controller.StreamS
 func (a *App) Account() (llm.Account, error)       { return a.controller.Account() }
 func (a *App) StartLogin() (core.Snapshot, error)  { return a.controller.StartLogin() }
 func (a *App) CancelLogin() (core.Snapshot, error) { return a.controller.CancelLogin() }
+
+func (a *App) SaveProfile(in core.ProfileInput) (core.Snapshot, error) {
+	return a.controller.SaveProfile(in)
+}
+func (a *App) DeleteProfile(id string, revision uint64) (core.Snapshot, error) {
+	return a.controller.DeleteProfile(id, revision)
+}
+func (a *App) ReloadProfiles() (core.Snapshot, error) { return a.controller.ReloadProfiles() }
+func (a *App) NewChatFromProfile(id string, revision uint64) (core.Snapshot, error) {
+	return a.controller.NewChatFromProfile(id, revision)
+}

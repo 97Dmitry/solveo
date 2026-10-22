@@ -1,6 +1,10 @@
 package llm
 
-import "context"
+import (
+	"context"
+
+	"github.com/97Dmitry/solveo/internal/chat"
+)
 
 // ModelCatalog is optional: each provider discovers its own available models.
 type ModelCatalog interface {
@@ -21,16 +25,4 @@ type Model struct {
 
 // ValidReasoning accepts provider-advertised tokens without a fixed effort enum.
 // Restricted tokens are safe in Codex's TOML config override argument.
-func ValidReasoning(value string) bool {
-	if len(value) > 64 {
-		return false
-	}
-	for _, c := range value {
-		switch {
-		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_', c == '-':
-		default:
-			return false
-		}
-	}
-	return true
-}
+func ValidReasoning(value string) bool { return chat.ValidReasoning(value) }
