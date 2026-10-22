@@ -6,6 +6,10 @@ import { imageBase64 } from "./attachments";
 import {
   accountSchema,
   configSchema,
+  deleteResultSchema,
+  exportResultSchema,
+  hotkeysSchema,
+  searchHitsSchema,
   modelsSchema,
   profileInputSchema,
   type ProfileInput,
@@ -26,7 +30,13 @@ export const actions = {
   exit: () => client.run(api.Exit),
   newChat: () => client.run(api.NewChat, true, true),
   openChat: (id: string) => client.run(() => api.OpenChat(id), true, true),
-  deleteChat: (id: string) => client.run(() => api.DeleteChat(id), true),
+  // The live draft is flushed first: deleting the active chat switches to another.
+  deleteChats: async (ids: string[]) =>
+    client.result(async () => deleteResultSchema.parse(await api.DeleteChats(ids)), true),
+  pinChat: (id: string, pinned: boolean) => client.run(() => api.SetChatPinned(id, pinned)),
+  exportChat: (id: string) =>
+    client.result(async () => exportResultSchema.parse(await api.ExportChat(id))),
+  revealExport: (name: string) => client.run(() => api.RevealExport(name)),
   saveConfig: (chatID: string, title: string, config: ChatConfig, revision: number) =>
     client.run(
       () =>
@@ -85,4 +95,18 @@ export async function loadAccount() {
 
 export async function loadModels() {
   return modelsSchema.parse(await api.ListModels());
+}
+
+// Search runs outside client.run: Go scans the archive without the operation
+// slot, so history stays searchable during a request.
+export async function searchHistory(query: string) {
+  return searchHitsSchema.parse(await api.SearchHistory(query));
+}
+
+// Global hotkeys are paused while a shortcut is being recorded.
+export function suspendHotkeys(suspend: boolean) {
+  return api.SuspendHotkeys(suspend);
+}
+export async function defaultHotkeys() {
+  return hotkeysSchema.parse(await api.DefaultHotkeys());
 }

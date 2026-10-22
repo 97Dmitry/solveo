@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"image"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 	"unsafe"
 
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/platform"
 )
 
@@ -64,9 +66,7 @@ func (h *Host) Start(ctx context.Context, onEvent func(platform.Event)) error {
 		defer func() {
 			w.removeTrayIcon()
 			w.destroyTrayIcon()
-			for i := 2001; i <= 2005; i++ {
-				procUnregisterHotKey.Call(w.hwnd, uintptr(i))
-			}
+			w.unregisterHotkeys()
 			current = nil
 		}()
 		go func() {
@@ -112,9 +112,6 @@ func (w *Window) create() error {
 		if !success {
 			w.removeTrayIcon()
 			w.destroyTrayIcon()
-			for i := 2001; i <= 2005; i++ {
-				procUnregisterHotKey.Call(hwnd, uintptr(i))
-			}
 			procDestroyWindow.Call(hwnd)
 		}
 	}()
@@ -127,11 +124,6 @@ func (w *Window) create() error {
 	}
 	if err := w.addTrayIcon(); err != nil {
 		return err
-	}
-	for i, key := range []uintptr{keyS, keyO, keyA, keyEnter, keyF} {
-		if ok, _, err := procRegisterHotKey.Call(hwnd, uintptr(2001+i), modCtrl|modAlt|modNoRepeat, key); ok == 0 {
-			return fmt.Errorf("register hotkey %d: %w", i, err)
-		}
 	}
 	success = true
 	return nil
@@ -156,6 +148,33 @@ func (h *Host) post(f func()) error {
 		return fmt.Errorf("post native command: %w", err)
 	}
 	return nil
+}
+
+// SetHotkeys replaces every registered global hotkey on the host thread and
+// reports the registration error of each failed action, typically a shortcut
+// already taken by another application. An empty list only unregisters.
+func (h *Host) SetHotkeys(bindings []hotkeys.Binding) (map[string]error, error) {
+	failed := map[string]error{}
+	err := h.call(func() {
+		w := h.window
+		w.unregisterHotkeys()
+		for _, b := range bindings {
+			id := hotkeyBase + slices.Index(hotkeys.Actions, b.Action)
+			if id < hotkeyBase {
+				failed[b.Action] = errors.New("unknown hotkey action")
+				continue
+			}
+			if ok, _, e := procRegisterHotKey.Call(w.hwnd, uintptr(id), uintptr(b.Modifiers)|modNoRepeat, uintptr(b.Key)); ok == 0 {
+				failed[b.Action] = e
+			}
+		}
+	})
+	return failed, err
+}
+func (w *Window) unregisterHotkeys() {
+	for i := range hotkeys.Actions {
+		procUnregisterHotKey.Call(w.hwnd, uintptr(hotkeyBase+i))
+	}
 }
 func (h *Host) BeginSelection(id string) error {
 	return h.post(func() {
@@ -239,17 +258,8 @@ func windowProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 				}
 			}
 		case wmHotkey:
-			switch wp {
-			case 2001:
-				w.emit("quick-region")
-			case 2002:
-				w.emit("toggle")
-			case 2003:
-				w.emit("queue-region")
-			case 2004:
-				w.emit("submit")
-			case 2005:
-				w.emit("quick-full")
+			if i := int(wp) - hotkeyBase; i >= 0 && i < len(hotkeys.Actions) {
+				w.emit(hotkeys.Actions[i])
 			}
 			return 0
 		case wmAppTray:

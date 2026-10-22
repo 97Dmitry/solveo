@@ -15,3 +15,5 @@
 - Profiles are required Snapshot fields (`profiles`, `profiles_error`) validated against generated ProfileView. Config's additive interview strings are normalized by Go when reading old archives. Profile commands use client.run; NewChatFromProfile flushes the live draft before navigation just like NewChat. Keep stored-profile creation separate from applying the editable form.
 
 - Image imports capture chatID before async FileReader; read inside client.run so navigation/duplicate imports remain serialized. attachments.ts bounds File.size before base64, while Go validates bytes/format/dimensions. Do not pass renderer paths to Go. Reuse and reorder use confirmed Go snapshots; preserve the live text/reference.
+
+- `acceptSnapshot` shares unchanged messages/images with the previous snapshot (serialized comparison, cached per object) so memoized rows can skip rendering; never mutate snapshot objects. History search and hotkey suspend/defaults bypass client.run (no operation slot); DeleteChats/ExportChat use client.result to return validated values.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,21 +28,26 @@ type Controller struct {
 	cancel            context.CancelFunc
 	workers           sync.WaitGroup
 	preparationCancel context.CancelFunc
-	revision          uint64
-	active            chat.Chat
-	settings          settings.Config
-	summaries         []history.Summary
-	drafts            map[string]Draft
-	queues            map[string][]queued
-	op                operation
-	pending           *pendingSave
-	requests          map[string]bool
-	intent            *SubmitIntent
-	err               string
-	logs              string
-	logFlushPending   bool
-	closed            bool
-	selectionMode     string
+	searchCancel      context.CancelFunc
+	// Native hotkey state; changes are serialized by settingsMu (hotkeys.go).
+	hotkeyErrors     map[string]string
+	hotkeysSuspended bool
+	resumeTimer      *time.Timer
+	revision         uint64
+	active           chat.Chat
+	settings         settings.Config
+	summaries        []history.Summary
+	drafts           map[string]Draft
+	queues           map[string][]queued
+	op               operation
+	pending          *pendingSave
+	requests         map[string]bool
+	intent           *SubmitIntent
+	err              string
+	logs             string
+	logFlushPending  bool
+	closed           bool
+	selectionMode    string
 
 	streams            map[streamKey]StreamBlock
 	streamOpen         map[streamKey]bool
@@ -114,6 +119,9 @@ func New(d Dependencies) (*Controller, error) {
 	c.statePersist.resume()
 	c.streamPersist.resume()
 	c.prepareConnection()
+	// A shortcut taken by another application must not prevent startup;
+	// Snapshot.HotkeyErrors shows it in the settings instead.
+	c.hotkeyErrors, _ = c.registerHotkeys(cfg.Hotkeys)
 	c.mu.Lock()
 	c.prepareChatLocked()
 	c.mu.Unlock()
@@ -123,6 +131,7 @@ func (c *Controller) rememberLocked(doc chat.Chat) {
 	s := history.Summary{ID: doc.ID, Title: doc.Title, ProviderID: doc.ProviderID, UpdatedAt: doc.UpdatedAt, Prepared: len(doc.Messages) == 0}
 	for i, v := range c.summaries {
 		if v.ID == doc.ID {
+			s.Pinned = v.Pinned
 			c.summaries = append(c.summaries[:i], c.summaries[i+1:]...)
 			break
 		}
@@ -188,8 +197,12 @@ func (c *Controller) Snapshot() Snapshot {
 		}
 	}
 	summaries := []HistorySummary{}
-	for _, h := range c.summaries {
-		summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.UTC().Format(time.RFC3339Nano), Prepared: h.Prepared})
+	for _, pinned := range []bool{true, false} {
+		for _, h := range c.summaries {
+			if h.Pinned == pinned {
+				summaries = append(summaries, HistorySummary{ID: h.ID, Title: h.Title, ProviderID: h.ProviderID, UpdatedAt: h.UpdatedAt.UTC().Format(time.RFC3339Nano), Prepared: h.Prepared, Pinned: h.Pinned})
+			}
+		}
 	}
 	workErr := c.stateErr
 	if workErr == "" {
@@ -218,14 +231,16 @@ func (c *Controller) Snapshot() Snapshot {
 			CanRetry:      available && providerOK && retry,
 			CanDiscard:    c.pending != nil,
 		},
-		Settings:  c.settings,
-		Provider:  c.deps.Provider.Describe(),
-		History:   summaries,
-		Error:     c.err,
-		Uncertain: uncertain,
-		Login:     c.login,
-		WorkError: workErr,
-		Recovered: c.recoveredLocked(doc),
+		Settings: c.settings,
+
+		HotkeyErrors: c.hotkeyErrorsLocked(),
+		Provider:     c.deps.Provider.Describe(),
+		History:      summaries,
+		Error:        c.err,
+		Uncertain:    uncertain,
+		Login:        c.login,
+		WorkError:    workErr,
+		Recovered:    c.recoveredLocked(doc),
 	}
 }
 func (c *Controller) SetDraft(in DraftInput) error {
@@ -351,59 +366,6 @@ func (c *Controller) switchChat(id, profileID string, profileRevision uint64) (S
 	c.publish()
 	return c.Snapshot(), e
 }
-func (c *Controller) DeleteChat(id string) (Snapshot, error) {
-	c.mu.Lock()
-	if e := c.availableLocked(); e != nil {
-		c.mu.Unlock()
-		return Snapshot{}, e
-	}
-	if id == c.active.ID {
-		c.mu.Unlock()
-		return Snapshot{}, errors.New("чтобы удалить этот чат, сначала откройте другой")
-	}
-	c.op = operation{Operation: Operation{Phase: phaseSaving, Kind: kindDelete}}
-	// Forget the chat's unfinished work on disk before deleting the chat, so a
-	// crash in between cannot bring it back as work of a missing chat.
-	queue := c.queues[id]
-	draft, hadDraft := c.drafts[id]
-	delete(c.queues, id)
-	delete(c.drafts, id)
-	delete(c.submitted, id)
-	if c.dropRecoveredLocked(func(b workstate.Block) bool { return b.ChatID == id }) {
-		c.streamPersist.mark()
-	}
-	c.mu.Unlock()
-	c.statePersist.mark()
-	e := c.statePersist.flush()
-	if e == nil {
-		e = c.deps.Store.Delete(id)
-	}
-	c.mu.Lock()
-	if e == nil {
-		for i, v := range c.summaries {
-			if v.ID == id {
-				c.summaries = append(c.summaries[:i], c.summaries[i+1:]...)
-				break
-			}
-		}
-	} else {
-		c.queues[id] = queue
-		if hadDraft {
-			c.drafts[id] = draft
-		}
-		c.statePersist.mark()
-	}
-	c.op = operation{Operation: Operation{Phase: phaseIdle}}
-	c.changedLocked()
-	c.mu.Unlock()
-	if e == nil {
-		for _, q := range queue {
-			_ = os.Remove(q.Path)
-		}
-	}
-	c.publish()
-	return c.Snapshot(), e
-}
 func (c *Controller) SetAlwaysOnTop(value bool) (Snapshot, error) {
 	// Read-modify-write under settingsMu so a concurrent UpdateSettings is not lost.
 	c.settingsMu.Lock()
@@ -420,10 +382,28 @@ func (c *Controller) UpdateSettings(cfg settings.Config) (Snapshot, error) {
 	return c.updateSettingsLocked(cfg)
 }
 func (c *Controller) updateSettingsLocked(cfg settings.Config) (Snapshot, error) {
-	if e := settings.Validate(cfg); e != nil {
+	cfg, e := settings.Normalize(cfg)
+	if e != nil {
 		return Snapshot{}, e
 	}
-	if e := c.deps.SettingsStore.Save(cfg); e != nil {
+	if e = settings.Validate(cfg); e != nil {
+		return Snapshot{}, e
+	}
+	c.mu.Lock()
+	old := c.settings
+	c.mu.Unlock()
+	hotkeysChanged := !maps.Equal(old.Hotkeys, cfg.Hotkeys)
+	if hotkeysChanged {
+		if e = c.applyHotkeysLocked(old, cfg); e != nil {
+			return Snapshot{}, e
+		}
+	}
+	if e = c.deps.SettingsStore.Save(cfg); e != nil {
+		if hotkeysChanged {
+			restored, _ := c.registerHotkeys(old.Hotkeys)
+			c.setHotkeyState(restored, false)
+			c.publish()
+		}
 		return Snapshot{}, e
 	}
 	c.mu.Lock()
@@ -462,6 +442,9 @@ func (c *Controller) Close(ctx context.Context) error {
 	c.closed = true
 	c.cancel()
 	c.intent = nil
+	if c.resumeTimer != nil {
+		c.resumeTimer.Stop()
+	}
 	c.mu.Unlock()
 	done := make(chan struct{})
 	go func() { c.workers.Wait(); close(done) }()

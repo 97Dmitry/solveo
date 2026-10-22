@@ -8,3 +8,7 @@
 - `global_instructions` is additive in v2; missing means empty, never filled from current settings. Validate the 16384 code-point limit on load/save and preserve the snapshot on every write.
 
 - User-turn reply_to_id/reply_to_kind must resolve to an earlier complete answer in the same archive, including individual parallel blocks. Reject forward/missing/unfinished targets and references on assistant messages. Missing fields preserve legacy behavior; run reference_test.go.
+
+- Pins live in `pins.json` (version 1), not in chat documents: pinning never rewrites the archive or `updated_at`. Missing/malformed means empty and is rewritten on the next change; a newer version is never overwritten. `List`/`Search` read pins without the store mutex; writers hold it.
+- `Delete` renames `images/<id>` to `trash/<id>.<nonce>` before removing the JSON and renames it back on failure. `Open` settles leftovers: restore images when the chat still exists, otherwise remove them. Never reorder this into JSON-first deletion.
+- `Search` is a cancellable linear scan (no index) with rune-wise case folding so snippet indexes stay valid. `Export` writes `exports/.tmp-*` then renames; `ExportPath` accepts only plain export names. Missing images are counted and noted, not fatal. Tests: navigation_test.go.

@@ -206,6 +206,8 @@ func (c *Controller) RequestSubmit() (SubmitIntent, error) {
 
 // Snapshot refresh after a renderer reload invalidates native submit handshakes.
 func (c *Controller) RendererReady() Snapshot {
+	// A reloaded renderer can no longer end a recording pause itself.
+	c.ReportError(c.SuspendHotkeys(false))
 	c.mu.Lock()
 	c.intent = nil
 	c.mu.Unlock()

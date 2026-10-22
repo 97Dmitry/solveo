@@ -6,10 +6,12 @@ import (
 	"image"
 	"image/png"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
 )
@@ -28,16 +30,27 @@ func (fakeCapture) SaveRegion(p string, _ image.Rectangle) error {
 }
 
 type fakeHost struct {
+	mu         sync.Mutex
 	selections int
 	rebindErr  error
+	folders    []string
+	hotkeys    []hotkeys.Binding
+	taken      map[uint32]bool
+	closes     int
+	closeErr   error
 }
 
 func (h *fakeHost) BeginSelection(string) error              { h.selections++; return nil }
 func (*fakeHost) ShowLog() error                             { return nil }
 func (*fakeHost) ShowImages([]platform.ViewImage, int) error { return nil }
-func (*fakeHost) CloseImages() error                         { return nil }
-func (*fakeHost) SetTheme(bool) error                        { return nil }
-func (*fakeHost) SetLog(string) error                        { return nil }
+func (h *fakeHost) CloseImages() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closes++
+	return h.closeErr
+}
+func (*fakeHost) SetTheme(bool) error { return nil }
+func (*fakeHost) SetLog(string) error { return nil }
 func TestQuickFailureWithNineteenAttachments(t *testing.T) {
 	c, f, _ := setup(t)
 	c.deps.Capturer = fakeCapture{}
@@ -127,3 +140,21 @@ func TestDraftIsolation(t *testing.T) {
 }
 
 func (h *fakeHost) RebindImages(map[string]string) error { return h.rebindErr }
+func (h *fakeHost) SetHotkeys(b []hotkeys.Binding) (map[string]error, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.hotkeys = append([]hotkeys.Binding(nil), b...)
+	failed := map[string]error{}
+	for _, v := range b {
+		if h.taken[v.Modifiers<<16|v.Key] {
+			failed[v.Action] = errors.New("hot key is already registered")
+		}
+	}
+	return failed, nil
+}
+func (h *fakeHost) OpenFolder(p string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.folders = append(h.folders, p)
+	return nil
+}

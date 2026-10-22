@@ -9,6 +9,7 @@ import (
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/platform"
 	"github.com/97Dmitry/solveo/internal/profiles"
@@ -43,6 +44,7 @@ const (
 	kindOpen    = "open"
 	kindDelete  = "delete"
 	kindDiscard = "discard"
+	kindExport  = "export"
 )
 
 type Archive interface {
@@ -53,6 +55,10 @@ type Archive interface {
 	AttachmentPath(string, chat.Attachment) (string, error)
 	Delete(string) error
 	Exists(string) (bool, error)
+	SetPinned(string, bool) error
+	Search(context.Context, string, int) ([]history.SearchHit, error)
+	Export(string, time.Time) (history.ExportResult, error)
+	ExportPath(string) (string, error)
 }
 
 // WorkStore persists unfinished work: drafts, queued PNGs and answer checkpoints.
@@ -88,6 +94,8 @@ type NativeHost interface {
 	RebindImages(map[string]string) error
 	SetTheme(bool) error
 	SetLog(string) error
+	OpenFolder(string) error
+	SetHotkeys([]hotkeys.Binding) (map[string]error, error)
 }
 type Window interface {
 	SetAlwaysOnTop(bool)
@@ -183,6 +191,24 @@ type HistorySummary struct {
 	ProviderID string `json:"provider_id"`
 	UpdatedAt  string `json:"updated_at"`
 	Prepared   bool   `json:"prepared"`
+	Pinned     bool   `json:"pinned"`
+}
+type DeleteFailure struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Error string `json:"error"`
+}
+type DeleteResult struct {
+	Deleted []string        `json:"deleted"`
+	Failed  []DeleteFailure `json:"failed"`
+}
+type SearchHit struct {
+	ChatID    string `json:"chat_id"`
+	Title     string `json:"title"`
+	Snippet   string `json:"snippet"`
+	Matches   int    `json:"matches"`
+	Pinned    bool   `json:"pinned"`
+	UpdatedAt string `json:"updated_at"`
 }
 type Snapshot struct {
 	Profiles       []ProfileView    `json:"profiles"`
@@ -209,6 +235,8 @@ type Snapshot struct {
 	WorkError string `json:"work_error"`
 	// Recovered is text received before a crash for interrupted attempts of this chat.
 	Recovered []StreamBlock `json:"recovered"`
+	// HotkeyErrors names actions whose current shortcut is not registered.
+	HotkeyErrors map[string]string `json:"hotkey_errors"`
 }
 type queued struct{ ID, Path, Label string }
 type pendingSave struct {

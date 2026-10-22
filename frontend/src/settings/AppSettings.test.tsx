@@ -5,6 +5,10 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import { AppSettings } from "./AppSettings";
 import { snapshotFixture } from "../bridge/test-fixture";
 afterEach(cleanup);
+const hotkeyBridge = {
+  loadDefaults: vi.fn(async () => snapshotFixture().settings.hotkeys),
+  suspend: vi.fn(async () => undefined),
+};
 const connection = () => ({
   loadAccount: vi.fn(async () => ({ signed_in: false, kind: "" })),
   onLogin: vi.fn(),
@@ -18,6 +22,7 @@ it("changes interface scale independently of text size and restores the saved va
   render(
     <AppSettings
       snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
       connection={connection()}
       onSettings={save}
       onCheck={vi.fn()}
@@ -38,6 +43,7 @@ it("shows the device-code login from Go state and refreshes the account", async 
   const view = (s: typeof snapshot) => (
     <AppSettings
       snapshot={s}
+      hotkeyActions={hotkeyBridge}
       connection={actions}
       onSettings={vi.fn()}
       onCheck={vi.fn()}
@@ -79,6 +85,7 @@ it("saves global instructions explicitly without checking the model connection",
   render(
     <AppSettings
       snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
       connection={connection()}
       onSettings={save}
       onCheck={check}
@@ -106,6 +113,7 @@ it("keeps newer edits while a settings save completes", async () => {
   const view = (s: typeof snapshot) => (
     <AppSettings
       snapshot={s}
+      hotkeyActions={hotkeyBridge}
       connection={actions}
       onSettings={save}
       onCheck={vi.fn()}

@@ -4,6 +4,8 @@ package main
 
 import (
 	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
 )
@@ -23,9 +25,19 @@ func (a *App) Ready() error {
 	}
 	return nil
 }
-func (a *App) NewChat() (core.Snapshot, error)             { return a.controller.NewChat() }
-func (a *App) OpenChat(id string) (core.Snapshot, error)   { return a.controller.OpenChat(id) }
-func (a *App) DeleteChat(id string) (core.Snapshot, error) { return a.controller.DeleteChat(id) }
+func (a *App) NewChat() (core.Snapshot, error)           { return a.controller.NewChat() }
+func (a *App) OpenChat(id string) (core.Snapshot, error) { return a.controller.OpenChat(id) }
+func (a *App) DeleteChats(ids []string) (core.DeleteResult, error) {
+	return a.controller.DeleteChats(ids)
+}
+func (a *App) SetChatPinned(id string, pinned bool) error {
+	return a.controller.SetChatPinned(id, pinned)
+}
+func (a *App) SearchHistory(query string) ([]core.SearchHit, error) {
+	return a.controller.SearchHistory(query)
+}
+func (a *App) ExportChat(id string) (history.ExportResult, error) { return a.controller.ExportChat(id) }
+func (a *App) RevealExport(name string) error                     { return a.controller.RevealExport(name) }
 func (a *App) SaveChatConfig(in core.ConfigInput) (core.Snapshot, error) {
 	return a.controller.SaveChatConfig(in)
 }
@@ -85,3 +97,6 @@ func (a *App) ReuseAttachment(chatID, id string) error {
 func (a *App) ReorderAttachments(chatID string, ids []string) error {
 	return a.controller.ReorderAttachments(chatID, ids)
 }
+
+func (a *App) SuspendHotkeys(suspend bool) error { return a.controller.SuspendHotkeys(suspend) }
+func (a *App) DefaultHotkeys() map[string]string { return hotkeys.Defaults() }

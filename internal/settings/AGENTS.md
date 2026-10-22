@@ -8,3 +8,5 @@
 - The removed `experimental_streaming` field of older files is ignored on load and dropped on the next save.
 
 - `global_instructions` is additive in schema v1, default empty, at most 16384 Unicode code points (valid UTF-8). Saving it never calls the provider; existing chat snapshots never change. Go and Zod count code points, not bytes/UTF-16 units.
+
+- `hotkeys` is additive in schema v1: a missing field means `hotkeys.Defaults()`, missing actions get defaults, unknown (newer) actions are ignored on load. Values are canonical `Ctrl+Alt+Shift+Win+Key` text or "" (disabled); Load/Save reject invalid or duplicate shortcuts. `Normalize` canonicalizes user input before `Validate`.

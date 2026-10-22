@@ -11,3 +11,5 @@
 
 - Initialize and verify shared GDI theme resources on the host thread before creating windows. A zero brush/pen makes background and owner-drawn button painting fail silently. `theme_windows_test.go` verifies actual fills when run on Windows.
 - The main window is tray-only: `TrayOnly` (called in `OnDomReady`, before the first show and after capture affinity) sets `WS_EX_TOOLWINDOW`, clears `WS_EX_APPWINDOW` and removes the minimize box, then verifies the style. Wails sets `WS_EX_APPWINDOW` itself and has no option for this. Do not use a cross-thread owner window instead: it couples the Wails and host message queues.
+
+- Hotkeys are registered only through `SetHotkeys` (host thread, unregister all, then register), never in `create`; the IDs are `hotkeyBase + index in hotkeys.Actions`, so never reorder Actions. Registration failures are returned per action, not fatal. `OpenFolder` runs ShellExecuteW on its own COM-initialized thread; Explorer windows are not capture-excluded.

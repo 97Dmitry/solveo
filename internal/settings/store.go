@@ -3,9 +3,11 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/storage"
 )
 
@@ -15,6 +17,8 @@ type Config struct {
 	Theme              string `json:"theme"`
 	FontSize           int    `json:"font_size"`
 	AlwaysOnTop        bool   `json:"always_on_top"`
+	// Hotkeys maps every hotkeys.Actions entry to canonical text; "" disables it.
+	Hotkeys map[string]string `json:"hotkeys"`
 }
 type Store struct{ Dir string }
 type storedSettings struct {
@@ -36,10 +40,27 @@ func Validate(c Config) error {
 	if c.FontSize < 14 || c.FontSize > 30 {
 		return errors.New("размер текста должен быть от 14 до 30")
 	}
+	normal, e := hotkeys.Normalize(c.Hotkeys)
+	if e != nil {
+		return e
+	}
+	if !maps.Equal(normal, c.Hotkeys) {
+		return errors.New("горячие клавиши не приведены к стандартной записи")
+	}
 	return nil
 }
+
+// Normalize brings user-entered settings to the stored form before Validate.
+func Normalize(c Config) (Config, error) {
+	normal, e := hotkeys.Normalize(c.Hotkeys)
+	if e != nil {
+		return c, e
+	}
+	c.Hotkeys = normal
+	return c, nil
+}
 func (s *Store) Load() (Config, error) {
-	c := Config{Theme: "dark", FontSize: 17, UIScale: 100}
+	c := Config{Theme: "dark", FontSize: 17, UIScale: 100, Hotkeys: hotkeys.Defaults()}
 	root, e := os.OpenRoot(s.Dir)
 	if e != nil {
 		return c, e
@@ -66,7 +87,18 @@ func (s *Store) Load() (Config, error) {
 	default:
 		return c, errors.New("неподдерживаемая версия файла настроек")
 	}
-	c = disk.Config
+	// Files without hotkeys get the defaults; actions of a newer version are ignored.
+	stored := disk.Hotkeys
+	disk.Hotkeys = hotkeys.Defaults()
+	for action := range disk.Hotkeys {
+		if v, ok := stored[action]; ok {
+			disk.Hotkeys[action] = v
+		}
+	}
+	c, e = Normalize(disk.Config)
+	if e != nil {
+		return c, e
+	}
 	return c, Validate(c)
 }
 func (s *Store) Save(c Config) error {

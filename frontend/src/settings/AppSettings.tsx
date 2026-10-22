@@ -5,17 +5,25 @@ import {
   globalInstructionsSchema,
   type Account as AccountState,
   type AppSettings as Config,
+  type Hotkeys,
   type Snapshot,
 } from "../bridge/state";
 import { Button } from "../ui/Button";
+import { HotkeySettings } from "./HotkeySettings";
 export type ConnectionActions = {
   loadAccount: () => Promise<AccountState>;
   onLogin: () => void;
   onCancelLogin: () => void;
   onOpenLink: (url: string) => void;
 };
+export type HotkeyBridge = {
+  loadDefaults: () => Promise<Hotkeys>;
+  suspend: (on: boolean) => Promise<void>;
+};
 export function AppSettings({
   snapshot,
+  busy = false,
+  hotkeyActions,
   connection,
   onSettings,
   onCheck,
@@ -25,6 +33,8 @@ export function AppSettings({
   onExit,
 }: {
   snapshot: Snapshot;
+  busy?: boolean;
+  hotkeyActions: HotkeyBridge;
   connection: ConnectionActions;
   onSettings: (config: Config) => void;
   onCheck: () => void;
@@ -115,18 +125,14 @@ export function AppSettings({
       </div>
       <div className="form-divider" />
       <h3>Горячие клавиши</h3>
-      <dl className="shortcuts">
-        <dt>Ctrl+Alt+S</dt>
-        <dd>Снимок области и ответ</dd>
-        <dt>Ctrl+Alt+A</dt>
-        <dd>Добавить область в очередь</dd>
-        <dt>Ctrl+Alt+F</dt>
-        <dd>Снимок всего экрана и ответ</dd>
-        <dt>Ctrl+Alt+Enter</dt>
-        <dd>Отправить вопрос и очередь</dd>
-        <dt>Ctrl+Alt+O</dt>
-        <dd>Показать / скрыть окно</dd>
-      </dl>
+      <HotkeySettings
+        hotkeys={snapshot.settings.hotkeys}
+        errors={snapshot.hotkey_errors}
+        disabled={busy}
+        onSave={(hotkeys) => onSettings({ ...snapshot.settings, hotkeys })}
+        loadDefaults={hotkeyActions.loadDefaults}
+        suspend={hotkeyActions.suspend}
+      />
       <Button onClick={onExit}>Выйти из Solveo</Button>
       {snapshot.controls.can_discard && (
         <div className="recovery">

@@ -269,6 +269,18 @@ export class SolveoClient {
     };
     await this.run(() => this.transport.submit(input), false, false, true);
   }
+  // result is run for actions whose value the caller needs; undefined means failure.
+  async result<T>(action: () => Promise<T>, flush = false): Promise<T | undefined> {
+    let value: T | undefined;
+    const ok = await this.run(
+      async () => {
+        value = await action();
+      },
+      false,
+      flush,
+    );
+    return ok ? value : undefined;
+  }
   async run(
     action: () => Promise<unknown>,
     snapshotResponse = false,

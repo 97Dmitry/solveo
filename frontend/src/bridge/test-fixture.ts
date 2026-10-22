@@ -44,6 +44,13 @@ export function snapshotFixture(): Snapshot {
       theme: "dark",
       font_size: 17,
       always_on_top: false,
+      hotkeys: {
+        "quick-region": "Ctrl+Alt+S",
+        toggle: "Ctrl+Alt+O",
+        "queue-region": "Ctrl+Alt+A",
+        submit: "Ctrl+Alt+Enter",
+        "quick-full": "Ctrl+Alt+F",
+      },
     },
     provider: {
       id: "codex",
@@ -56,5 +63,6 @@ export function snapshotFixture(): Snapshot {
     login: { id: "", url: "", code: "", state: "", error: "" },
     work_error: "",
     recovered: [],
+    hotkey_errors: {},
   };
 }

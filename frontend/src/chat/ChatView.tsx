@@ -1,14 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { ArrowDown, Check, Copy, SlidersHorizontal } from "lucide-react";
-import { recoveredText, streamText, type Snapshot, type StreamSnapshot } from "../bridge/state";
+import {
+  recoveredText,
+  streamText,
+  type AttachmentView,
+  type Message,
+  type Snapshot,
+  type StreamSnapshot,
+} from "../bridge/state";
 import { AnswerBlocks } from "./AnswerBlocks";
 import { Markdown } from "./Markdown";
 import { AttachmentStrip } from "./AttachmentStrip";
 import { AnswerReference } from "./AnswerReference";
+import { ChatSearch } from "./ChatSearch";
 import { FollowupActions } from "./FollowupActions";
 import { answerElementID, type FollowupHandler } from "./followup";
 import { Button, IconButton } from "../ui/Button";
-export function ChatView({
+// ChatView is memoized: typing changes only the editor, so the conversation is
+// not re-rendered on each keystroke. App passes stable callbacks.
+export const ChatView = memo(function ChatView({
   snapshot,
   stream,
   onConfigure,
@@ -21,7 +31,12 @@ export function ChatView({
   onFollowup,
   onReuse,
   canPrepareFollowup = false,
+  searchFocus = 0,
+  onSearchClose,
 }: {
+  // Non-zero shows conversation search; a new value refocuses its field.
+  searchFocus?: number;
+  onSearchClose?: () => void;
   onFollowup?: FollowupHandler;
   onReuse?: (id: string) => void;
   canPrepareFollowup?: boolean;
@@ -36,6 +51,7 @@ export function ChatView({
   onOpenLink: (url: string) => void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const [unread, setUnread] = useState(false);
   const [copied, setCopied] = useState("");
@@ -52,6 +68,14 @@ export function ChatView({
   const last = snapshot.messages.at(-1);
   return (
     <div className="chat-container">
+      {searchFocus > 0 && onSearchClose && (
+        <ChatSearch
+          focus={searchFocus}
+          root={messagesRef}
+          content={`${snapshot.revision}:${stream.revision}`}
+          onClose={onSearchClose}
+        />
+      )}
       <div
         className="chat-scroll"
         ref={scroll}
@@ -85,136 +109,49 @@ export function ChatView({
                 Подготовить чат
               </Button>
             )}
-            <div className="shortcut-card">
-              <kbd>Ctrl</kbd>
-              <span>+</span>
-              <kbd>Alt</kbd>
-              <span>+</span>
-              <kbd>S</kbd>
-              <span>снимок и ответ</span>
-            </div>
+            {snapshot.settings.hotkeys["quick-region"] && (
+              <div className="shortcut-card">
+                {snapshot.settings.hotkeys["quick-region"].split("+").map((key, i) => (
+                  <span key={key} className="shortcut-key">
+                    {i > 0 && <span>+</span>}
+                    <kbd>{key}</kbd>
+                  </span>
+                ))}
+                <span>снимок и ответ</span>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="messages">
+          <div className="messages" ref={messagesRef}>
             {snapshot.messages.map((message) => (
-              <div key={message.id}>
-                <article
-                  className={`message ${message.role}`}
-                  id={answerElementID(message.id, "")}
-                  tabIndex={-1}
-                >
-                  <div className="message-meta">
-                    <span>{message.role === "assistant" ? "Solveo" : "Вы"}</span>
-                    {message.role === "assistant" && (
-                      <IconButton
-                        label={copied === message.id ? "Ответ скопирован" : "Скопировать ответ"}
-                        onClick={() => {
-                          void onCopy(message.text).then((ok) => {
-                            if (ok) setCopied(message.id);
-                          });
-                        }}
-                      >
-                        {copied === message.id ? <Check size={13} /> : <Copy size={13} />}
-                      </IconButton>
-                    )}
-                  </div>
-                  {message.reply_to_id && (
-                    <AnswerReference
-                      messages={snapshot.messages}
-                      messageID={message.reply_to_id}
-                      kind={message.reply_to_kind ?? ""}
-                    />
-                  )}
-                  <div className="message-body">
-                    {message.role === "assistant" ? (
-                      <Markdown text={message.text} onCopy={onCopy} onOpenLink={onOpenLink} />
-                    ) : (
-                      <p className="user-text">{message.text || "Задание на снимках"}</p>
-                    )}
-                  </div>
-                  {message.role === "assistant" &&
-                    message.status === "complete" &&
-                    message.text.trim() &&
-                    onFollowup && (
-                      <FollowupActions
-                        messageID={message.id}
-                        disabled={!canPrepareFollowup}
-                        onFollowup={onFollowup}
-                      />
-                    )}
-                  {message.role === "user" && message.text && onReuse && (
-                    <Button
-                      className="reuse-question"
-                      disabled={!canPrepareFollowup}
-                      title="Копировать текст в пустой редактор; прежние снимки не добавляются"
-                      onClick={() => onReuse(message.id)}
-                    >
-                      Изменить и отправить заново
-                    </Button>
-                  )}
-                  {message.attachment_ids.length > 0 && (
-                    <AttachmentStrip
-                      items={message.attachment_ids.flatMap((id) =>
-                        snapshot.images.filter((image) => image.id === id),
-                      )}
-                      disabled={!canReuseImage}
-                      {...(onReuseImage ? { onReuse: onReuseImage } : {})}
-                      onOpen={onOpenImage}
-                    />
-                  )}
-                  {message.status !== "complete" && message.status !== "requesting" && (
-                    <div className="attempt-status">
-                      <span>
-                        {message.status === "unknown" || message.status === "interrupted"
-                          ? "Исход запроса неизвестен. Повтор может отправить вопрос ещё раз."
-                          : message.status === "canceled"
-                            ? "Запрос отменён"
-                            : "Ответ не получен"}
-                      </span>
-                      {snapshot.controls.can_retry && last?.id === message.id && (
-                        <Button onClick={() => onRetry(message.id)}>
-                          {message.answers?.length ? "Повторить решение" : "Повторить"}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </article>
-                {message.answers ? (
-                  <AnswerBlocks
-                    messageID={message.id}
-                    {...(onFollowup ? { onFollowup } : {})}
-                    canPrepareFollowup={canPrepareFollowup}
-                    answers={message.answers}
-                    previews={{
-                      approach: streamText(snapshot, stream, message, "approach"),
-                      solution: streamText(snapshot, stream, message, "solution"),
-                    }}
-                    recovered={{
-                      approach: recoveredText(snapshot, message, "approach"),
-                      solution: recoveredText(snapshot, message, "solution"),
-                    }}
-                    onCopy={onCopy}
-                    onOpenLink={onOpenLink}
-                  />
-                ) : (
-                  message.role === "user" && (
-                    <>
-                      <RecoveredPreview
-                        text={
-                          message.status === "interrupted"
-                            ? recoveredText(snapshot, message, "message")
-                            : ""
-                        }
-                        onOpenLink={onOpenLink}
-                      />
-                      <StreamPreview
-                        text={streamText(snapshot, stream, message, "message")}
-                        onOpenLink={onOpenLink}
-                      />
-                    </>
-                  )
-                )}
-              </div>
+              <MessageRow
+                key={message.id}
+                message={message}
+                messages={message.reply_to_id ? snapshot.messages : undefined}
+                images={snapshot.images}
+                retry={snapshot.controls.can_retry && last?.id === message.id}
+                previewMessage={streamText(snapshot, stream, message, "message")}
+                previewApproach={streamText(snapshot, stream, message, "approach")}
+                previewSolution={streamText(snapshot, stream, message, "solution")}
+                recoveredMessage={
+                  message.status === "interrupted"
+                    ? recoveredText(snapshot, message, "message")
+                    : ""
+                }
+                recoveredApproach={recoveredText(snapshot, message, "approach")}
+                recoveredSolution={recoveredText(snapshot, message, "solution")}
+                copied={copied === message.id}
+                setCopied={setCopied}
+                canPrepareFollowup={canPrepareFollowup}
+                canReuseImage={canReuseImage}
+                onOpenImage={onOpenImage}
+                onRetry={onRetry}
+                onCopy={onCopy}
+                onOpenLink={onOpenLink}
+                {...(onReuseImage ? { onReuseImage } : {})}
+                {...(onFollowup ? { onFollowup } : {})}
+                {...(onReuse ? { onReuse } : {})}
+              />
             ))}
           </div>
         )}
@@ -232,7 +169,162 @@ export function ChatView({
       )}
     </div>
   );
-}
+});
+
+// MessageRow is memoized: snapshots and stream updates arrive several times a
+// second, and the client keeps unchanged messages as the same objects, so a
+// long conversation re-renders only the rows that actually changed.
+const MessageRow = memo(function MessageRow({
+  message,
+  messages,
+  images,
+  retry,
+  previewMessage,
+  previewApproach,
+  previewSolution,
+  recoveredMessage,
+  recoveredApproach,
+  recoveredSolution,
+  copied,
+  setCopied,
+  canPrepareFollowup,
+  canReuseImage,
+  onOpenImage,
+  onReuseImage,
+  onRetry,
+  onCopy,
+  onOpenLink,
+  onFollowup,
+  onReuse,
+}: {
+  message: Message;
+  // Only rows that reference another answer need the whole conversation.
+  messages: Message[] | undefined;
+  images: AttachmentView[];
+  retry: boolean;
+  previewMessage: string;
+  previewApproach: string;
+  previewSolution: string;
+  recoveredMessage: string;
+  recoveredApproach: string;
+  recoveredSolution: string;
+  copied: boolean;
+  setCopied: (id: string) => void;
+  canPrepareFollowup: boolean;
+  canReuseImage: boolean;
+  onOpenImage: (id: string) => void;
+  onReuseImage?: (id: string) => void;
+  onRetry: (id: string) => void;
+  onCopy: (text: string) => Promise<boolean>;
+  onOpenLink: (url: string) => void;
+  onFollowup?: FollowupHandler;
+  onReuse?: (id: string) => void;
+}) {
+  return (
+    <div>
+      <article
+        className={`message ${message.role}`}
+        id={answerElementID(message.id, "")}
+        tabIndex={-1}
+      >
+        <div className="message-meta">
+          <span>{message.role === "assistant" ? "Solveo" : "Вы"}</span>
+          {message.role === "assistant" && (
+            <IconButton
+              label={copied ? "Ответ скопирован" : "Скопировать ответ"}
+              onClick={() => {
+                void onCopy(message.text).then((ok) => {
+                  if (ok) setCopied(message.id);
+                });
+              }}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </IconButton>
+          )}
+        </div>
+        {message.reply_to_id && (
+          <AnswerReference
+            messages={messages ?? []}
+            messageID={message.reply_to_id}
+            kind={message.reply_to_kind ?? ""}
+          />
+        )}
+        <div className="message-body">
+          {message.role === "assistant" ? (
+            <Markdown text={message.text} onCopy={onCopy} onOpenLink={onOpenLink} />
+          ) : (
+            <p className="user-text">{message.text || "Задание на снимках"}</p>
+          )}
+        </div>
+        {message.role === "assistant" &&
+          message.status === "complete" &&
+          message.text.trim() &&
+          onFollowup && (
+            <FollowupActions
+              messageID={message.id}
+              disabled={!canPrepareFollowup}
+              onFollowup={onFollowup}
+            />
+          )}
+        {message.role === "user" && message.text && onReuse && (
+          <Button
+            className="reuse-question"
+            disabled={!canPrepareFollowup}
+            title="Копировать текст в пустой редактор; прежние снимки не добавляются"
+            onClick={() => onReuse(message.id)}
+          >
+            Изменить и отправить заново
+          </Button>
+        )}
+        {message.attachment_ids.length > 0 && (
+          <AttachmentStrip
+            items={message.attachment_ids.flatMap((id) =>
+              images.filter((image) => image.id === id),
+            )}
+            disabled={!canReuseImage}
+            {...(onReuseImage ? { onReuse: onReuseImage } : {})}
+            onOpen={onOpenImage}
+          />
+        )}
+        {message.status !== "complete" && message.status !== "requesting" && (
+          <div className="attempt-status">
+            <span>
+              {message.status === "unknown" || message.status === "interrupted"
+                ? "Исход запроса неизвестен. Повтор может отправить вопрос ещё раз."
+                : message.status === "canceled"
+                  ? "Запрос отменён"
+                  : "Ответ не получен"}
+            </span>
+            {retry && (
+              <Button onClick={() => onRetry(message.id)}>
+                {message.answers?.length ? "Повторить решение" : "Повторить"}
+              </Button>
+            )}
+          </div>
+        )}
+      </article>
+      {message.answers ? (
+        <AnswerBlocks
+          messageID={message.id}
+          {...(onFollowup ? { onFollowup } : {})}
+          canPrepareFollowup={canPrepareFollowup}
+          answers={message.answers}
+          previews={{ approach: previewApproach, solution: previewSolution }}
+          recovered={{ approach: recoveredApproach, solution: recoveredSolution }}
+          onCopy={onCopy}
+          onOpenLink={onOpenLink}
+        />
+      ) : (
+        message.role === "user" && (
+          <>
+            <RecoveredPreview text={recoveredMessage} onOpenLink={onOpenLink} />
+            <StreamPreview text={previewMessage} onOpenLink={onOpenLink} />
+          </>
+        )
+      )}
+    </div>
+  );
+});
 
 // RecoveredPreview shows text received before the application stopped. The
 // answer is incomplete: no copy actions, and it disappears after a retry.
