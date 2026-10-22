@@ -179,7 +179,7 @@ func TestPushBackpressure(t *testing.T) {
 }
 
 func TestDroppedFrameDoesNotAdvanceSequence(t *testing.T) {
-	s := &Session{frames: make(chan []byte), seqs: map[string]uint64{}}
+	s := &Session{out: make(chan outbound), seqs: map[string]uint64{}}
 	if err := s.Push("a", 16000, 1, []float32{0}); !errors.Is(err, ErrBackpressure) {
 		t.Fatal("expected back-pressure on a full queue")
 	}
@@ -201,7 +201,7 @@ func TestFlushWaitsForFlushed(t *testing.T) {
 	}
 	ev := <-s.Events()
 	u, ok := ev.(Update)
-	if !ok || u.Kind != KindFinal || u.Text != "готово" || u.UtteranceID != "a:1" {
+	if !ok || u.Kind != KindFinal || u.Text != "готово" || u.UtteranceID != "a:1" || u.StreamID != "a" {
 		t.Fatalf("unexpected event %#v", ev)
 	}
 }
@@ -255,5 +255,52 @@ func TestOversizedServerMessageIsSessionError(t *testing.T) {
 	}
 	if _, ok := last.(error); !ok {
 		t.Fatalf("expected a session error, got %#v", last)
+	}
+}
+
+func TestControlMessagesStayBehindQueuedFrames(t *testing.T) {
+	order := make(chan string, 200)
+	addr := fakeWorker(t, true, func(ctx context.Context, c *websocket.Conn) {
+		for {
+			typ, data, err := c.Read(ctx)
+			if err != nil {
+				return
+			}
+			if typ == websocket.MessageBinary {
+				order <- "frame"
+				continue
+			}
+			var m map[string]any
+			_ = json.Unmarshal(data, &m)
+			order <- m["type"].(string)
+			if m["type"] == "flush" {
+				writeJSON(ctx, c, map[string]any{"type": "flushed", "stream_id": "a", "request_id": m["request_id"]})
+			}
+		}
+	})
+	s := dial(t, addr)
+	big := make([]float32, 9600)
+	pushed := 0
+	for range 40 {
+		if s.Push("a", 48000, 2, big) == nil {
+			pushed++
+		}
+	}
+	if err := s.Flush(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseStream("a"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < pushed; i++ {
+		if got := <-order; got != "frame" {
+			t.Fatalf("message %d was %q before all %d queued frames", i, got, pushed)
+		}
+	}
+	if got := <-order; got != "flush" {
+		t.Fatalf("expected flush after the frames, got %q", got)
+	}
+	if got := <-order; got != "close" {
+		t.Fatalf("expected close last, got %q", got)
 	}
 }

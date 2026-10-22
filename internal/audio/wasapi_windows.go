@@ -98,7 +98,11 @@ func hresult(r uintptr, what string) error {
 	return fmt.Errorf("%s: HRESULT 0x%08X", what, uint32(r))
 }
 
-// call invokes method index of a COM object's vtable.
+// call invokes method index of a COM object's vtable. uintptrescapes keeps every &local passed as uintptr
+// on the heap and alive for the call, as in windows.LazyProc.Call: a moved goroutine stack must never be
+// written by COM.
+//
+//go:uintptrescapes
 func call(obj unsafe.Pointer, index int, args ...uintptr) uintptr {
 	vtbl := *(*unsafe.Pointer)(obj)
 	fn := *(*uintptr)(unsafe.Add(vtbl, index*int(unsafe.Sizeof(uintptr(0)))))

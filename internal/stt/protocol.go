@@ -36,10 +36,21 @@ const (
 	eventBuffer      = 256
 )
 
+// serverMessage is flat on purpose: embedding Update would let the outer stream_id shadow Update.StreamID.
 type serverMessage struct {
-	Type      string `json:"type"`
-	StreamID  string `json:"stream_id"`
-	RequestID string `json:"request_id"`
-	Message   string `json:"message"`
-	Update
+	Type        string `json:"type"`
+	StreamID    string `json:"stream_id"`
+	RequestID   string `json:"request_id"`
+	Message     string `json:"message"`
+	UtteranceID string `json:"utterance_id"`
+	Revision    int    `json:"revision"`
+	Kind        string `json:"kind"`
+	StartSample int64  `json:"start_sample"`
+	EndSample   int64  `json:"end_sample"`
+	Text        string `json:"text"`
+}
+
+func (m serverMessage) update() Update {
+	return Update{StreamID: m.StreamID, UtteranceID: m.UtteranceID, Revision: m.Revision, Kind: m.Kind,
+		StartSample: m.StartSample, EndSample: m.EndSample, Text: m.Text}
 }

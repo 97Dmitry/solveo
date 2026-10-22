@@ -23,12 +23,13 @@ import (
 )
 
 const (
-	ContainerName = "solveo-stt"
-	labelKey      = "solveo.component"
-	labelValue    = "stt"
-	ModelDirName  = "Qwen3-ASR-1.7B-7278e1e"
-	ModelRevision = "7278e1e70fe206f11671096ffdd38061171dd6e5"
-	containerPort = 8765
+	ContainerName  = "solveo-stt"
+	labelKey       = "solveo.component"
+	labelValue     = "stt"
+	ModelDirName   = "Qwen3-ASR-1.7B-7278e1e"
+	ModelRevision  = "7278e1e70fe206f11671096ffdd38061171dd6e5"
+	containerPort  = 8765
+	cleanupTimeout = 15 * time.Second
 )
 
 // Check states.
@@ -213,8 +214,14 @@ func (m *Manager) owned(ctx context.Context) (exists, ours bool) {
 	return true, strings.TrimSpace(label) == labelValue
 }
 
-func (m *Manager) remove(ctx context.Context) {
-	_, _ = m.run(ctx, "rm", "-f", ContainerName)
+// removeOwned deletes solveo-stt only when it carries Solveo's label. It outlives ctx cancellation:
+// a container left behind would hold the GPU until its lease ends.
+func (m *Manager) removeOwned(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+	if _, ours := m.owned(ctx); ours {
+		_, _ = m.run(ctx, "rm", "-f", ContainerName)
+	}
 }
 
 // Start runs the worker and waits until its model is warmed up.
@@ -226,7 +233,7 @@ func (m *Manager) Start(ctx context.Context, progress func(string)) (Endpoint, e
 		if !ours {
 			return Endpoint{}, errors.New("контейнер solveo-stt принадлежит не Solveo; удалите или переименуйте его")
 		}
-		m.remove(ctx)
+		m.removeOwned(ctx)
 	}
 	port, err := freePort()
 	if err != nil {
@@ -243,12 +250,12 @@ func (m *Manager) Start(ctx context.Context, progress func(string)) (Endpoint, e
 		"-p", fmt.Sprintf("%s:%d", ep.Addr, containerPort), "-e", "SOLVEO_STT_TOKEN="+ep.Token,
 		"-v", m.modelDir()+":/model:ro", m.image(), "serve", "--model", "/model")
 	if err != nil {
-		m.remove(ctx)
+		m.removeOwned(ctx)
 		return Endpoint{}, fmt.Errorf("не удалось запустить контейнер: %w", err)
 	}
 	progress("Загрузка модели в видеопамять")
 	if err := m.waitReady(ctx, ep); err != nil {
-		m.remove(context.WithoutCancel(ctx))
+		m.removeOwned(ctx)
 		return Endpoint{}, err
 	}
 	return ep, nil

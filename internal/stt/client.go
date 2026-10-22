@@ -41,10 +41,12 @@ func Health(ctx context.Context, addr, token string) (bool, error) {
 }
 
 // Session is one authenticated connection to the worker. Push never blocks the caller.
+// Every outgoing message goes through one ordered queue, so Flush and CloseStream stay behind
+// the frames queued before them.
 type Session struct {
 	conn   *websocket.Conn
 	cancel context.CancelFunc
-	frames chan []byte
+	out    chan outbound
 	events chan any
 	done   chan struct{}
 
@@ -67,7 +69,7 @@ func Dial(ctx context.Context, addr, token string) (*Session, error) {
 	s := &Session{
 		conn:    conn,
 		cancel:  cancel,
-		frames:  make(chan []byte, maxQueuedFrames),
+		out:     make(chan outbound, maxQueuedFrames+16), // room for control messages behind full audio
 		events:  make(chan any, eventBuffer),
 		done:    make(chan struct{}),
 		seqs:    map[string]uint64{},
@@ -81,17 +83,37 @@ func Dial(ctx context.Context, addr, token string) (*Session, error) {
 // Events delivers Update and StreamError values, then a final error when the session ends, then closes.
 func (s *Session) Events() <-chan any { return s.events }
 
+type outbound struct {
+	typ  websocket.MessageType
+	data []byte
+}
+
 func (s *Session) write(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-s.frames:
-			if err := s.conn.Write(ctx, websocket.MessageBinary, msg); err != nil {
+		case m := <-s.out:
+			if err := s.conn.Write(ctx, m.typ, m.data); err != nil {
 				s.cancel()
 				return
 			}
 		}
+	}
+}
+
+// enqueueControl waits for queue space: control messages are never dropped.
+func (s *Session) enqueueControl(ctx context.Context, msg map[string]any) error {
+	data, _ := json.Marshal(msg)
+	select {
+	case s.out <- outbound{websocket.MessageText, data}:
+		return nil
+	case <-s.done:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.err
+	case <-ctx.Done():
+		return errors.New("распознаватель не принимает команды")
 	}
 }
 
@@ -108,7 +130,7 @@ func (s *Session) read(ctx context.Context) {
 		}
 		switch m.Type {
 		case "update":
-			s.events <- m.Update
+			s.events <- m.update()
 		case "opened":
 			s.answer("open:"+m.StreamID, nil)
 		case "flushed":
@@ -151,8 +173,7 @@ func (s *Session) request(ctx context.Context, key string, msg map[string]any) e
 	}()
 	ctx, cancel := context.WithTimeout(ctx, answerTimeout)
 	defer cancel()
-	data, _ := json.Marshal(msg)
-	if err := s.conn.Write(ctx, websocket.MessageText, data); err != nil {
+	if err := s.enqueueControl(ctx, msg); err != nil {
 		return err
 	}
 	select {
@@ -187,8 +208,7 @@ func (s *Session) Flush(ctx context.Context, streamID string) error {
 func (s *Session) CloseStream(streamID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), answerTimeout)
 	defer cancel()
-	data, _ := json.Marshal(map[string]any{"type": "close", "stream_id": streamID})
-	return s.conn.Write(ctx, websocket.MessageText, data)
+	return s.enqueueControl(ctx, map[string]any{"type": "close", "stream_id": streamID})
 }
 
 // Push queues one frame of interleaved float32 samples; a full queue drops it with ErrBackpressure.
@@ -204,8 +224,11 @@ func (s *Session) Push(streamID string, rate, channels int, samples []float32) e
 	for i, v := range samples {
 		binary.LittleEndian.PutUint32(body[4*i:], math.Float32bits(v))
 	}
+	if len(s.out) >= maxQueuedFrames {
+		return ErrBackpressure
+	}
 	select {
-	case s.frames <- msg:
+	case s.out <- outbound{websocket.MessageBinary, msg}:
 		s.seqs[streamID] = seq
 		return nil
 	default:

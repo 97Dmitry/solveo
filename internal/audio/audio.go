@@ -62,14 +62,18 @@ func convert(data []byte, f sampleFormat) ([]float32, error) {
 	return nil, errUnsupportedFormat
 }
 
-// framer splits captured packets into frames of at most 100 ms.
+// MaxFrameBytes bounds the samples of one frame: the worker accepts messages of at most 64 KiB,
+// including the length prefix and the JSON header.
+const MaxFrameBytes = 60 << 10
+
+// framer splits captured packets into frames of at most 100 ms and MaxFrameBytes.
 type framer struct {
 	rate, channels int
 	sink           func(Frame)
 }
 
 func (f *framer) push(samples []float32) {
-	limit := f.rate / 10 * f.channels
+	limit := min(f.rate/10, MaxFrameBytes/4/f.channels) * f.channels
 	for len(samples) > 0 {
 		n := min(limit, len(samples))
 		f.sink(Frame{Rate: f.rate, Channels: f.channels, Samples: append([]float32(nil), samples[:n]...)})

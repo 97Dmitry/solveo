@@ -23,6 +23,7 @@ type fakeRuntime struct {
 	mu       sync.Mutex
 	checks   []sttdocker.Check
 	gate     chan struct{} // when set, Prepare waits for it
+	failWith error
 	prepared int
 	started  int
 	stopped  int
@@ -52,9 +53,12 @@ func (f *fakeRuntime) Prepare(ctx context.Context, progress func(string)) error 
 		}
 	}
 	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failWith != nil {
+		return f.failWith
+	}
 	f.prepared++
 	f.checks = readyChecks()
-	f.mu.Unlock()
 	return nil
 }
 
@@ -519,5 +523,22 @@ func TestCloseStopsListeningAndContainer(t *testing.T) {
 	h.runtime.mu.Unlock()
 	if !captureStopped || !sessionClosed || stopped != 1 {
 		t.Fatalf("capture %v session %v container stops %d", captureStopped, sessionClosed, stopped)
+	}
+}
+
+func TestLongErrorsAreShortenedForTheUI(t *testing.T) {
+	h := setupAudio(t)
+	long := "сбой: " + strings.Repeat("traceback line\n", 2000)
+	h.runtime.failWith = errors.New(long)
+	h.runtime.checks = []sttdocker.Check{{ID: "gpu", State: sttdocker.StateError, Message: long}}
+	if err := h.c.PrepareAudio(); err != nil {
+		t.Fatal(err)
+	}
+	v := waitAudio(t, h.c, "failed prepare", func(v AudioView) bool { return v.Busy == "" && v.Error != "" })
+	if n := len([]rune(v.Error)); n > maxUITextRunes+1 || !strings.HasPrefix(v.Error, "сбой: ") {
+		t.Fatalf("error of %d runes", n)
+	}
+	if n := len([]rune(v.Checks[0].Message)); n > maxUITextRunes+1 {
+		t.Fatalf("check message of %d runes", n)
 	}
 }

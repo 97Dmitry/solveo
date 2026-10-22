@@ -24,7 +24,9 @@ const (
 	audioFlushTimeout     = 10 * time.Second
 	audioStopTimeout      = 15 * time.Second
 	maxProgressRunes      = 300
-	gapMessage            = "Распознавание не успевает, часть звука пропущена"
+	// UI texts stay short (the renderer rejects oversized events); full texts go to the native log.
+	maxUITextRunes = 2000
+	gapMessage     = "Распознавание не успевает, часть звука пропущена"
 )
 
 type AudioRuntime interface {
@@ -223,6 +225,13 @@ func (c *Controller) goAudio(fn func(ctx context.Context)) error {
 	return nil
 }
 
+func uiText(text string) string {
+	if r := []rune(text); len(r) > maxUITextRunes {
+		return string(r[:maxUITextRunes]) + "…"
+	}
+	return text
+}
+
 func (c *Controller) audioProgress(line string) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -242,6 +251,7 @@ func (c *Controller) refreshAudioChecks(ctx context.Context) {
 	checks := c.deps.Audio.Runtime.Status(ctx)
 	view := make([]AudioCheck, 0, len(checks))
 	for _, ch := range checks {
+		ch.Message = uiText(ch.Message)
 		view = append(view, AudioCheck(ch))
 	}
 	c.audio.mu.Lock()
@@ -263,8 +273,9 @@ func (c *Controller) beginAudio(busy string) error {
 }
 
 func (c *Controller) setAudioError(err error) {
+	c.appendLog(err.Error() + "\n")
 	c.audio.mu.Lock()
-	c.audio.err = err.Error()
+	c.audio.err = uiText(err.Error())
 	c.audioChangedLocked()
 	c.audio.mu.Unlock()
 }
@@ -317,9 +328,12 @@ func (c *Controller) StartAudioModel() error {
 				cancel()
 			}
 		}
+		if err != nil {
+			c.appendLog(err.Error() + "\n")
+		}
 		a.mu.Lock()
 		if err != nil {
-			a.model, a.err = audioModelFailed, err.Error()
+			a.model, a.err = audioModelFailed, uiText(err.Error())
 		} else {
 			a.model, a.session = audioModelReady, session
 		}
@@ -368,7 +382,7 @@ func (c *Controller) audioSessionEnded(session STTSession, lost error) {
 	if lost == nil {
 		lost = errors.New("распознаватель закрыл соединение")
 	}
-	a.session, a.model, a.err, a.listening = nil, audioModelFailed, lost.Error(), false
+	a.session, a.model, a.err, a.listening = nil, audioModelFailed, uiText(lost.Error()), false
 	stops := a.stopSourcesLocked()
 	c.audioChangedLocked()
 	a.mu.Unlock()
@@ -402,7 +416,7 @@ func (c *Controller) audioStreamFailed(e stt.StreamError) {
 	for _, s := range a.sources {
 		if s.stream == e.StreamID {
 			stop, s.stop = s.stop, nil
-			s.view.Active, s.view.Error = false, e.Message
+			s.view.Active, s.view.Error = false, uiText(e.Message)
 		}
 		active = active || s.view.Active
 	}
@@ -440,7 +454,7 @@ func (c *Controller) StopAudioModel() error {
 		a.mu.Lock()
 		a.model = audioModelStopped
 		if err != nil {
-			a.err = err.Error()
+			a.err = uiText(err.Error())
 		}
 		c.audioChangedLocked()
 		a.mu.Unlock()
@@ -491,7 +505,7 @@ func (c *Controller) StartListening() error {
 			s.view.Device = dev.Name
 		}
 		if err != nil {
-			s.view.Error = err.Error()
+			s.view.Error = uiText(err.Error())
 			firstErr = cmpErr(firstErr, err)
 			continue
 		}
@@ -539,7 +553,7 @@ func (c *Controller) audioCaptureFailed(stream string) func(error) {
 		active := false
 		for _, s := range a.sources {
 			if s.stream == stream {
-				s.view.Active, s.view.Error = false, err.Error()
+				s.view.Active, s.view.Error = false, uiText(err.Error())
 			}
 			active = active || s.view.Active
 		}

@@ -79,3 +79,21 @@ func TestConvertFormats(t *testing.T) {
 		t.Fatalf("pcm16: %v %v", got, err)
 	}
 }
+
+func TestFramerKeepsFramesUnderTheProtocolLimit(t *testing.T) {
+	for _, format := range []struct{ rate, channels int }{{96000, 2}, {48000, 8}, {192000, 2}, {48000, 2}} {
+		f := &framer{rate: format.rate, channels: format.channels}
+		frames := collect(f)
+		f.push(make([]float32, format.rate/4*format.channels))
+		total := 0
+		for _, fr := range *frames {
+			if 4*len(fr.Samples) > MaxFrameBytes || len(fr.Samples)%format.channels != 0 {
+				t.Fatalf("%d Hz x%d: frame of %d samples", format.rate, format.channels, len(fr.Samples))
+			}
+			total += len(fr.Samples)
+		}
+		if total != format.rate/4*format.channels {
+			t.Fatalf("%d Hz x%d: lost samples", format.rate, format.channels)
+		}
+	}
+}

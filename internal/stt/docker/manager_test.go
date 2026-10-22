@@ -32,7 +32,10 @@ func (f *fakeRunner) on(prefix string, fn func(args []string) (string, error)) {
 	f.answers[prefix] = fn
 }
 
-func (f *fakeRunner) Run(_ context.Context, stdin io.Reader, line func(string), args ...string) (string, error) {
+func (f *fakeRunner) Run(ctx context.Context, stdin io.Reader, line func(string), args ...string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err // exec.CommandContext never starts with a done context
+	}
 	f.calls = append(f.calls, args)
 	key := strings.Join(args, " ")
 	if stdin != nil {
@@ -401,5 +404,56 @@ func TestStopRemovesOwnContainerOnly(t *testing.T) {
 	m.Runner = runner
 	if err := m.Stop(context.Background()); err != nil {
 		t.Fatalf("stopping an absent container must succeed: %v", err)
+	}
+}
+
+func TestStartFailureDoesNotRemoveForeignContainer(t *testing.T) {
+	runner := newFake()
+	healthy(runner)
+	m := manager(t, runner)
+	writeModel(t, m.ModelsDir)
+	ran := false
+	runner.on("container inspect", func([]string) (string, error) {
+		if !ran {
+			return "", errors.New("No such container")
+		}
+		return "", nil // someone else's solveo-stt appeared meanwhile
+	})
+	runner.on("run -d", func([]string) (string, error) {
+		ran = true
+		return "", errors.New(`Conflict. The container name "/solveo-stt" is already in use`)
+	})
+	if _, err := m.Start(context.Background(), func(string) {}); err == nil {
+		t.Fatal("expected the run failure")
+	}
+	if len(runner.called("rm")) != 0 {
+		t.Fatalf("a foreign container was removed: %v", runner.calls)
+	}
+}
+
+func TestStartCleanupSurvivesCancellation(t *testing.T) {
+	runner := newFake()
+	healthy(runner)
+	m := manager(t, runner)
+	writeModel(t, m.ModelsDir)
+	started := false
+	ctx, cancel := context.WithCancel(context.Background())
+	// Exit while docker run is still creating the container: run fails, the container exists.
+	runner.on("run -d", func([]string) (string, error) { started = true; cancel(); return "", context.Canceled })
+	runner.on("container inspect", func(args []string) (string, error) {
+		if !started {
+			return "", errors.New("No such container")
+		}
+		if strings.Contains(strings.Join(args, " "), "Running") {
+			return "true", nil
+		}
+		return "stt", nil
+	})
+	m.Health = func(context.Context, string, string) (bool, error) { return false, nil }
+	if _, err := m.Start(ctx, func(string) {}); err == nil {
+		t.Fatal("expected cancellation")
+	}
+	if len(runner.called("rm -f solveo-stt")) != 1 {
+		t.Fatalf("own container not removed after cancellation: %v", runner.calls)
 	}
 }
