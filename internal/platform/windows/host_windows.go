@@ -63,6 +63,7 @@ func (h *Host) Start(ctx context.Context, onEvent func(platform.Event)) error {
 		}
 		defer func() {
 			w.removeTrayIcon()
+			w.destroyTrayIcon()
 			for i := 2001; i <= 2005; i++ {
 				procUnregisterHotKey.Call(w.hwnd, uintptr(i))
 			}
@@ -110,6 +111,7 @@ func (w *Window) create() error {
 	defer func() {
 		if !success {
 			w.removeTrayIcon()
+			w.destroyTrayIcon()
 			for i := 2001; i <= 2005; i++ {
 				procUnregisterHotKey.Call(hwnd, uintptr(i))
 			}
@@ -119,9 +121,9 @@ func (w *Window) create() error {
 	if err := EnsureExcluded(hwnd); err != nil {
 		return err
 	}
-	w.icon, _, _ = procLoadIconW.Call(instance, 1)
-	if w.icon == 0 {
-		w.icon, _, _ = procLoadIconW.Call(0, 32512)
+	w.icon, err = loadTrayIcon()
+	if err != nil {
+		return err
 	}
 	if err := w.addTrayIcon(); err != nil {
 		return err

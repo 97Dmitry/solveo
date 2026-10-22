@@ -4,6 +4,7 @@
 - Apply and verify `WDA_EXCLUDEFROMCAPTURE` before displaying helper windows; keep hidden on failure. The root Wails entrypoint coordinates main-window affinity/readiness.
 - Route viewer/log messages before the host handler. Closing a helper must not exit the application. Preserve Escape with child focus and release GDI/pixel resources on destroy.
 - Preserve Explorer tray recovery, hotkey unregistering and an accessible exit path. Main-window close hides; explicit Exit shuts down through the controller.
+- The tray uses embedded transparent `trayicon.png`, independently of the EXE icon (`build/windows/icon.ico`). Its HICON is owned: remove the tray before destroying it on startup failure or shutdown; retain it across Explorer recovery. Wails does not regenerate an existing `icon.ico` when `build/appicon.png` changes, so update both application assets together.
 - Selector/viewer must remain usable above a pinned main window. Pin changes never reveal a hidden window. Use the shared theme path.
 - Acknowledge image rebind/close before source deletion. On failure retain source files and report the error; posting alone does not establish cleanup ordering.
 - Verify message-loop, capture, tray, DPI, focus and pin behavior on Windows using `docs/windows-acceptance.md`. Portable geometry tests and cross-builds do not verify those behaviors.
