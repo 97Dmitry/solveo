@@ -23,7 +23,7 @@ const (
 	maxStateBytes  = 8 << 20
 	maxStreamBytes = 16 << 20
 	maxDraftBytes  = 1 << 20
-	maxLabelBytes  = 200
+	MaxLabelBytes  = 200
 	// MaxQueue mirrors the per-chat image limit of the controller.
 	MaxQueue = 20
 	// MaxBlocks bounds stored answer checkpoints (two blocks of a few interrupted turns).
@@ -123,7 +123,7 @@ func validateState(chats map[string]Chat) error {
 			return errors.New("очередь длиннее 20 снимков")
 		}
 		for _, item := range c.Queue {
-			if !ValidID(item.ID) || seen[item.ID] || len(item.Label) > maxLabelBytes {
+			if !ValidID(item.ID) || seen[item.ID] || len(item.Label) > MaxLabelBytes {
 				return errors.New("некорректный снимок очереди")
 			}
 			seen[item.ID] = true
@@ -424,4 +424,38 @@ func (s *Store) Prune(keep map[string]bool) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// WriteImage installs verified PNG bytes as a new independently owned queue file.
+func (s *Store) WriteImage(id string, data []byte) (string, error) {
+	if !ValidID(id) {
+		return "", errors.New("некорректный ID снимка")
+	}
+	root, err := s.queueRoot()
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	name := queueDir + "/" + id + tmpSuffix
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return "", err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = root.Remove(name)
+		}
+	}()
+	_, writeErr := f.Write(data)
+	syncErr := f.Sync()
+	if err = errors.Join(writeErr, syncErr, f.Close()); err != nil {
+		return "", err
+	}
+	p, err := s.Commit(id)
+	if err != nil {
+		return "", err
+	}
+	committed = true
+	return p, nil
 }

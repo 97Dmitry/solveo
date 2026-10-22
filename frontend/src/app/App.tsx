@@ -73,6 +73,7 @@ export default function App() {
   const code = latestCode(lastAnswer);
   const error = state.error || s.error;
   const editorDisabled = (busy && !state.submitting) || s.operation.phase === "save-pending";
+  const canAddImage = !busy && s.controls.can_submit && s.queue.length < 20;
   const canPrepareFollowup =
     !busy &&
     !state.editor.composing &&
@@ -209,6 +210,10 @@ export default function App() {
           if (client.reuseQuestion(id)) composerRef.current?.focus();
         }}
         onConfigure={() => setPanel("configuration")}
+        canReuseImage={canAddImage}
+        onReuseImage={(id) => {
+          void actions.reuseImage(s.active_chat_id, id);
+        }}
         onOpenImage={(id) => {
           void actions.image(s.active_chat_id, id);
         }}
@@ -223,6 +228,7 @@ export default function App() {
           <div className="capture-group">
             <Button
               className="capture-button"
+              title="Отправит только новый снимок; текст и очередь останутся"
               disabled={busy || !s.controls.can_capture}
               onClick={() => {
                 void actions.capture("quick-region");
@@ -243,6 +249,7 @@ export default function App() {
               {captureMenu && (
                 <div className="capture-menu">
                   <Button
+                    title="Отправит только новый снимок; текст и очередь останутся"
                     onClick={() => {
                       setCaptureMenu(false);
                       void actions.capture("quick-full");
@@ -275,8 +282,14 @@ export default function App() {
             </IconButton>
           </div>
         </div>
+        <p className="queue-summary" aria-live="polite">
+          {s.queue.length ? `К вопросу: ${s.queue.length} из 20 изображений` : "Изображений нет"}
+        </p>
         <AttachmentStrip
           items={s.queue}
+          onReorder={(ids) => {
+            void actions.reorder(s.active_chat_id, ids);
+          }}
           disabled={busy || !s.controls.can_switch}
           onOpen={(id) => {
             void actions.image(s.active_chat_id, id);
@@ -295,6 +308,13 @@ export default function App() {
         )}
         <Composer
           textareaRef={composerRef}
+          canAddImage={canAddImage}
+          onAddImage={(file) => {
+            void actions.importImage(s.active_chat_id, file);
+          }}
+          onImageError={(message) => {
+            void actions.imageError(message);
+          }}
           text={state.editor.text}
           disabled={editorDisabled}
           canSend={
@@ -396,7 +416,10 @@ export default function App() {
               <p>Все сохранённые снимки этого чата</p>
               <AttachmentStrip
                 items={s.images}
-                disabled={false}
+                disabled={!canAddImage}
+                onReuse={(id) => {
+                  void actions.reuseImage(s.active_chat_id, id);
+                }}
                 onOpen={(id) => {
                   void actions.image(s.active_chat_id, id);
                 }}

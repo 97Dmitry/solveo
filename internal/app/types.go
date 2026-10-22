@@ -63,6 +63,7 @@ type WorkStore interface {
 	SaveStream([]workstate.Block) error
 	CapturePath(string) (string, error)
 	Commit(string) (string, error)
+	WriteImage(string, []byte) (string, error)
 	Path(string) (string, error)
 	Has(string) (bool, error)
 	Prune(map[string]bool) error

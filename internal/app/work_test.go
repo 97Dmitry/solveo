@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image"
@@ -166,7 +167,7 @@ func TestDraftAndQueueSurviveRestart(t *testing.T) {
 		t.Fatalf("%+v %+v", s.Queue, s.Draft)
 	}
 	p, e := r.ResolveImage(id, first)
-	if b, err := os.ReadFile(p); e != nil || err != nil || string(b) != "png" {
+	if b, err := os.ReadFile(p); e != nil || err != nil || !bytes.Equal(b, pngBytes(t)) {
 		t.Fatal(p, e, err)
 	}
 	if e = r.RemoveAttachment(id, first); e != nil {

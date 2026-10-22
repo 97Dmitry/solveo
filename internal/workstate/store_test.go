@@ -221,3 +221,34 @@ func hasPNG(t *testing.T, s *Store, id string) bool {
 	}
 	return present
 }
+
+func TestWriteImageOwnsCopyAndRejectsTemporaryLink(t *testing.T) {
+	s := open(t)
+	data := []byte("verified PNG bytes")
+	p, err := s.WriteImage("copy", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil || string(got) != string(data) {
+		t.Fatal(string(got), err)
+	}
+	outside := filepath.Join(t.TempDir(), "original")
+	if err := os.WriteFile(outside, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tmp, err := s.CapturePath("link")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, tmp); err != nil {
+		t.Skip(err)
+	}
+	if _, err := s.WriteImage("link", data); err == nil {
+		t.Fatal("followed temporary link")
+	}
+	got, err = os.ReadFile(outside)
+	if err != nil || string(got) != "original" {
+		t.Fatal(string(got), err)
+	}
+}

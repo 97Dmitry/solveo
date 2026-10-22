@@ -75,3 +75,13 @@ func (a *App) ReloadProfiles() (core.Snapshot, error) { return a.controller.Relo
 func (a *App) NewChatFromProfile(id string, revision uint64) (core.Snapshot, error) {
 	return a.controller.NewChatFromProfile(id, revision)
 }
+
+func (a *App) ImportAttachment(chatID, label, dataBase64 string) error {
+	return a.controller.ImportAttachment(chatID, label, dataBase64)
+}
+func (a *App) ReuseAttachment(chatID, id string) error {
+	return a.controller.ReuseAttachment(chatID, id)
+}
+func (a *App) ReorderAttachments(chatID string, ids []string) error {
+	return a.controller.ReorderAttachments(chatID, ids)
+}

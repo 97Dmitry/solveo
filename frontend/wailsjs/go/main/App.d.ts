@@ -24,6 +24,8 @@ export function DiscardUnsaved():Promise<app.Snapshot>;
 
 export function Exit():Promise<void>;
 
+export function ImportAttachment(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function ListModels():Promise<Array<llm.Model>>;
 
 export function NewChat():Promise<app.Snapshot>;
@@ -42,9 +44,13 @@ export function RemoveAttachment(arg1:string,arg2:string):Promise<void>;
 
 export function RendererReady():Promise<app.Snapshot>;
 
+export function ReorderAttachments(arg1:string,arg2:Array<string>):Promise<void>;
+
 export function RequestSubmit():Promise<app.SubmitIntent>;
 
 export function RetrySave():Promise<void>;
+
+export function ReuseAttachment(arg1:string,arg2:string):Promise<void>;
 
 export function SaveChatConfig(arg1:app.ConfigInput):Promise<app.Snapshot>;
 

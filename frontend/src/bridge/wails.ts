@@ -2,6 +2,7 @@ import * as api from "../../wailsjs/go/main/App";
 import { app, settings } from "../../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from "../../wailsjs/runtime/runtime";
 import { SolveoClient } from "./client";
+import { imageBase64 } from "./attachments";
 import {
   accountSchema,
   configSchema,
@@ -52,6 +53,11 @@ export const actions = {
   capture: (mode: "quick-region" | "queue-region" | "quick-full") =>
     client.run(() => api.BeginCapture(mode)),
   cancel: (id: string) => client.run(() => api.Cancel(id)),
+  importImage: (chatID: string, file: File) =>
+    client.run(async () => api.ImportAttachment(chatID, file.name, await imageBase64(file))),
+  imageError: (message: string) => client.run(() => Promise.reject(new Error(message))),
+  reuseImage: (chatID: string, id: string) => client.run(() => api.ReuseAttachment(chatID, id)),
+  reorder: (chatID: string, ids: string[]) => client.run(() => api.ReorderAttachments(chatID, ids)),
   remove: (chatID: string, id: string) => client.run(() => api.RemoveAttachment(chatID, id)),
   clear: (chatID: string) => client.run(() => api.ClearQueue(chatID)),
   retrySave: () => client.run(api.RetrySave),
