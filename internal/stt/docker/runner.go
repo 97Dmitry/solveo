@@ -52,7 +52,8 @@ func (r ExecRunner) Run(ctx context.Context, stdin io.Reader, line func(string),
 			text := s.Text()
 			mu.Lock()
 			if keep {
-				out.WriteString(text + "\n")
+				out.WriteString(text)
+				out.WriteByte('\n')
 			}
 			tail = append(tail, text)
 			if len(tail) > 20 {
@@ -61,6 +62,11 @@ func (r ExecRunner) Run(ctx context.Context, stdin io.Reader, line func(string),
 			if line != nil {
 				line(text)
 			}
+			mu.Unlock()
+		}
+		if err := s.Err(); err != nil {
+			mu.Lock()
+			tail = append(tail, "чтение вывода docker: "+err.Error())
 			mu.Unlock()
 		}
 	}

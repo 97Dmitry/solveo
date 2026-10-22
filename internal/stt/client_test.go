@@ -133,7 +133,7 @@ func TestPushEncodesHeaderAndSamples(t *testing.T) {
 		}
 	})
 	s := dial(t, addr)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := s.Push("a", 48000, 2, []float32{0.5, -0.25}); err != nil {
 			t.Fatal(err)
 		}

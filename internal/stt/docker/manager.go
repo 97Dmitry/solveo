@@ -337,4 +337,3 @@ func tarContext(fsys fs.FS) ([]byte, error) {
 	}
 	return buf.Bytes(), w.Close()
 }
-

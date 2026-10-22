@@ -28,7 +28,9 @@ func newFake() *fakeRunner {
 	return &fakeRunner{stdin: map[string][]byte{}, answers: map[string]func([]string) (string, error){}, lines: map[string][]string{}}
 }
 
-func (f *fakeRunner) on(prefix string, fn func(args []string) (string, error)) { f.answers[prefix] = fn }
+func (f *fakeRunner) on(prefix string, fn func(args []string) (string, error)) {
+	f.answers[prefix] = fn
+}
 
 func (f *fakeRunner) Run(_ context.Context, stdin io.Reader, line func(string), args ...string) (string, error) {
 	f.calls = append(f.calls, args)
