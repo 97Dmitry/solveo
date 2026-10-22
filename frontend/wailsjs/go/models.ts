@@ -16,20 +16,20 @@ export namespace app {
 	        this.url = source["url"];
 	    }
 	}
-	export class AudioCheck {
+	export class AudioProviderOption {
 	    id: string;
-	    state: string;
-	    message: string;
+	    label: string;
+	    local: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new AudioCheck(source);
+	        return new AudioProviderOption(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.state = source["state"];
-	        this.message = source["message"];
+	        this.label = source["label"];
+	        this.local = source["local"];
 	    }
 	}
 	export class AudioSourceView {
@@ -72,8 +72,10 @@ export namespace app {
 	}
 	export class AudioView {
 	    available: boolean;
+	    provider: stt.Description;
+	    providers: AudioProviderOption[];
 	    revision: number;
-	    checks: AudioCheck[];
+	    checks: stt.Check[];
 	    busy: string;
 	    progress: string;
 	    model: string;
@@ -89,8 +91,10 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.available = source["available"];
+	        this.provider = this.convertValues(source["provider"], stt.Description);
+	        this.providers = this.convertValues(source["providers"], AudioProviderOption);
 	        this.revision = source["revision"];
-	        this.checks = this.convertValues(source["checks"], AudioCheck);
+	        this.checks = this.convertValues(source["checks"], stt.Check);
 	        this.busy = source["busy"];
 	        this.progress = source["progress"];
 	        this.model = source["model"];
@@ -950,6 +954,55 @@ export namespace settings {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace stt {
+	
+	export class Check {
+	    id: string;
+	    label: string;
+	    state: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Check(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.state = source["state"];
+	        this.message = source["message"];
+	    }
+	}
+	export class Description {
+	    id: string;
+	    label: string;
+	    local: boolean;
+	    preparable: boolean;
+	    start_label: string;
+	    stop_label: string;
+	    max_phrases: number;
+	    max_phrase_runes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Description(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.local = source["local"];
+	        this.preparable = source["preparable"];
+	        this.start_label = source["start_label"];
+	        this.stop_label = source["stop_label"];
+	        this.max_phrases = source["max_phrases"];
+	        this.max_phrase_runes = source["max_phrase_runes"];
+	    }
 	}
 
 }

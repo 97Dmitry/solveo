@@ -1,4 +1,4 @@
-package sttdocker
+package qwen
 
 import (
 	"os/exec"

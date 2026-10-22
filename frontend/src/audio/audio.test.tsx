@@ -19,8 +19,9 @@ function actions(): AudioActions {
     insert: vi.fn(),
   };
 }
-const ok = (id: AudioState["checks"][number]["id"]) => ({
+const ok = (id: string) => ({
   id,
+  label: id,
   state: "ok" as const,
   message: `${id} готов`,
 });
@@ -42,7 +43,10 @@ it("checks readiness when opened without status and offers preparation for missi
   cleanup();
   const b = renderPanel(
     audio({
-      checks: [...allOk.slice(0, 2), { id: "image", state: "missing", message: "Образ не собран" }],
+      checks: [
+        ...allOk.slice(0, 2),
+        { id: "image", label: "Образ", state: "missing" as const, message: "Образ не собран" },
+      ],
     }),
   );
   expect(screen.getByText("Образ не собран")).toBeTruthy();

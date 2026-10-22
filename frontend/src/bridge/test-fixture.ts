@@ -2,6 +2,17 @@ import type { AudioState, Snapshot } from "./state";
 export function audioFixture(): AudioState {
   return {
     available: true,
+    provider: {
+      id: "qwen",
+      label: "Qwen3-ASR (локально)",
+      local: true,
+      preparable: true,
+      start_label: "Запустить модель",
+      stop_label: "Выгрузить модель",
+      max_phrases: 256,
+      max_phrase_runes: 128,
+    },
+    providers: [{ id: "qwen", label: "Qwen3-ASR (локально)", local: true }],
     revision: 5,
     checks: [],
     busy: "",

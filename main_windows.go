@@ -34,7 +34,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/stt"
-	sttdocker "github.com/97Dmitry/solveo/internal/stt/docker"
+	"github.com/97Dmitry/solveo/internal/stt/qwen"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
@@ -150,15 +150,8 @@ func run() error {
 	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
 	// Local speech recognition: Docker Desktop's CLI drives the solveo-stt container; weights stay beside the archive.
 	speech := core.AudioDeps{
-		Runtime: &sttdocker.Manager{Runner: sttdocker.ExecRunner{Binary: "docker"}, ModelsDir: filepath.Join(dir, "models"), Getenv: os.Getenv, Health: stt.Health},
-		Dial: func(ctx context.Context, addr, token string) (core.STTSession, error) {
-			s, err := stt.Dial(ctx, addr, token)
-			if err != nil {
-				return nil, err // never a typed nil inside the interface
-			}
-			return s, nil
-		},
-		Capturer: audio.NewCapturer(),
+		Providers: []stt.Provider{qwen.New(filepath.Join(dir, "models"), os.Getenv)},
+		Capturer:  audio.NewCapturer(),
 	}
 	controller, e := core.New(core.Dependencies{
 		Store:         store,

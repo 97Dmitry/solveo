@@ -16,12 +16,13 @@ import (
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/stt"
-	sttdocker "github.com/97Dmitry/solveo/internal/stt/docker"
 )
 
+// fakeRuntime is a provider whose sessions are handed out by the harness.
 type fakeRuntime struct {
 	mu       sync.Mutex
-	checks   []sttdocker.Check
+	checks   []stt.Check
+	session  stt.SessionAPI
 	gate     chan struct{} // when set, Prepare waits for it
 	failWith error
 	prepared int
@@ -29,15 +30,19 @@ type fakeRuntime struct {
 	stopped  int
 }
 
-func readyChecks() []sttdocker.Check {
-	var out []sttdocker.Check
+func readyChecks() []stt.Check {
+	var out []stt.Check
 	for _, id := range []string{"docker", "engine", "image", "gpu", "model"} {
-		out = append(out, sttdocker.Check{ID: id, State: sttdocker.StateOK, Message: id + " ok"})
+		out = append(out, stt.Check{ID: id, Label: "метка " + id, State: stt.StateOK, Message: id + " ok"})
 	}
 	return out
 }
 
-func (f *fakeRuntime) Status(context.Context) []sttdocker.Check {
+func (f *fakeRuntime) Describe() stt.Description {
+	return stt.Description{ID: "fake", Label: "Тестовый", Local: true, Preparable: true, StartLabel: "Запустить модель", StopLabel: "Выгрузить модель", MaxPhrases: 256, MaxPhraseRunes: 128}
+}
+
+func (f *fakeRuntime) Status(context.Context) []stt.Check {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.checks)
@@ -62,11 +67,11 @@ func (f *fakeRuntime) Prepare(ctx context.Context, progress func(string)) error 
 	return nil
 }
 
-func (f *fakeRuntime) Start(context.Context, func(string)) (sttdocker.Endpoint, error) {
+func (f *fakeRuntime) Start(context.Context, func(string)) (stt.SessionAPI, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started++
-	return sttdocker.Endpoint{Addr: "127.0.0.1:1", Token: "t"}, nil
+	return f.session, nil
 }
 
 func (f *fakeRuntime) Stop(context.Context) error {
@@ -201,14 +206,13 @@ func setupAudio(t *testing.T) *audioHarness {
 	h := &audioHarness{
 		provider: &fakeProvider{started: make(chan llm.Request, 5), finish: make(chan error, 5), store: s},
 		store:    s,
-		runtime:  &fakeRuntime{checks: readyChecks()},
 		session:  newFakeSession(),
 		capturer: newFakeCapturer(),
 	}
+	h.runtime = &fakeRuntime{checks: readyChecks(), session: h.session}
 	c, e := New(Dependencies{Store: s, SettingsStore: settings.Open(s.Dir), Provider: h.provider, Work: openWork(t, s), Audio: AudioDeps{
-		Runtime:  h.runtime,
-		Dial:     func(context.Context, string, string) (STTSession, error) { return h.session, nil },
-		Capturer: h.capturer,
+		Providers: []stt.Provider{h.runtime},
+		Capturer:  h.capturer,
 	}})
 	if e != nil {
 		t.Fatal(e)
@@ -530,7 +534,7 @@ func TestLongErrorsAreShortenedForTheUI(t *testing.T) {
 	h := setupAudio(t)
 	long := "сбой: " + strings.Repeat("traceback line\n", 2000)
 	h.runtime.failWith = errors.New(long)
-	h.runtime.checks = []sttdocker.Check{{ID: "gpu", State: sttdocker.StateError, Message: long}}
+	h.runtime.checks = []stt.Check{{ID: "gpu", Label: "GPU", State: stt.StateError, Message: long}}
 	if err := h.c.PrepareAudio(); err != nil {
 		t.Fatal(err)
 	}
@@ -540,5 +544,20 @@ func TestLongErrorsAreShortenedForTheUI(t *testing.T) {
 	}
 	if n := len([]rune(v.Checks[0].Message)); n > maxUITextRunes+1 {
 		t.Fatalf("check message of %d runes", n)
+	}
+}
+
+func TestProviderStatusAndLabelsReachTheView(t *testing.T) {
+	h := setupAudio(t)
+	v := h.c.AudioSnapshot()
+	if v.Provider.ID != "fake" || v.Provider.StartLabel != "Запустить модель" || len(v.Providers) != 1 || v.Providers[0].Label != "Тестовый" {
+		t.Fatalf("provider in view %+v %+v", v.Provider, v.Providers)
+	}
+	if err := h.c.RefreshAudio(); err != nil {
+		t.Fatal(err)
+	}
+	v = waitAudio(t, h.c, "checks", func(v AudioView) bool { return len(v.Checks) == 5 && v.Busy == "" })
+	if v.Checks[0].Label != "метка docker" {
+		t.Fatalf("check label %+v", v.Checks[0])
 	}
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { app, chat, history, llm, settings } from "../../wailsjs/go/models";
+import type { app, chat, history, llm, settings, stt } from "../../wailsjs/go/models";
 // Generated classes contain conversion methods. UI state is validated plain data.
 export type Wire<T> = T extends readonly (infer U)[]
   ? Wire<U>[]
@@ -276,11 +276,28 @@ export const intentSchema = z.object({
   expires_at: revision,
 } satisfies Shape<app.SubmitIntent>);
 const audioTrack = z.enum(["system", "mic"]);
+// Checks and wording come from the active provider; the renderer shows them as given.
 const audioCheckSchema = z.object({
-  id: z.enum(["docker", "engine", "image", "gpu", "model"]),
+  id: z.string().min(1).max(64),
+  label: z.string().max(256),
   state: z.enum(["ok", "missing", "error", "unknown"]),
   message: z.string().max(8192),
-} satisfies Shape<app.AudioCheck>);
+} satisfies Shape<stt.Check>);
+const audioProviderSchema = z.object({
+  id: z.string().max(64),
+  label: z.string().max(256),
+  local: z.boolean(),
+  preparable: z.boolean(),
+  start_label: z.string().max(128),
+  stop_label: z.string().max(128),
+  max_phrases: z.number().int().min(0),
+  max_phrase_runes: z.number().int().min(0),
+} satisfies Shape<stt.Description>);
+const audioProviderOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().max(256),
+  local: z.boolean(),
+} satisfies Shape<app.AudioProviderOption>);
 const audioSourceSchema = z.object({
   track: audioTrack,
   device: z.string().max(1024),
@@ -296,8 +313,10 @@ const transcriptSegmentSchema = z.object({
 } satisfies Shape<app.TranscriptSegment>);
 export const audioSchema = z.object({
   available: z.boolean(),
+  provider: audioProviderSchema,
+  providers: z.array(audioProviderOptionSchema).max(8),
   revision,
-  checks: z.array(audioCheckSchema).max(5),
+  checks: z.array(audioCheckSchema).max(16),
   busy: z.enum(["", "checking", "preparing", "starting", "stopping", "opening"]),
   progress: z.string().max(2048),
   model: z.enum(["stopped", "starting", "ready", "failed"]),
@@ -311,6 +330,17 @@ export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 // Before the first AudioSnapshot: revision -1 accepts any real state.
 export const emptyAudio: AudioState = {
   available: false,
+  provider: {
+    id: "",
+    label: "",
+    local: true,
+    preparable: false,
+    start_label: "",
+    stop_label: "",
+    max_phrases: 0,
+    max_phrase_runes: 0,
+  },
+  providers: [],
   revision: -1,
   checks: [],
   busy: "",

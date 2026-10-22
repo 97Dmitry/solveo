@@ -1,6 +1,6 @@
 //go:build !windows
 
-package sttdocker
+package qwen
 
 import (
 	"context"

@@ -16,16 +16,20 @@ import (
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/stt"
-	sttdocker "github.com/97Dmitry/solveo/internal/stt/docker"
 )
 
+// endpointRuntime starts a real protocol v1 session against a fake worker.
 type endpointRuntime struct {
 	fakeRuntime
 	addr string
 }
 
-func (r *endpointRuntime) Start(context.Context, func(string)) (sttdocker.Endpoint, error) {
-	return sttdocker.Endpoint{Addr: r.addr, Token: "t"}, nil
+func (r *endpointRuntime) Start(ctx context.Context, _ func(string)) (stt.SessionAPI, error) {
+	session, err := stt.Dial(ctx, r.addr, "t")
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // fakeWorker answers protocol v1 like solveo_stt: every first frame of a stream yields one final phrase.
@@ -81,13 +85,7 @@ func TestRealSessionDeliversTranscript(t *testing.T) {
 	c, e := New(Dependencies{
 		Store: s, SettingsStore: settings.Open(s.Dir), Work: openWork(t, s),
 		Provider: &fakeProvider{started: make(chan llm.Request, 5), finish: make(chan error, 5), store: s},
-		Audio: AudioDeps{Runtime: runtime, Capturer: capturer, Dial: func(ctx context.Context, addr, token string) (STTSession, error) {
-			session, err := stt.Dial(ctx, addr, token)
-			if err != nil {
-				return nil, err
-			}
-			return session, nil
-		}},
+		Audio:    AudioDeps{Providers: []stt.Provider{runtime}, Capturer: capturer},
 	})
 	if e != nil {
 		t.Fatal(e)

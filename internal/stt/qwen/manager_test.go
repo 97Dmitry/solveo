@@ -1,4 +1,4 @@
-package sttdocker
+package qwen
 
 import (
 	"archive/tar"
@@ -14,6 +14,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/stt"
 )
 
 // fakeRunner answers docker commands by their first argument(s); unmatched commands succeed silently.
@@ -114,7 +116,7 @@ func manager(t *testing.T, runner *fakeRunner) *Manager {
 	}
 }
 
-func states(checks []Check) string {
+func states(checks []stt.Check) string {
 	var parts []string
 	for _, c := range checks {
 		parts = append(parts, c.ID+"="+c.State)
@@ -131,7 +133,7 @@ func TestStatusAllReady(t *testing.T) {
 	if s := states(got); s != "docker=ok engine=ok image=ok gpu=ok model=ok" {
 		t.Fatalf("status %s", s)
 	}
-	if !Ready(got) {
+	if !stt.Ready(got) {
 		t.Fatal("all checks ok must be ready")
 	}
 	if got[3].Message != "GPU 0: NVIDIA GeForce RTX 3070 Ti Laptop GPU" {
@@ -168,12 +170,12 @@ func TestRemoteEngineRejected(t *testing.T) {
 		return ""
 	}
 	got := m.Status(context.Background())
-	if got[1].State != StateError || !strings.Contains(got[1].Message, "только локальный Docker") {
+	if got[1].State != stt.StateError || !strings.Contains(got[1].Message, "только локальный Docker") {
 		t.Fatalf("engine check %+v", got[1])
 	}
 	runner.on("context inspect", ok("tcp://10.0.0.5:2376"))
 	m.Getenv = func(string) string { return "" }
-	if got = m.Status(context.Background()); got[1].State != StateError {
+	if got = m.Status(context.Background()); got[1].State != stt.StateError {
 		t.Fatalf("remote context accepted: %+v", got[1])
 	}
 }
@@ -183,7 +185,7 @@ func TestGPUUnknownUntilImageExists(t *testing.T) {
 	healthy(runner)
 	runner.on("image inspect", fail("No such image"))
 	got := manager(t, runner).Status(context.Background())
-	if got[2].State != StateMissing || got[3].State != StateUnknown {
+	if got[2].State != stt.StateMissing || got[3].State != stt.StateUnknown {
 		t.Fatalf("status %s", states(got))
 	}
 	if len(runner.called("run")) != 0 {

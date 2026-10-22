@@ -15,13 +15,6 @@ export type AudioActions = {
   insert: (text: string) => void;
 };
 type Check = AudioState["checks"][number];
-const checkLabel = {
-  docker: "Docker",
-  engine: "Docker Engine",
-  image: "Образ solveo-stt",
-  gpu: "GPU",
-  model: "Модель Qwen3-ASR",
-} satisfies Record<Check["id"], string>;
 const sourceLabel = { system: "Собеседник", mic: "Микрофон" } as const;
 function CheckIcon({ state }: { state: Check["state"] }) {
   if (state === "ok") return <CircleCheck size={15} aria-label="готово" />;
@@ -78,7 +71,7 @@ export function AudioPanel({
           {audio.checks.map((c) => (
             <li key={c.id} className={`check ${c.state}`}>
               <CheckIcon state={c.state} />
-              <span className="check-name">{checkLabel[c.id]}</span>
+              <span className="check-name">{c.label}</span>
               <span className="check-message">{c.message}</span>
             </li>
           ))}

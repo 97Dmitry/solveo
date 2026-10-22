@@ -11,7 +11,6 @@ import (
 	"github.com/97Dmitry/solveo/internal/audio"
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/stt"
-	sttdocker "github.com/97Dmitry/solveo/internal/stt/docker"
 )
 
 // Local speech recognition: readiness checks, model and listening lifecycle, the in-memory transcript and
@@ -29,34 +28,18 @@ const (
 	gapMessage     = "Распознавание не успевает, часть звука пропущена"
 )
 
-type AudioRuntime interface {
-	Status(ctx context.Context) []sttdocker.Check
-	Prepare(ctx context.Context, progress func(string)) error
-	Start(ctx context.Context, progress func(string)) (sttdocker.Endpoint, error)
-	Stop(ctx context.Context) error
-}
-
-// STTSession is the worker connection (stt.Session in production).
-type STTSession interface {
-	Open(ctx context.Context, streamID, track string, phrases []string) error
-	Push(streamID string, rate, channels int, samples []float32) error
-	Flush(ctx context.Context, streamID string) error
-	CloseStream(streamID string) error
-	Events() <-chan any
-	Close() error
-}
-
-// AudioDeps is optional: a nil Runtime leaves speech recognition unavailable.
+// AudioDeps is optional: without providers speech recognition is unavailable. Every provider is reached
+// only through stt.Provider; the first one is the default.
 type AudioDeps struct {
-	Runtime  AudioRuntime
-	Dial     func(ctx context.Context, addr, token string) (STTSession, error)
-	Capturer audio.Capturer
+	Providers []stt.Provider
+	Capturer  audio.Capturer
 }
 
-type AudioCheck struct {
-	ID      string `json:"id"`
-	State   string `json:"state"`
-	Message string `json:"message"`
+// AudioProviderOption lists a provider the user can choose.
+type AudioProviderOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Local bool   `json:"local"`
 }
 
 type AudioSourceView struct {
@@ -76,16 +59,18 @@ type TranscriptSegment struct {
 }
 
 type AudioView struct {
-	Available bool                `json:"available"`
-	Revision  uint64              `json:"revision"`
-	Checks    []AudioCheck        `json:"checks"`
-	Busy      string              `json:"busy"`
-	Progress  string              `json:"progress"`
-	Model     string              `json:"model"`
-	Listening bool                `json:"listening"`
-	Sources   []AudioSourceView   `json:"sources"`
-	Segments  []TranscriptSegment `json:"segments"`
-	Error     string              `json:"error"`
+	Available bool                  `json:"available"`
+	Provider  stt.Description       `json:"provider"`
+	Providers []AudioProviderOption `json:"providers"`
+	Revision  uint64                `json:"revision"`
+	Checks    []stt.Check           `json:"checks"`
+	Busy      string                `json:"busy"`
+	Progress  string                `json:"progress"`
+	Model     string                `json:"model"`
+	Listening bool                  `json:"listening"`
+	Sources   []AudioSourceView     `json:"sources"`
+	Segments  []TranscriptSegment   `json:"segments"`
+	Error     string                `json:"error"`
 }
 
 type SubmitTranscriptInput struct {
@@ -114,15 +99,17 @@ type audioSource struct {
 }
 
 type audioState struct {
-	mu        sync.Mutex
-	revision  uint64
-	checks    []AudioCheck
-	busy      string
-	progress  string
-	model     string
-	err       string
-	gap       bool
-	session   STTSession
+	mu       sync.Mutex
+	revision uint64
+	checks   []stt.Check
+	busy     string
+	progress string
+	model    string
+	err      string
+	gap      bool
+	session  stt.SessionAPI
+	// provider started the current session; Stop always goes to it.
+	provider  stt.Provider
 	listening bool
 	sources   []*audioSource
 	tracks    map[string]string // stream ID → track, kept after stop for late finals
@@ -146,9 +133,10 @@ func (c *Controller) AudioSnapshot() AudioView {
 func (c *Controller) audioViewLocked() AudioView {
 	a := &c.audio
 	v := AudioView{
-		Available: c.deps.Audio.Runtime != nil,
+		Available: len(c.deps.Audio.Providers) > 0,
+		Providers: []AudioProviderOption{},
 		Revision:  a.revision,
-		Checks:    append([]AudioCheck{}, a.checks...),
+		Checks:    append([]stt.Check{}, a.checks...),
 		Busy:      a.busy,
 		Progress:  a.progress,
 		Model:     a.model,
@@ -160,7 +148,22 @@ func (c *Controller) audioViewLocked() AudioView {
 	for _, s := range a.sources {
 		v.Sources = append(v.Sources, s.view)
 	}
+	for _, p := range c.deps.Audio.Providers {
+		d := p.Describe()
+		v.Providers = append(v.Providers, AudioProviderOption{ID: d.ID, Label: d.Label, Local: d.Local})
+	}
+	if p := c.audioProvider(); p != nil {
+		v.Provider = p.Describe()
+	}
 	return v
+}
+
+// audioProvider is the provider used for the next check, preparation or start.
+func (c *Controller) audioProvider() stt.Provider {
+	if len(c.deps.Audio.Providers) == 0 {
+		return nil
+	}
+	return c.deps.Audio.Providers[0]
 }
 
 // audioChangedLocked bumps the revision and schedules one coalesced solveo:audio event.
@@ -181,7 +184,7 @@ func (c *Controller) audioChangedLocked() {
 
 func (c *Controller) audioReadyLocked() error {
 	a := &c.audio
-	if c.deps.Audio.Runtime == nil {
+	if len(c.deps.Audio.Providers) == 0 {
 		return errors.New("распознавание речи недоступно")
 	}
 	switch a.busy {
@@ -248,11 +251,11 @@ func (c *Controller) audioProgress(line string) {
 }
 
 func (c *Controller) refreshAudioChecks(ctx context.Context) {
-	checks := c.deps.Audio.Runtime.Status(ctx)
-	view := make([]AudioCheck, 0, len(checks))
+	checks := c.audioProvider().Status(ctx)
+	view := make([]stt.Check, 0, len(checks))
 	for _, ch := range checks {
 		ch.Message = uiText(ch.Message)
-		view = append(view, AudioCheck(ch))
+		view = append(view, ch)
 	}
 	c.audio.mu.Lock()
 	c.audio.checks = view
@@ -294,7 +297,7 @@ func (c *Controller) PrepareAudio() error {
 		return err
 	}
 	return c.goAudio(func(ctx context.Context) {
-		if err := c.deps.Audio.Runtime.Prepare(ctx, c.audioProgress); err != nil {
+		if err := c.audioProvider().Prepare(ctx, c.audioProgress); err != nil {
 			c.setAudioError(err)
 		}
 		c.refreshAudioChecks(ctx)
@@ -317,17 +320,8 @@ func (c *Controller) StartAudioModel() error {
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	return c.goAudio(func(ctx context.Context) {
-		runtime := c.deps.Audio.Runtime
-		ep, err := runtime.Start(ctx, c.audioProgress)
-		var session STTSession
-		if err == nil {
-			session, err = c.deps.Audio.Dial(ctx, ep.Addr, ep.Token)
-			if err != nil {
-				stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), audioStopTimeout)
-				_ = runtime.Stop(stopCtx)
-				cancel()
-			}
-		}
+		provider := c.audioProvider()
+		session, err := provider.Start(ctx, c.audioProgress)
 		if err != nil {
 			c.appendLog(err.Error() + "\n")
 		}
@@ -335,7 +329,7 @@ func (c *Controller) StartAudioModel() error {
 		if err != nil {
 			a.model, a.err = audioModelFailed, uiText(err.Error())
 		} else {
-			a.model, a.session = audioModelReady, session
+			a.model, a.session, a.provider = audioModelReady, session, provider
 		}
 		c.audioChangedLocked()
 		a.mu.Unlock()
@@ -346,7 +340,7 @@ func (c *Controller) StartAudioModel() error {
 }
 
 // pumpAudio applies worker events until the session ends; it runs as a controller worker.
-func (c *Controller) pumpAudio(session STTSession) {
+func (c *Controller) pumpAudio(session stt.SessionAPI) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -372,7 +366,7 @@ func (c *Controller) pumpAudio(session STTSession) {
 	}()
 }
 
-func (c *Controller) audioSessionEnded(session STTSession, lost error) {
+func (c *Controller) audioSessionEnded(session stt.SessionAPI, lost error) {
 	a := &c.audio
 	a.mu.Lock()
 	if a.session != session {
@@ -382,7 +376,8 @@ func (c *Controller) audioSessionEnded(session STTSession, lost error) {
 	if lost == nil {
 		lost = errors.New("распознаватель закрыл соединение")
 	}
-	a.session, a.model, a.err, a.listening = nil, audioModelFailed, uiText(lost.Error()), false
+	provider := a.provider
+	a.session, a.provider, a.model, a.err, a.listening = nil, nil, audioModelFailed, uiText(lost.Error()), false
 	stops := a.stopSourcesLocked()
 	c.audioChangedLocked()
 	a.mu.Unlock()
@@ -392,7 +387,7 @@ func (c *Controller) audioSessionEnded(session STTSession, lost error) {
 	_ = session.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), audioStopTimeout)
 	defer cancel()
-	_ = c.deps.Audio.Runtime.Stop(ctx) // free the GPU; a restart is an explicit user action
+	_ = provider.Stop(ctx) // free the GPU or the connection; a restart is an explicit user action
 }
 
 // stopSourcesLocked marks all sources inactive and returns their stop functions.
@@ -442,15 +437,18 @@ func (c *Controller) StopAudioModel() error {
 		a.mu.Unlock()
 		return errors.New("Сначала остановите прослушивание")
 	}
-	session := a.session
-	a.session, a.busy, a.err = nil, audioBusyStopping, ""
+	session, provider := a.session, a.provider
+	if provider == nil {
+		provider = c.audioProvider()
+	}
+	a.session, a.provider, a.busy, a.err = nil, nil, audioBusyStopping, ""
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	return c.goAudio(func(ctx context.Context) {
 		if session != nil {
 			_ = session.Close()
 		}
-		err := c.deps.Audio.Runtime.Stop(ctx)
+		err := provider.Stop(ctx)
 		a.mu.Lock()
 		a.model = audioModelStopped
 		if err != nil {
@@ -466,7 +464,7 @@ func (c *Controller) StopAudioModel() error {
 func (c *Controller) StartListening() error {
 	a := &c.audio
 	a.mu.Lock()
-	if c.deps.Audio.Runtime != nil && (a.model != audioModelReady || a.session == nil) {
+	if len(c.deps.Audio.Providers) > 0 && (a.model != audioModelReady || a.session == nil) {
 		a.mu.Unlock()
 		return errors.New("Сначала запустите модель")
 	}
@@ -532,7 +530,7 @@ func cmpErr(first, next error) error {
 	return next
 }
 
-func (c *Controller) audioSink(session STTSession, stream string) func(audio.Frame) {
+func (c *Controller) audioSink(session stt.SessionAPI, stream string) func(audio.Frame) {
 	return func(f audio.Frame) {
 		if err := session.Push(stream, f.Rate, f.Channels, f.Samples); errors.Is(err, stt.ErrBackpressure) {
 			c.audio.mu.Lock()
@@ -689,9 +687,9 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 func (c *Controller) shutdownAudio(ctx context.Context) {
 	a := &c.audio
 	a.mu.Lock()
-	session := a.session
+	session, provider := a.session, a.provider
 	stops := a.stopSourcesLocked()
-	a.session, a.listening, a.model = nil, false, audioModelStopped
+	a.session, a.provider, a.listening, a.model = nil, nil, false, audioModelStopped
 	if a.emitTimer != nil {
 		a.emitTimer.Stop()
 		a.emitTimer = nil
@@ -706,7 +704,7 @@ func (c *Controller) shutdownAudio(ctx context.Context) {
 	_ = session.Close()
 	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), audioStopTimeout)
 	defer cancel()
-	if err := c.deps.Audio.Runtime.Stop(stopCtx); err != nil {
+	if err := provider.Stop(stopCtx); err != nil {
 		c.appendLog("solveo-stt: " + err.Error() + "\n")
 	}
 }

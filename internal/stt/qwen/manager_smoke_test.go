@@ -1,6 +1,6 @@
 //go:build dockersmoke
 
-package sttdocker
+package qwen
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/stt"
 )
 
-// Opt-in: SOLVEO_STT_MODELS=<dir containing Qwen3-ASR-1.7B-7278e1e> go test -tags dockersmoke -run Smoke -v ./internal/stt/docker
+// Opt-in: SOLVEO_STT_MODELS=<dir containing Qwen3-ASR-1.7B-7278e1e> go test -tags dockersmoke -run Smoke -v ./internal/stt/qwen
 // Uses the real docker CLI and GPU; builds the image if missing and starts/stops the real container.
 func TestSmokePrepareStartStop(t *testing.T) {
 	dir := os.Getenv("SOLVEO_STT_MODELS")
