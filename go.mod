@@ -2,7 +2,10 @@ module github.com/97Dmitry/solveo
 
 go 1.27.1
 
-require github.com/wailsapp/wails/v2 v2.17.0
+require (
+	github.com/coder/websocket v1.8.15
+	github.com/wailsapp/wails/v2 v2.17.0
+)
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
