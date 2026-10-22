@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CircleCheck, CircleDashed, CircleHelp, CircleX, Mic, Square } from "lucide-react";
 import type { AudioState } from "../bridge/state";
 import { Button } from "../ui/Button";
@@ -45,10 +45,14 @@ export function AudioPanel({
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const needsCheck = audio.available && audio.checks.length === 0 && audio.busy === "";
   const { refresh } = actions;
+  // Check once per opening; a later empty list means a check is already running.
+  const asked = useRef(false);
   useEffect(() => {
-    // Only on opening: a later empty list means a check is already running.
-    if (needsCheck) refresh();
-  }, []);
+    if (needsCheck && !asked.current) {
+      asked.current = true;
+      refresh();
+    }
+  }, [needsCheck, refresh]);
   if (!audio.available)
     return (
       <section className="audio-panel" aria-label="Распознавание речи">
