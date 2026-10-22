@@ -1,0 +1,729 @@
+{
+ "_policy": "Terms count only in the spelling given (case/spacing/punctuation-insensitive); Russian transliterations such as 'горутина' are errors. Annotated before the first run.",
+ "speaker": "user1",
+ "conversation": "quick-2026-10-23",
+ "split": "dev",
+ "context_phrases": [
+  "context cancellation",
+  "goroutine",
+  "read committed",
+  "repeatable read",
+  "PostgreSQL",
+  "NestJS",
+  "TypeORM",
+  "QueryBuilder",
+  "N+1",
+  "JWT",
+  "localStorage",
+  "Kubernetes",
+  "Redis",
+  "exponential backoff",
+  "Mutex",
+  "RWMutex",
+  "deadlock",
+  "idempotency key",
+  "useEffect",
+  "React",
+  "Strict Mode",
+  "exactly-once",
+  "Kafka",
+  "gRPC",
+  "REST",
+  "GraphQL",
+  "B-tree",
+  "EXPLAIN ANALYZE",
+  "Seq Scan",
+  "eventual consistency",
+  "CAP theorem",
+  "LRU cache",
+  "p99",
+  "CI/CD",
+  "Docker",
+  "TypeScript",
+  "garbage collector",
+  "stop-the-world",
+  "rate limiter",
+  "pessimistic locking",
+  "outbox pattern",
+  "two-phase commit"
+ ],
+ "samples": {
+  "q01": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "context cancellation",
+     "variants": []
+    },
+    {
+     "canonical": "goroutine",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "не остановил",
+     "variants": []
+    }
+   ]
+  },
+  "q02": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "read committed",
+     "variants": []
+    },
+    {
+     "canonical": "repeatable read",
+     "variants": []
+    },
+    {
+     "canonical": "PostgreSQL",
+     "variants": [
+      "Postgres"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q03": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "NestJS",
+     "variants": [
+      "Nest.js",
+      "Nest JS"
+     ]
+    },
+    {
+     "canonical": "TypeORM",
+     "variants": [
+      "Type ORM"
+     ]
+    },
+    {
+     "canonical": "N+1",
+     "variants": [
+      "N + 1",
+      "N плюс 1",
+      "N плюс один"
+     ]
+    },
+    {
+     "canonical": "QueryBuilder",
+     "variants": [
+      "Query Builder"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q04": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "JWT",
+     "variants": []
+    },
+    {
+     "canonical": "localStorage",
+     "variants": [
+      "local storage"
+     ]
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "не в localStorage",
+     "variants": [
+      "не в local storage"
+     ]
+    }
+   ]
+  },
+  "q05": {
+   "categories": [
+    "mixed",
+    "numbers"
+   ],
+   "terms": [],
+   "critical": [
+    {
+     "kind": "constraint",
+     "canonical": "не меньше 150",
+     "variants": [
+      "не меньше ста пятидесяти",
+      "не менее 150"
+     ]
+    },
+    {
+     "kind": "constraint",
+     "canonical": "не больше 2 секунд",
+     "variants": [
+      "не больше двух секунд",
+      "не более 2 секунд",
+      "не больше 2 секунды"
+     ]
+    }
+   ]
+  },
+  "q06": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "O(n log n)",
+     "variants": [
+      "O большое n log n",
+      "O большое от n log n"
+     ]
+    },
+    {
+     "canonical": "O(n²)",
+     "variants": [
+      "O(n^2)",
+      "O(n squared)",
+      "O от n квадрат",
+      "O большое n в квадрате",
+      "O большое от n в квадрате"
+     ]
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "не за O(n²)",
+     "variants": [
+      "не за O(n^2)",
+      "не за O(n squared)",
+      "не за O от n квадрат",
+      "не за O большое n в квадрате",
+      "не за O большое от n в квадрате"
+     ]
+    }
+   ]
+  },
+  "q07": {
+   "categories": [
+    "mixed",
+    "numbers"
+   ],
+   "terms": [
+    {
+     "canonical": "Kubernetes",
+     "variants": [
+      "k8s"
+     ]
+    },
+    {
+     "canonical": "lock",
+     "variants": []
+    },
+    {
+     "canonical": "Redis",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "number",
+     "canonical": "два пода",
+     "variants": [
+      "2 пода"
+     ]
+    }
+   ]
+  },
+  "q08": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "retry",
+     "variants": []
+    },
+    {
+     "canonical": "exponential backoff",
+     "variants": []
+    },
+    {
+     "canonical": "downstream",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "не положить",
+     "variants": []
+    }
+   ]
+  },
+  "q09": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "Mutex",
+     "variants": []
+    },
+    {
+     "canonical": "RWMutex",
+     "variants": [
+      "RW Mutex"
+     ]
+    },
+    {
+     "canonical": "Go",
+     "variants": [
+      "Golang"
+     ]
+    },
+    {
+     "canonical": "deadlock",
+     "variants": [
+      "dead lock"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q10": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "idempotency key",
+     "variants": []
+    }
+   ],
+   "critical": []
+  },
+  "q11": {
+   "categories": [
+    "mixed",
+    "numbers"
+   ],
+   "terms": [
+    {
+     "canonical": "useEffect",
+     "variants": [
+      "use effect"
+     ]
+    },
+    {
+     "canonical": "React",
+     "variants": []
+    },
+    {
+     "canonical": "Strict Mode",
+     "variants": [
+      "StrictMode"
+     ]
+    }
+   ],
+   "critical": [
+    {
+     "kind": "number",
+     "canonical": "дважды",
+     "variants": [
+      "2 раза",
+      "два раза"
+     ]
+    }
+   ]
+  },
+  "q12": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "exactly-once",
+     "variants": []
+    },
+    {
+     "canonical": "Kafka",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "невозможно",
+     "variants": []
+    }
+   ]
+  },
+  "q13": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "gRPC",
+     "variants": []
+    },
+    {
+     "canonical": "REST",
+     "variants": []
+    },
+    {
+     "canonical": "GraphQL",
+     "variants": [
+      "Graph QL"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q14": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "B-tree",
+     "variants": [
+      "Btree"
+     ]
+    },
+    {
+     "canonical": "EXPLAIN ANALYZE",
+     "variants": []
+    },
+    {
+     "canonical": "Seq Scan",
+     "variants": [
+      "SeqScan"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q15": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "eventual consistency",
+     "variants": []
+    },
+    {
+     "canonical": "CAP-теоремой",
+     "variants": [
+      "CAP теоремой"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q16": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "LRU cache",
+     "variants": [
+      "LRU-cache",
+      "LRU кэш",
+      "LRU-кэш"
+     ]
+    },
+    {
+     "canonical": "get",
+     "variants": []
+    },
+    {
+     "canonical": "put",
+     "variants": []
+    },
+    {
+     "canonical": "O(1)",
+     "variants": [
+      "O от 1",
+      "O от единицы",
+      "O большое единица",
+      "O большое от единицы",
+      "O большое 1"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q17": {
+   "categories": [
+    "mixed",
+    "numbers"
+   ],
+   "terms": [
+    {
+     "canonical": "p99",
+     "variants": [
+      "p 99",
+      "P99"
+     ]
+    },
+    {
+     "canonical": "latency",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "number",
+     "canonical": "800",
+     "variants": [
+      "восемьсот"
+     ]
+    },
+    {
+     "kind": "negation",
+     "canonical": "не изменилась",
+     "variants": []
+    }
+   ]
+  },
+  "q18": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "CI/CD",
+     "variants": [
+      "CICD"
+     ]
+    },
+    {
+     "canonical": "Docker",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "не пересобирался",
+     "variants": []
+    }
+   ]
+  },
+  "q19": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "any",
+     "variants": []
+    },
+    {
+     "canonical": "TypeScript",
+     "variants": []
+    },
+    {
+     "canonical": "unknown",
+     "variants": []
+    }
+   ],
+   "critical": [
+    {
+     "kind": "negation",
+     "canonical": "Не используй",
+     "variants": []
+    }
+   ]
+  },
+  "q20": {
+   "categories": [
+    "mixed"
+   ],
+   "terms": [
+    {
+     "canonical": "garbage collector",
+     "variants": []
+    },
+    {
+     "canonical": "Go",
+     "variants": [
+      "Golang"
+     ]
+    },
+    {
+     "canonical": "stop-the-world",
+     "variants": []
+    }
+   ],
+   "critical": []
+  },
+  "q21": {
+   "categories": [
+    "ru"
+   ],
+   "terms": [],
+   "critical": []
+  },
+  "q22": {
+   "categories": [
+    "ru"
+   ],
+   "terms": [],
+   "critical": []
+  },
+  "q23": {
+   "categories": [
+    "ru"
+   ],
+   "terms": [],
+   "critical": []
+  },
+  "q24": {
+   "categories": [
+    "en"
+   ],
+   "terms": [
+    {
+     "canonical": "rate limiter",
+     "variants": []
+    },
+    {
+     "canonical": "API",
+     "variants": []
+    }
+   ],
+   "critical": []
+  },
+  "q25": {
+   "categories": [
+    "en"
+   ],
+   "terms": [
+    {
+     "canonical": "optimistic",
+     "variants": []
+    },
+    {
+     "canonical": "pessimistic locking",
+     "variants": []
+    }
+   ],
+   "critical": []
+  },
+  "q26": {
+   "categories": [
+    "en"
+   ],
+   "terms": [
+    {
+     "canonical": "team lead",
+     "variants": []
+    }
+   ],
+   "critical": []
+  },
+  "q27": {
+   "categories": [
+    "mixed",
+    "long",
+    "pause"
+   ],
+   "terms": [
+    {
+     "canonical": "NestJS",
+     "variants": [
+      "Nest.js",
+      "Nest JS"
+     ]
+    },
+    {
+     "canonical": "PostgreSQL",
+     "variants": [
+      "Postgres"
+     ]
+    },
+    {
+     "canonical": "Kafka",
+     "variants": []
+    },
+    {
+     "canonical": "outbox pattern",
+     "variants": []
+    },
+    {
+     "canonical": "two-phase commit",
+     "variants": [
+      "2PC"
+     ]
+    }
+   ],
+   "critical": []
+  },
+  "q28": {
+   "categories": [
+    "mixed",
+    "long",
+    "pause",
+    "numbers"
+   ],
+   "terms": [
+    {
+     "canonical": "heap",
+     "variants": []
+    },
+    {
+     "canonical": "O(n log k)",
+     "variants": [
+      "O большое n log k",
+      "O большое n логарифм k",
+      "O большое от n log k"
+     ]
+    }
+   ],
+   "critical": [
+    {
+     "kind": "number",
+     "canonical": "миллиона",
+     "variants": [
+      "1000000",
+      "1 000 000"
+     ]
+    }
+   ]
+  },
+  "q29": {
+   "categories": [
+    "silence"
+   ],
+   "terms": [],
+   "critical": []
+  },
+  "q30": {
+   "categories": [
+    "silence",
+    "noise"
+   ],
+   "terms": [],
+   "critical": []
+  }
+ },
+ "_context": "Hand-picked dictionary a user would plausibly keep: product names, acronyms and jargon; ordinary English words (get, put, any, lock, heap, latency) are left out.",
+ "_onotation": "2026-10-23: the speaker reads O(...) as 'O большое ...'; spoken forms added as variants after the first screening runs (reference correction, recorded in the evaluation report)."
+}

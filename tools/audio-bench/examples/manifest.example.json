@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "context_phrases": ["context cancellation", "goroutine", "PostgreSQL"],
+  "samples": [
+    {
+      "id": "spk01-call03-0007",
+      "audio": "spk01/call03-0007.wav",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "speaker": "spk01",
+      "conversation": "call03",
+      "split": "dev",
+      "categories": ["mixed", "call"],
+      "reference": "Почему context cancellation не остановил goroutine?",
+      "terms": [
+        {"canonical": "context cancellation", "variants": []},
+        {"canonical": "goroutine", "variants": ["go routine"]}
+      ],
+      "critical": [{"kind": "negation", "canonical": "не остановил", "variants": []}]
+    },
+    {
+      "id": "spk02-room01-0001",
+      "audio": "spk02/room01-0001.wav",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "speaker": "spk02",
+      "conversation": "room01",
+      "split": "holdout",
+      "categories": ["silence", "noise"],
+      "reference": "",
+      "terms": [],
+      "critical": []
+    }
+  ]
+}

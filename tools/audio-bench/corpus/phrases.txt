@@ -1,0 +1,52 @@
+# Быстрый отсев STT (этап 9.0): 30 записей.
+#
+# Формат строки:  ID | ИМЯ_ФАЙЛА ЗАПИСИ | точный текст, который произносится
+# - Расширение записи любое (.m4a, .wav, .mp3, .flac, .ogg); для прогона она
+#   декодируется в wav/<ID>.wav (см. README, раздел «Корпус из списка фраз»).
+# - Читайте естественно, как вопрос на интервью; английские термины — по-английски.
+# - Если сказали не дословно — исправьте текст справа от |, чтобы он совпадал с речью.
+# - Числа произносите как удобно («сто пятьдесят»), в тексте они записаны цифрами — это нормально.
+# - Тишину по краям файла обрежьте, оставив ~0,3 с.
+# - Строки с # не обрабатываются.
+
+# --- Смешанная речь RU/EN с IT-терминами ---
+q01 | Recording (1).m4a | Почему context cancellation не остановил goroutine?
+q02 | Recording (2).m4a | Чем read committed отличается от repeatable read в PostgreSQL?
+q03 | Recording (3).m4a | Как в NestJS с TypeORM избежать проблемы N+1 в QueryBuilder?
+q04 | Recording (4).m4a | Где ты хранишь JWT на клиенте и почему не в localStorage?
+q05 | Recording (5).m4a | Таймаут должен быть не меньше 150 миллисекунд, но не больше 2 секунд.
+q06 | Recording (6).m4a | Объясни, почему алгоритм работает за O(n log n), а не за O(n²).
+q07 | Recording (7).m4a | Что произойдёт, если два пода в Kubernetes одновременно возьмут один и тот же lock в Redis?
+q08 | Recording (8).m4a | Как ты настроишь retry с exponential backoff, чтобы не положить downstream сервис?
+q09 | Recording (9).m4a | Чем отличается Mutex от RWMutex в Go и когда возникает deadlock?
+q10 | Recording (10).m4a | Чем нужен idempotency key при повторной отправке платежа?
+q11 | Recording (11).m4a | Почему useEffect вызывается дважды в React Strict Mode?
+q12 | Recording (12).m4a | Можно ли гарантировать exactly-once обработку сообщений в Kafka, или это невозможно?
+q13 | Recording (13).m4a | Когда ты выберешь gRPC вместо REST, а когда GraphQL?
+q14 | Recording (14).m4a | Как устроен B-tree индекс и почему EXPLAIN ANALYZE показывает Seq Scan?
+q15 | Recording (15).m4a | Что такое eventual consistency и как она связана с CAP-теоремой?
+q16 | Recording (16).m4a | Как реализовать LRU cache с операциями get и put за O(1)?
+q17 | Recording (17).m4a | Почему p99 latency выросла до 800 миллисекунд, хотя средняя не изменилась?
+q18 | Recording (18).m4a | Как настроить CI/CD так, чтобы Docker образ не пересобирался на каждый коммит?
+q19 | Recording (19).m4a | Не используй any в TypeScript, лучше объясни, где нужен unknown.
+q20 | Recording (20).m4a | Как работает garbage collector в Go и что такое stop-the-world пауза?
+
+# --- Только русский ---
+q21 | Recording (21).m4a | Расскажи о самом сложном техническом решении, которое ты принимал на прошлом проекте.
+q22 | Recording (22).m4a | Сколько человек было в команде и как вы распределяли задачи между собой?
+q23 | Recording (23).m4a | Почему ты решил уйти с предыдущего места работы?
+
+# --- Только английский ---
+q24 | Recording (24).m4a | Can you walk me through how you would design a rate limiter for a public API?
+q25 | Recording (25).m4a | What is the difference between optimistic and pessimistic locking?
+q26 | Recording (26).m4a | Tell me about a time you disagreed with your team lead and how you resolved it.
+
+# --- Длинные, с паузой ~2 с в месте «/»; символ / не произносится ---
+q27 | Recording (27).m4a | Представь, что у нас сервис на NestJS, который пишет заказы в PostgreSQL и отправляет события в Kafka. / Иногда событие уходит, а транзакция откатывается. Как бы ты это исправил, и почему outbox pattern здесь лучше, чем two-phase commit?
+q28 | Recording (28).m4a | Есть массив из миллиона чисел, нужно найти k самых частых элементов. / Сначала опиши решение через heap, потом скажи, можно ли сделать быстрее, чем O(n log k), и какой будет расход памяти.
+
+# --- Без речи: текст справа от | пустой ---
+# q29: 10 с тишины, микрофон включён, никто не говорит.
+q29 | Recording (29).m4a |
+# q30: 10 с фонового шума (клавиатура, вентилятор, музыка без слов), без речи.
+q30 | Recording (30).m4a |
