@@ -97,11 +97,16 @@ export function AudioWindow() {
             {view.docked ? "Открепить" : "Прикрепить слева"}
           </Button>
         </div>
-        <p className="audio-window-mode">
-          {view.docked ? "Прикреплено слева · следует за основным окном" : "Плавающее окно"}
+        <p className="audio-window-chat" title={view.chat_title || "Новый чат"}>
+          Чат: {view.chat_title || "Новый чат"}
         </p>
-        <p>Чат: {view.chat_title || "Новый чат"}</p>
-        <small>Закрытие окна не останавливает прослушивание.</small>
+        <details className="audio-window-info">
+          <summary>Об окне</summary>
+          <p className="audio-window-mode">
+            {view.docked ? "Прикреплено слева · следует за основным окном" : "Плавающее окно"}
+          </p>
+          <small>Закрытие окна не останавливает прослушивание.</small>
+        </details>
       </header>
       {(error || view.window_error) && (
         <p className="audio-error" role="alert">

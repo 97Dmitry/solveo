@@ -45,13 +45,12 @@ type View struct {
 	ShowVersion uint64         `json:"show_version"`
 }
 type Command struct {
-	HistoryID string   `json:"history_id,omitempty"`
-	Name      string   `json:"name"`
-	Provider  string   `json:"provider,omitempty"`
-	Key       string   `json:"key,omitempty"`
-	IDs       []string `json:"ids,omitempty"`
-	Text      string   `json:"text,omitempty"`
-	ChatID    string   `json:"chat_id,omitempty"`
+	Name     string   `json:"name"`
+	Provider string   `json:"provider,omitempty"`
+	Key      string   `json:"key,omitempty"`
+	IDs      []string `json:"ids,omitempty"`
+	Text     string   `json:"text,omitempty"`
+	ChatID   string   `json:"chat_id,omitempty"`
 }
 type Insert struct {
 	ExpiresAt int64  `json:"expires_at"`
@@ -68,8 +67,6 @@ type Server struct {
 }
 
 type HistoryReader interface {
-	ListAudioHistory() (core.AudioHistoryList, error)
-	LoadAudioHistory(string) (core.AudioHistoryView, error)
 	LoadChatAudioHistory(string) (core.AudioHistoryView, error)
 }
 
@@ -96,20 +93,6 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 			_ = json.NewEncoder(w).Encode(map[string]uint64{"show_version": s.show.Load()})
 		case r.Method == http.MethodGet && len(readers) > 0 && strings.HasPrefix(r.URL.Path, "/chat-history/"):
 			result, err := readers[0].LoadChatAudioHistory(strings.TrimPrefix(r.URL.Path, "/chat-history/"))
-			if err != nil {
-				http.Error(w, "history unavailable", http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(result)
-		case r.Method == http.MethodGet && len(readers) > 0 && r.URL.Path == "/history":
-			result, err := readers[0].ListAudioHistory()
-			if err != nil {
-				http.Error(w, "history unavailable", http.StatusServiceUnavailable)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(result)
-		case r.Method == http.MethodGet && len(readers) > 0 && strings.HasPrefix(r.URL.Path, "/history/"):
-			result, err := readers[0].LoadAudioHistory(strings.TrimPrefix(r.URL.Path, "/history/"))
 			if err != nil {
 				http.Error(w, "history unavailable", http.StatusBadRequest)
 				return
@@ -150,7 +133,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteHistory", "deleteChatHistory", "attachHistory", "selectProvider", "setKey", "deleteKey":
+	case "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey":
 		return true
 	}
 	return false
@@ -240,13 +223,13 @@ func (c *Client) request(path string, cmd *Command, target any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		if strings.HasPrefix(path, "/history") || strings.HasPrefix(path, "/chat-history/") {
+		if strings.HasPrefix(path, "/chat-history/") {
 			return errors.New("Не удалось прочитать историю аудио: файл недоступен, повреждён или имеет неподдерживаемую версию")
 		}
 		return errors.New("Основное окно отклонило команду аудио")
 	}
 	limit := int64(4 * maxBody)
-	if strings.HasPrefix(path, "/history/") || strings.HasPrefix(path, "/chat-history/") {
+	if strings.HasPrefix(path, "/chat-history/") {
 		limit = 64 << 20
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(target); err != nil {
@@ -279,17 +262,6 @@ func (c *Client) ShowVersion() (uint64, error) {
 	}
 	err := c.request("/health", nil, &state)
 	return state.Version, err
-}
-
-func (c *Client) HistoryList() (core.AudioHistoryList, error) {
-	var view core.AudioHistoryList
-	err := c.request("/history", nil, &view)
-	return view, err
-}
-func (c *Client) HistorySession(id string) (core.AudioHistoryView, error) {
-	var view core.AudioHistoryView
-	err := c.request("/history/"+url.PathEscape(id), nil, &view)
-	return view, err
 }
 
 func (c *Client) ChatHistory(id string) (core.AudioHistoryView, error) {

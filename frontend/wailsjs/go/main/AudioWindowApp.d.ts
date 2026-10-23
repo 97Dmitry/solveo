@@ -3,19 +3,11 @@
 import {audiowindow} from '../models';
 import {app} from '../models';
 
-export function AttachHistory(arg1:string,arg2:string):Promise<void>;
-
 export function DeleteChatHistory(arg1:string):Promise<void>;
-
-export function DeleteHistory(arg1:string):Promise<void>;
 
 export function Execute(arg1:audiowindow.Command):Promise<void>;
 
 export function HistoryForChat(arg1:string):Promise<app.AudioHistoryView>;
-
-export function HistoryList():Promise<app.AudioHistoryList>;
-
-export function HistorySession(arg1:string):Promise<app.AudioHistoryView>;
 
 export function Ready():Promise<void>;
 

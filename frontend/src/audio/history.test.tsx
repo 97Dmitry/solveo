@@ -7,12 +7,8 @@ import { AudioHistory } from "./AudioHistory";
 import { AudioPanel, type AudioActions, type ArchivedTranscript } from "./AudioPanel";
 import { audioFixture } from "../bridge/test-fixture";
 const api = vi.hoisted(() => ({
-  list: vi.fn(),
-  load: vi.fn(),
-  delete: vi.fn(),
   forChat: vi.fn(),
   deleteChat: vi.fn(),
-  attach: vi.fn(),
 }));
 vi.mock("../bridge/wails", () => ({ audioHistory: api }));
 afterEach(() => {
@@ -41,19 +37,6 @@ function document(id = "session", count = 301): AudioHistoryDocument {
     })),
   };
 }
-function list(...ids: string[]) {
-  return {
-    sessions: ids.map((id) => ({
-      id,
-      provider_id: "qwen",
-      provider_label: id,
-      started_at: "2026-10-23T10:00:00Z",
-      ended_at: "2026-10-23T11:00:00Z",
-      segment_count: 301,
-    })),
-    error: "",
-  };
-}
 const historyProps = { chatID: "chat-a", chatTitle: "Первый чат" };
 it("opens a merged current-chat timeline without a session chooser and paginates it", async () => {
   api.forChat.mockResolvedValue(document());
@@ -63,8 +46,13 @@ it("opens a merged current-chat timeline without a session chooser and paginates
   await userEvent.click(screen.getByRole("button", { name: "История чата" }));
   await screen.findByText("Страница 1 из 2");
   expect(api.forChat).toHaveBeenCalledWith("chat-a");
-  expect(api.list).not.toHaveBeenCalled();
+  const metadata = screen.getByText("Метаданные").closest("details");
+  expect(metadata?.hasAttribute("open")).toBe(false);
+  expect(screen.getByText(/Фраз: 301/).closest("details")).toBe(metadata);
+  await userEvent.click(screen.getByText("Метаданные"));
+  expect(metadata?.hasAttribute("open")).toBe(true);
   expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByText("Записи старой версии")).toBeNull();
   expect(onArchive.mock.lastCall?.[0]?.title).toContain("Первый чат");
   expect(onArchive.mock.lastCall?.[0]?.segments).toHaveLength(300);
   await userEvent.click(screen.getByRole("button", { name: "Следующие фразы" }));
@@ -110,29 +98,6 @@ it("reloads for a changed chat, ignores late old responses and cancels on return
   await act(async () => resolveThird(document("chat-c")));
   expect(onArchive.mock.lastCall?.[0]).toBeUndefined();
 });
-it("offers unassociated legacy entries only on demand and routes legacy deletion separately", async () => {
-  api.forChat.mockResolvedValue(document("chat-a"));
-  api.list.mockResolvedValue({
-    ...list("legacy", "associated"),
-    sessions: list("legacy", "associated").sessions.map((session) => ({
-      ...session,
-      chat_id: session.id === "legacy" ? "" : "chat-a",
-    })),
-  });
-  api.load.mockResolvedValue(document("legacy"));
-  api.delete.mockResolvedValue(undefined);
-  render(<AudioHistory {...historyProps} onArchive={vi.fn()} />);
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
-  await userEvent.click(screen.getByText("Записи старой версии"));
-  await waitFor(() => expect(api.list).toHaveBeenCalled());
-  await userEvent.selectOptions(screen.getByLabelText("Старая запись"), "legacy");
-  await screen.findByRole("button", { name: "Удалить старую запись" });
-  expect(screen.queryByRole("option", { name: /associated/ })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Удалить старую запись" }));
-  await userEvent.click(screen.getByRole("button", { name: "Подтвердить удаление" }));
-  await waitFor(() => expect(api.delete).toHaveBeenCalledWith("legacy"));
-  expect(api.deleteChat).not.toHaveBeenCalled();
-});
 it("requires confirmation for chat deletion and ignores completion after switching chats", async () => {
   let finishDelete: () => void = () => {};
   api.forChat.mockImplementation((id: string) => Promise.resolve(document(id)));
@@ -145,8 +110,9 @@ it("requires confirmation for chat deletion and ignores completion after switchi
   const onArchive = vi.fn<(archive: ArchivedTranscript | undefined) => void>();
   const view = render(<AudioHistory {...historyProps} onArchive={onArchive} />);
   await userEvent.click(screen.getByRole("button", { name: "История чата" }));
+  await userEvent.click(await screen.findByText("Метаданные"));
   await userEvent.click(
-    await screen.findByRole("button", { name: "Удалить голосовую историю этого чата" }),
+    screen.getByRole("button", { name: "Удалить голосовую историю этого чата" }),
   );
   expect(api.deleteChat).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Отмена" }));
@@ -159,31 +125,6 @@ it("requires confirmation for chat deletion and ignores completion after switchi
   await waitFor(() => expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b"));
   await act(async () => finishDelete());
   expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b");
-  expect(api.delete).not.toHaveBeenCalled();
-});
-it("attaches a legacy entry only after an explicit action and reloads the current chat", async () => {
-  api.forChat.mockResolvedValue(document("chat-a", 0));
-  api.list.mockResolvedValue({
-    ...list("legacy"),
-    sessions: list("legacy").sessions.map((session) => ({ ...session, chat_id: "" })),
-  });
-  api.load.mockResolvedValue(document("legacy"));
-  api.attach.mockResolvedValue(undefined);
-  const onArchive = vi.fn<(archive: ArchivedTranscript | undefined) => void>();
-  render(<AudioHistory {...historyProps} onArchive={onArchive} />);
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
-  await userEvent.click(screen.getByText("Записи старой версии"));
-  await screen.findByRole("option", { name: /legacy/ });
-  await userEvent.selectOptions(screen.getByLabelText("Старая запись"), "legacy");
-  const attachButton = await screen.findByRole("button", { name: "Привязать к этому чату" });
-  expect(api.attach).not.toHaveBeenCalled();
-  expect(screen.getByText("Чат для привязки: Первый чат")).toBeTruthy();
-  api.forChat.mockResolvedValue(document("chat-a", 2));
-  await userEvent.click(attachButton);
-  await waitFor(() => expect(api.attach).toHaveBeenCalledWith("legacy", "chat-a"));
-  await waitFor(() => expect(onArchive.mock.lastCall?.[0]?.segments).toHaveLength(2));
-  expect(onArchive.mock.lastCall?.[0]?.title).toContain("Первый чат");
-  expect(screen.queryByRole("button", { name: "Привязать к этому чату" })).toBeNull();
 });
 it("keeps listening controls usable and makes archive rows readonly without send/insert/clear", async () => {
   const actions: AudioActions = {

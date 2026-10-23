@@ -6,7 +6,7 @@
   background: var(--panel);
 }
 .audio-window-header {
-  padding: 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -44,4 +44,47 @@
 .audio-window-mode {
   color: var(--muted);
   font-size: 12px;
+}
+
+.audio-window .transcript-archive .segment:disabled {
+  opacity: 1;
+}
+.audio-window .segment-text {
+  font-size: var(--chat-size);
+  line-height: 1.5;
+}
+
+.audio-window-chat {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.audio-window-info > summary,
+.audio-settings > summary,
+.audio-source-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.audio-session-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.audio-session-state {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.audio-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  max-height: 35vh;
+  overflow: auto;
+}
+.audio-source-details > .audio-sources {
+  margin-top: 8px;
 }

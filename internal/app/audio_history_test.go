@@ -28,11 +28,11 @@ func TestAudioHistorySurvivesRestartClearAndDisplayEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 	h2 := setupAudioHistory(t, archive)
-	list, err := h2.c.ListAudioHistory()
-	if err != nil || len(list.Sessions) != 1 {
+	list, err := archive.ForChat(h.c.Snapshot().ActiveChatID)
+	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}
-	doc, err := h2.c.LoadAudioHistory(list.Sessions[0].ID)
+	doc, err := h2.c.loadAudioHistory(list[0].ID)
 	if err != nil || len(doc.Segments) != 350 || doc.Segments[0].Text != "1" || doc.Segments[349].Text != "350" || doc.EndedAt == "" {
 		t.Fatal(len(doc.Segments), doc.EndedAt, err)
 	}
@@ -79,7 +79,7 @@ func TestAudioHistoryTracksSubmissionAndProtectsActiveDeletion(t *testing.T) {
 	h.c.audio.mu.Lock()
 	id := h.c.audio.history.current
 	h.c.audio.mu.Unlock()
-	if err := h.c.DeleteAudioHistory(id); err == nil {
+	if err := h.c.deleteAudioHistory(id); err == nil {
 		t.Fatal("active history deleted")
 	}
 	chatID := h.c.Snapshot().ActiveChatID
@@ -100,7 +100,7 @@ func TestAudioHistoryTracksSubmissionAndProtectsActiveDeletion(t *testing.T) {
 	if err := h.c.StopListening(); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.c.DeleteAudioHistory(id); err != nil {
+	if err := h.c.deleteAudioHistory(id); err != nil {
 		t.Fatal(err)
 	}
 	h.update("system", stt.KindFinal, 100, 1, "после удаления")
@@ -148,7 +148,7 @@ func TestAudioHistoryFailureRemainsVisibleAndCloseCanRetry(t *testing.T) {
 	if err := h.c.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := f.List()
+	list, err := f.ForChat(h.c.Snapshot().ActiveChatID)
 	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}
@@ -176,7 +176,7 @@ func TestAudioHistoryEmptyFinalIsNotArchived(t *testing.T) {
 	if err := h.c.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := archive.List()
+	list, err := archive.ForChat(h.c.Snapshot().ActiveChatID)
 	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}
@@ -284,7 +284,7 @@ func TestAudioHistorySavesFinalDeliveredDuringShutdownFlush(t *testing.T) {
 	if err := h.c.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	list, err := archive.List()
+	list, err := archive.ForChat(h.c.Snapshot().ActiveChatID)
 	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}

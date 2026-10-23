@@ -118,12 +118,8 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 			return controller.StopListening()
 		case "clear":
 			return controller.ClearTranscript()
-		case "deleteHistory":
-			return controller.DeleteAudioHistory(cmd.HistoryID)
 		case "deleteChatHistory":
 			return controller.DeleteChatAudioHistory(cmd.ChatID)
-		case "attachHistory":
-			return controller.AttachAudioHistory(cmd.HistoryID, cmd.ChatID)
 		case "selectProvider":
 			return controller.SetAudioProvider(cmd.Provider)
 		case "setKey":

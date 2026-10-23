@@ -41,7 +41,7 @@ export function TranscriptList({
   return (
     <ol
       ref={ref}
-      className="transcript"
+      className={`transcript${readOnly ? " transcript-archive" : ""}`}
       onScroll={(e) => {
         const list = e.currentTarget;
         pinned.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24;

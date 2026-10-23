@@ -167,22 +167,9 @@ export function onAudioInsert(insert: (chatID: string, text: string) => boolean)
   });
 }
 
-const audioHistoryItemSchema = z.object({
-  chat_id: z.string().max(32),
-  id: z.string().regex(/^[0-9a-f]{32}$/),
-  provider_id: z.string().max(128),
-  provider_label: z.string().max(1024),
-  started_at: z.iso.datetime(),
-  ended_at: z.union([z.literal(""), z.iso.datetime()]),
-  segment_count: z.number().int().min(0).max(10000),
-}) satisfies z.ZodType<Wire<app.AudioHistoryItem>>;
-const audioHistoryListSchema = z.object({
-  sessions: z.array(audioHistoryItemSchema).max(200),
-  error: z.string().max(8192),
-}) satisfies z.ZodType<Wire<app.AudioHistoryList>>;
 const audioHistoryDocumentSchema = z.object({
   notice: z.string().max(8192).optional(),
-  chat_id: z.string().max(32),
+  chat_id: z.string().regex(/^[0-9a-f]{32}$/),
   id: z.string().regex(/^[0-9a-f]{32}$/),
   provider_id: z.string().max(128),
   provider_label: z.string().max(1024),
@@ -228,14 +215,8 @@ const audioHistoryDocumentSchema = z.object({
     .max(10000),
 }) satisfies z.ZodType<Wire<app.AudioHistoryView>>;
 export type AudioHistoryDocument = z.infer<typeof audioHistoryDocumentSchema>;
-export type AudioHistoryList = z.infer<typeof audioHistoryListSchema>;
 export const audioHistory = {
-  list: async () => audioHistoryListSchema.parse(await audioWindowAPI.HistoryList()),
-  load: async (id: string) =>
-    audioHistoryDocumentSchema.parse(await audioWindowAPI.HistorySession(id)),
-  delete: audioWindowAPI.DeleteHistory,
   forChat: async (chatID: string) =>
     audioHistoryDocumentSchema.parse(await audioWindowAPI.HistoryForChat(chatID)),
   deleteChat: audioWindowAPI.DeleteChatHistory,
-  attach: audioWindowAPI.AttachHistory,
 };

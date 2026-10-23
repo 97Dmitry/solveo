@@ -14,24 +14,9 @@ import (
 
 type AudioHistoryStore interface {
 	Save(audiohistory.Session) error
-	List() ([]audiohistory.Summary, error)
 	Load(string) (audiohistory.Session, error)
 	Delete(string) error
 	ForChat(string) ([]audiohistory.Summary, error)
-	AssignChat(string, string) error
-}
-type AudioHistoryItem struct {
-	ChatID        string `json:"chat_id"`
-	ID            string `json:"id"`
-	ProviderID    string `json:"provider_id"`
-	ProviderLabel string `json:"provider_label"`
-	StartedAt     string `json:"started_at"`
-	EndedAt       string `json:"ended_at"`
-	SegmentCount  int    `json:"segment_count"`
-}
-type AudioHistoryList struct {
-	Sessions []AudioHistoryItem `json:"sessions"`
-	Error    string             `json:"error"`
 }
 type AudioHistoryFailure struct {
 	At      string `json:"at"`
@@ -257,24 +242,7 @@ func historyTime(t time.Time) string {
 	}
 	return t.UTC().Format(time.RFC3339Nano)
 }
-func (c *Controller) ListAudioHistory() (AudioHistoryList, error) {
-	out := AudioHistoryList{Sessions: []AudioHistoryItem{}}
-	if c.deps.Audio.History == nil {
-		return out, errors.New("История аудио недоступна")
-	}
-	if err := c.audio.history.persist.flush(); err != nil {
-		out.Error = "Последние реплики ещё не сохранены: " + err.Error()
-	}
-	list, err := c.deps.Audio.History.List()
-	if err != nil {
-		out.Error = err.Error()
-	}
-	for _, s := range list {
-		out.Sessions = append(out.Sessions, AudioHistoryItem{ChatID: s.ChatID, ID: s.ID, ProviderID: s.ProviderID, ProviderLabel: s.ProviderLabel, StartedAt: historyTime(s.StartedAt), EndedAt: historyTime(s.EndedAt), SegmentCount: s.SegmentCount})
-	}
-	return out, nil
-}
-func (c *Controller) LoadAudioHistory(id string) (AudioHistoryView, error) {
+func (c *Controller) loadAudioHistory(id string) (AudioHistoryView, error) {
 	out := AudioHistoryView{}
 	if c.deps.Audio.History == nil {
 		return out, errors.New("История аудио недоступна")
@@ -283,7 +251,7 @@ func (c *Controller) LoadAudioHistory(id string) (AudioHistoryView, error) {
 	if err != nil {
 		return out, err
 	}
-	out = AudioHistoryView{ChatID: audiohistory.Association(s), ID: s.ID, ProviderID: s.ProviderID, ProviderLabel: s.ProviderLabel, StartedAt: historyTime(s.StartedAt), EndedAt: historyTime(s.EndedAt), Dictionary: append([]string{}, s.Dictionary...), Sources: append([]audiohistory.Source{}, s.Sources...), Segments: []TranscriptSegment{}, Errors: []AudioHistoryFailure{}, Submissions: []AudioHistorySubmission{}}
+	out = AudioHistoryView{ChatID: s.ChatID, ID: s.ID, ProviderID: s.ProviderID, ProviderLabel: s.ProviderLabel, StartedAt: historyTime(s.StartedAt), EndedAt: historyTime(s.EndedAt), Dictionary: append([]string{}, s.Dictionary...), Sources: append([]audiohistory.Source{}, s.Sources...), Segments: []TranscriptSegment{}, Errors: []AudioHistoryFailure{}, Submissions: []AudioHistorySubmission{}}
 	for _, r := range s.Segments {
 		out.Segments = append(out.Segments, TranscriptSegment{ID: r.ID, Track: r.Track, StartedAt: historyTime(r.StartedAt), Text: r.Text, Final: true, ProviderLabel: s.ProviderLabel})
 	}
@@ -295,7 +263,7 @@ func (c *Controller) LoadAudioHistory(id string) (AudioHistoryView, error) {
 	}
 	return out, nil
 }
-func (c *Controller) DeleteAudioHistory(id string) error {
+func (c *Controller) deleteAudioHistory(id string) error {
 	if c.deps.Audio.History == nil {
 		return errors.New("История аудио недоступна")
 	}

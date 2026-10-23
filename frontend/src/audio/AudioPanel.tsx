@@ -76,135 +76,159 @@ export function AudioPanel({
   };
   return (
     <section className="audio-panel" aria-label="Распознавание речи">
-      <div className="audio-provider">
-        {audio.providers.length > 1 && (
-          <label>
-            Распознаватель
-            <select
-              value={provider.id}
-              disabled={running || disabled}
-              onChange={(e) => actions.selectProvider(e.target.value)}
-            >
-              {audio.providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <span className={provider.local ? "privacy local" : "privacy cloud"}>
-          {provider.local
-            ? "Локально: звук не покидает компьютер"
-            : `Облако: звук отправляется в ${provider.vendor || provider.label}`}
+      <div className="audio-session-controls">
+        <span className="audio-session-state">
+          {provider.label} · {audio.listening ? "Слушаю" : ready ? "Готов" : "Не подключён"}
         </span>
-      </div>
-      {provider.needs_key && !ready && (
-        <form
-          className="audio-key"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (key.trim() === "") return;
-            actions.setKey(provider.id, key);
-            setKey("");
-          }}
-        >
-          <label>
-            {provider.key_label}
-            <input
-              type="password"
-              autoComplete="off"
-              value={key}
-              placeholder={audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
-              onChange={(e) => setKey(e.target.value)}
-            />
-          </label>
-          <span className="key-state">
-            {audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
-          </span>
-          <Button type="submit" disabled={key.trim() === "" || disabled}>
-            Сохранить ключ
-          </Button>
-          {audio.key_configured && (
-            <Button disabled={disabled} onClick={() => actions.deleteKey(provider.id)}>
-              Удалить ключ
-            </Button>
-          )}
-        </form>
-      )}
-      {!ready && (
-        <ul className="audio-checks">
-          {audio.checks.map((c) => (
-            <li key={c.id} className={`check ${c.state}`}>
-              <CheckIcon state={c.state} />
-              <span className="check-name">{c.label}</span>
-              <span className="check-message">{c.message}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="audio-controls">
-        {audio.busy === "" &&
-          provider.preparable &&
-          !allOk &&
-          audio.checks.length > 0 &&
-          !ready && (
-            <Button className="primary" disabled={!idle} onClick={actions.prepare}>
-              Подготовить
-            </Button>
-          )}
-        {audio.busy === "" && !ready && audio.checks.length > 0 && (
-          <Button disabled={!idle} onClick={actions.refresh}>
-            Проверить снова
-          </Button>
-        )}
-        {audio.busy === "" && allOk && (audio.model === "stopped" || audio.model === "failed") && (
-          <Button className="primary" disabled={!idle} onClick={actions.startModel}>
-            {provider.start_label}
-          </Button>
-        )}
-        {audio.busy === "" && ready && !audio.listening && (
-          <>
+        <div className="audio-controls">
+          {audio.busy === "" && ready && !audio.listening && (
             <Button className="primary" disabled={!idle} onClick={actions.startListening}>
               <Mic size={15} />
               Слушать
             </Button>
-            <Button disabled={!idle} onClick={actions.stopModel}>
-              {provider.stop_label}
+          )}
+          {audio.listening && (
+            <Button className="listening" disabled={disabled} onClick={actions.stopListening}>
+              <Square size={13} />
+              Остановить
             </Button>
-          </>
-        )}
-        {audio.listening && (
-          <Button className="listening" disabled={disabled} onClick={actions.stopListening}>
-            <Square size={13} />
-            Остановить
-          </Button>
-        )}
-        {audio.busy !== "" && (
-          <span className="audio-progress" aria-live="polite">
-            {audio.progress || "Выполняется…"}
-          </span>
-        )}
+          )}
+          {audio.busy !== "" && (
+            <span className="audio-progress" aria-live="polite">
+              {audio.progress || "Выполняется…"}
+            </span>
+          )}
+        </div>
       </div>
+      <details className="audio-settings">
+        <summary>Настройки распознавания</summary>
+        <div className="audio-settings-body">
+          <div className="audio-provider">
+            {audio.providers.length > 1 && (
+              <label>
+                Распознаватель
+                <select
+                  value={provider.id}
+                  disabled={running || disabled}
+                  onChange={(e) => actions.selectProvider(e.target.value)}
+                >
+                  {audio.providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <span className={provider.local ? "privacy local" : "privacy cloud"}>
+              {provider.local
+                ? "Локально: звук не покидает компьютер"
+                : `Облако: звук отправляется в ${provider.vendor || provider.label}`}
+            </span>
+          </div>
+          {provider.needs_key && !ready && (
+            <form
+              className="audio-key"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (key.trim() === "") return;
+                actions.setKey(provider.id, key);
+                setKey("");
+              }}
+            >
+              <label>
+                {provider.key_label}
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={key}
+                  placeholder={audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
+                  onChange={(e) => setKey(e.target.value)}
+                />
+              </label>
+              <span className="key-state">
+                {audio.key_configured ? "Ключ сохранён" : "Ключ не задан"}
+              </span>
+              <Button type="submit" disabled={key.trim() === "" || disabled}>
+                Сохранить ключ
+              </Button>
+              {audio.key_configured && (
+                <Button disabled={disabled} onClick={() => actions.deleteKey(provider.id)}>
+                  Удалить ключ
+                </Button>
+              )}
+            </form>
+          )}
+          {!ready && (
+            <ul className="audio-checks">
+              {audio.checks.map((c) => (
+                <li key={c.id} className={`check ${c.state}`}>
+                  <CheckIcon state={c.state} />
+                  <span className="check-name">{c.label}</span>
+                  <span className="check-message">{c.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="audio-controls">
+            {audio.busy === "" &&
+              provider.preparable &&
+              !allOk &&
+              audio.checks.length > 0 &&
+              !ready && (
+                <Button className="primary" disabled={!idle} onClick={actions.prepare}>
+                  Подготовить
+                </Button>
+              )}
+            {audio.busy === "" && !ready && audio.checks.length > 0 && (
+              <Button disabled={!idle} onClick={actions.refresh}>
+                Проверить снова
+              </Button>
+            )}
+            {audio.busy === "" &&
+              allOk &&
+              (audio.model === "stopped" || audio.model === "failed") && (
+                <Button className="primary" disabled={!idle} onClick={actions.startModel}>
+                  {provider.start_label}
+                </Button>
+              )}
+            {audio.busy === "" && ready && !audio.listening && (
+              <Button disabled={!idle} onClick={actions.stopModel}>
+                {provider.stop_label}
+              </Button>
+            )}
+          </div>
+          {audio.history_enabled && (
+            <p className="audio-note">
+              Окончательные фразы автоматически сохраняются в историю. Звук не записывается.
+            </p>
+          )}
+        </div>
+      </details>
       {audio.error && (
         <p className="audio-error" role="alert">
           {audio.error}
         </p>
       )}
       {audio.sources.length > 0 && (
-        <ul className="audio-sources">
-          {audio.sources.map((s) => (
-            <li key={s.track} className={s.active ? "active" : ""}>
-              {sourceLabel[s.track]}: {s.error || s.device || "—"}
-            </li>
-          ))}
-        </ul>
+        <details className="audio-source-details">
+          <summary>Источники аудио</summary>
+          <ul className="audio-sources">
+            {audio.sources.map((s) => (
+              <li key={s.track} className={s.active ? "active" : ""}>
+                {sourceLabel[s.track]}: {s.device || "—"}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
-      {audio.history_enabled && (
-        <p className="audio-note">
-          Окончательные фразы автоматически сохраняются в историю. Звук не записывается.
-        </p>
-      )}
+      {audio.sources
+        .filter((source) => source.error)
+        .map((source) => (
+          <p className="audio-error" role="alert" key={source.track}>
+            {sourceLabel[source.track]}: {source.error}
+          </p>
+        ))}
       {audio.history_error && (
         <p className="audio-error" role="alert">
           История: {audio.history_error}

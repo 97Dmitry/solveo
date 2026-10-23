@@ -94,25 +94,6 @@ func (a *App) CompleteAudioInsert(id, message string) {
 	}
 }
 
-func (a *AudioWindowApp) HistoryList() (core.AudioHistoryList, error) {
-	if a.client == nil {
-		return core.AudioHistoryList{}, errors.New("Окно аудио не подключено")
-	}
-	return a.client.HistoryList()
-}
-func (a *AudioWindowApp) HistorySession(id string) (core.AudioHistoryView, error) {
-	if a.client == nil {
-		return core.AudioHistoryView{}, errors.New("Окно аудио не подключено")
-	}
-	return a.client.HistorySession(id)
-}
-func (a *AudioWindowApp) DeleteHistory(id string) error {
-	if a.client == nil {
-		return errors.New("Окно аудио не подключено")
-	}
-	return a.client.Execute(audiowindow.Command{Name: "deleteHistory", HistoryID: id})
-}
-
 func (a *AudioWindowApp) HistoryForChat(id string) (core.AudioHistoryView, error) {
 	if a.client == nil {
 		return core.AudioHistoryView{}, errors.New("Окно аудио не подключено")
@@ -124,10 +105,4 @@ func (a *AudioWindowApp) DeleteChatHistory(id string) error {
 		return errors.New("Окно аудио не подключено")
 	}
 	return a.client.Execute(audiowindow.Command{Name: "deleteChatHistory", ChatID: id})
-}
-func (a *AudioWindowApp) AttachHistory(id, chatID string) error {
-	if a.client == nil {
-		return errors.New("Окно аудио не подключено")
-	}
-	return a.client.Execute(audiowindow.Command{Name: "attachHistory", HistoryID: id, ChatID: chatID})
 }
