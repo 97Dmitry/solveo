@@ -122,16 +122,13 @@ func TestCommandDispatchAndShowVersion(t *testing.T) {
 
 type fakeAudioHistoryReader struct{}
 
-func (fakeAudioHistoryReader) ListAudioHistory() (core.AudioHistoryList, error) {
-	return core.AudioHistoryList{Sessions: []core.AudioHistoryItem{{ID: "11111111111111111111111111111111", ProviderLabel: "Qwen"}}}, nil
-}
-func (fakeAudioHistoryReader) LoadAudioHistory(id string) (core.AudioHistoryView, error) {
+func (fakeAudioHistoryReader) LoadChatAudioHistory(id string) (core.AudioHistoryView, error) {
 	if id != "11111111111111111111111111111111" {
-		return core.AudioHistoryView{}, errors.New("unknown session")
+		return core.AudioHistoryView{}, errors.New("unknown chat")
 	}
-	return core.AudioHistoryView{ID: id, Segments: []core.TranscriptSegment{{ID: "final", Text: "сохранено", Final: true}}}, nil
+	return core.AudioHistoryView{ID: id, ChatID: id, Segments: []core.TranscriptSegment{{ID: "final", Text: "сохранено", Final: true}}}, nil
 }
-func TestHistoryRoutesReturnOnlyExplicitArchiveRequests(t *testing.T) {
+func TestHistoryRoutesReturnOnlyExplicitChatRequests(t *testing.T) {
 	s, err := New(func() View { return View{} }, func(context.Context, Command) error { return nil }, fakeAudioHistoryReader{})
 	if err != nil {
 		t.Fatal(err)
@@ -141,19 +138,21 @@ func TestHistoryRoutesReturnOnlyExplicitArchiveRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	list, err := c.HistoryList()
-	if err != nil || len(list.Sessions) != 1 {
-		t.Fatal(list, err)
-	}
-	doc, err := c.HistorySession(list.Sessions[0].ID)
+	doc, err := c.ChatHistory("11111111111111111111111111111111")
 	if err != nil || len(doc.Segments) != 1 || doc.Segments[0].Text != "сохранено" {
 		t.Fatal(doc, err)
 	}
-	if _, err := c.HistorySession("../../settings"); err == nil {
-		t.Fatal("invalid archive ID accepted")
+	if _, err := c.ChatHistory("../../settings"); err == nil {
+		t.Fatal("invalid chat accepted")
 	}
-}
-
-func (fakeAudioHistoryReader) LoadChatAudioHistory(id string) (core.AudioHistoryView, error) {
-	return core.AudioHistoryView{ID: id, ChatID: id, Segments: []core.TranscriptSegment{}}, nil
+	for _, path := range []string{"/history", "/history/11111111111111111111111111111111"} {
+		if err := c.request(path, nil, new(any)); err == nil {
+			t.Fatal("legacy endpoint accepted", path)
+		}
+	}
+	for _, name := range []string{"attachHistory", "deleteHistory"} {
+		if err := c.Execute(Command{Name: name}); err == nil {
+			t.Fatal("legacy command accepted", name)
+		}
+	}
 }

@@ -125,7 +125,7 @@ func TestChatAudioHistoryKeepsReadablePartsWhenUnrelatedFileIsBroken(t *testing.
 	}
 }
 
-func TestChatAudioHistoryAttachAndDeletePreserveOtherChats(t *testing.T) {
+func TestChatAudioHistoryDeletePreservesOtherChats(t *testing.T) {
 	archive := audiohistory.New(t.TempDir())
 	h := setupAudioHistory(t, archive)
 	first := h.c.Snapshot().ActiveChatID
@@ -133,15 +133,12 @@ func TestChatAudioHistoryAttachAndDeletePreserveOtherChats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, owner := range []string{first, second.ActiveChatID, ""} {
+	for i, owner := range []string{first, second.ActiveChatID, first} {
 		id := []string{"11111111111111111111111111111111", "22222222222222222222222222222222", "33333333333333333333333333333333"}[i]
 		now := time.Now().UTC()
 		if err := archive.Save(audiohistory.Session{ID: id, ChatID: owner, ProviderID: "qwen", ProviderLabel: "Qwen", StartedAt: now, EndedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := h.c.AttachAudioHistory("33333333333333333333333333333333", first); err != nil {
-		t.Fatal(err)
 	}
 	parts, err := archive.ForChat(first)
 	if err != nil || len(parts) != 2 {
@@ -157,5 +154,27 @@ func TestChatAudioHistoryAttachAndDeletePreserveOtherChats(t *testing.T) {
 	parts, err = archive.ForChat(second.ActiveChatID)
 	if err != nil || len(parts) != 1 {
 		t.Fatal("deleting one chat affected another", parts, err)
+	}
+}
+
+func TestChatAudioHistoryOldFormatLooksEmpty(t *testing.T) {
+	dir := t.TempDir()
+	old := []byte(`{"version":1,"summary":{},"session":{}}`)
+	path := filepath.Join(dir, "ffffffffffffffffffffffffffffffff.json")
+	if err := os.WriteFile(path, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := setupAudioHistory(t, audiohistory.New(dir))
+	id := h.c.Snapshot().ActiveChatID
+	doc, err := h.c.LoadChatAudioHistory(id)
+	if err != nil || doc.Notice != "" || len(doc.Segments) != 0 {
+		t.Fatal(doc, err)
+	}
+	if err := h.c.DeleteChatAudioHistory(id); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(old) {
+		t.Fatal("old file changed", err)
 	}
 }

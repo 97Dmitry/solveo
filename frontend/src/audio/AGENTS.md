@@ -12,4 +12,8 @@
 
 - AudioHistory loads the current chat timeline only on user action (forChat, no Start/Stop picker), reloads on ChatID changes, guards stale requests with an epoch, pages archive rows at 300 and passes readonly archive pages to AudioPanel. STT controls remain live; archive rows cannot send/insert/clear. onArchive(undefined) restores live mode on Эфир/deletion. Clearing live rows never deletes an archive.
 
-- Legacy records are a collapsed fallback loaded on demand. Attach requires an explicit action naming the target chat; never guess ownership from date or source. Display the archive Notice even when no readable rows remain.
+- Only current-chat history is exposed; no legacy list, per-part picker or assignment controls. Display the archive Notice for unreadable current-format parts even when no readable rows remain.
+
+- Archive text is the primary content: metadata (dates, counts, errors, submissions, devices, dictionary and deletion) stays under a collapsed «Метаданные» details. Show pagination only for multiple pages; readonly archive rows retain full text contrast.
+
+- Interview layout keeps listening/stop controls and transcript visible. Provider/key/model/Docker checks live in a collapsed settings details; devices and window explanations have separate collapsed details. Toggle state must survive 200 ms parent polling. Current source/controller/history errors stay outside collapsed sections.

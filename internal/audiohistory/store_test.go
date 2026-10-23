@@ -13,7 +13,7 @@ import (
 
 func sample() Session {
 	at := time.Date(2026, 10, 23, 12, 0, 0, 0, time.FixedZone("test", 10800))
-	s := Session{ID: strings.Repeat("a", 32), ProviderID: "gemini", ProviderLabel: "Gemini", StartedAt: at, EndedAt: at.Add(time.Minute), Dictionary: []string{"Solveo"}, Sources: []Source{{StreamID: "stream", Track: "system", Device: "default"}}, Errors: []Failure{{At: at, Track: "system", Message: "disconnected"}}, Submissions: []Submission{{At: at, ChatID: "chat", OperationID: "op", SegmentIDs: []string{"stream:0"}}}}
+	s := Session{ChatID: strings.Repeat("c", 32), ID: strings.Repeat("a", 32), ProviderID: "gemini", ProviderLabel: "Gemini", StartedAt: at, EndedAt: at.Add(time.Minute), Dictionary: []string{"Solveo"}, Sources: []Source{{StreamID: "stream", Track: "system", Device: "default"}}, Errors: []Failure{{At: at, Track: "system", Message: "disconnected"}}, Submissions: []Submission{{At: at, ChatID: "chat", OperationID: "op", SegmentIDs: []string{"stream:0"}}}}
 	for i := 0; i < 350; i++ {
 		s.Segments = append(s.Segments, Segment{ID: fmt.Sprintf("stream:%d", i), StreamID: "stream", Track: "system", Text: "hello", StartedAt: at, FinalAt: at.Add(2 * time.Minute)})
 	}
@@ -22,11 +22,11 @@ func sample() Session {
 func TestRoundTripAndClone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "new")
 	store := New(dir)
-	if list, err := store.List(); err != nil || len(list) != 0 {
+	if list, err := store.ForChat(strings.Repeat("c", 32)); err != nil || len(list) != 0 {
 		t.Fatalf("empty list %v %v", list, err)
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatal("List created directory")
+		t.Fatal("ForChat created directory")
 	}
 	s := sample()
 	if err := store.Save(s); err != nil {
@@ -48,7 +48,7 @@ func TestRoundTripAndClone(t *testing.T) {
 	if got.Segments[0].Text != "hello" || got.Sources[0].Device != "default" || got.Dictionary[0] != "Solveo" || got.Errors[0].Message != "disconnected" || got.Submissions[0].SegmentIDs[0] != "stream:0" {
 		t.Fatal("clone aliases original")
 	}
-	list, err := store.List()
+	list, err := store.ForChat(strings.Repeat("c", 32))
 	if err != nil || len(list) != 1 || list[0].SegmentCount != 350 {
 		t.Fatalf("list %v %v", list, err)
 	}
@@ -119,7 +119,7 @@ func TestValidationAndPaths(t *testing.T) {
 		t.Fatal("premature source association requirement", err)
 	}
 }
-func TestListReadsHeaderAndSkipsInvalid(t *testing.T) {
+func TestForChatReadsHeaderAndSkipsInvalid(t *testing.T) {
 	dir := t.TempDir()
 	st := New(dir)
 	s := sample()
@@ -138,7 +138,7 @@ func TestListReadsHeaderAndSkipsInvalid(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, s.ID+".json"), append(data[:pos], []byte(`"session": BROKEN`)...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	list, err := st.List()
+	list, err := st.ForChat(strings.Repeat("c", 32))
 	if err != nil || len(list) != 1 {
 		t.Fatalf("read body: %v %v", list, err)
 	}
@@ -146,7 +146,7 @@ func TestListReadsHeaderAndSkipsInvalid(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, badID+".json"), []byte(`{"version":3,"summary":{}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	list, err = st.List()
+	list, err = st.ForChat(strings.Repeat("c", 32))
 	if err == nil || len(list) != 1 || strings.Contains(err.Error(), dir) {
 		t.Fatalf("partial list or sanitized error: %v %v", list, err)
 	}
@@ -211,34 +211,6 @@ func TestExportedValidationTextBounds(t *testing.T) {
 	s.Submissions = nil
 	if err := Validate(s); err != nil {
 		t.Fatal("UI timestamp truncation rejected", err)
-	}
-}
-func TestListNewest200ByMtime(t *testing.T) {
-	dir := t.TempDir()
-	st := New(dir)
-	base := sample()
-	base.Segments = nil
-	base.Submissions = nil
-	for i := 0; i < 201; i++ {
-		s := base
-		s.ID = fmt.Sprintf("%032x", i)
-		s.StartedAt = s.StartedAt.Add(time.Duration(i) * time.Second)
-		s.EndedAt = time.Time{}
-		s.Errors = nil
-		if err := st.Save(s); err != nil {
-			t.Fatal(err)
-		}
-		at := time.Unix(int64(i), 0)
-		if err := os.Chtimes(filepath.Join(dir, s.ID+".json"), at, at); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got, err := st.List()
-	if err != nil || len(got) != 200 {
-		t.Fatalf("list count %d %v", len(got), err)
-	}
-	if got[0].ID != fmt.Sprintf("%032x", 200) || got[199].ID != fmt.Sprintf("%032x", 1) {
-		t.Fatal("incorrect selection or ordering")
 	}
 }
 func TestRootRejectsSymlinkEscape(t *testing.T) {
@@ -336,169 +308,101 @@ func TestChatAssociationAndVersionTwo(t *testing.T) {
 	if err := Validate(s); err == nil {
 		t.Fatal("accepted invalid chat")
 	}
-	legacy := sample()
-	legacy.Submissions = nil
-	if Association(legacy) != "" {
-		t.Fatal("guessed empty legacy")
-	}
-	legacy.Submissions = []Submission{{ChatID: strings.Repeat("c", 32)}, {ChatID: strings.Repeat("c", 32)}}
-	if Association(legacy) != strings.Repeat("c", 32) {
-		t.Fatal("lost unique legacy association")
-	}
-	legacy.Submissions[1].ChatID = strings.Repeat("d", 32)
-	if Association(legacy) != "" {
-		t.Fatal("guessed ambiguous legacy")
-	}
-	legacy.Submissions[1].ChatID = "invalid"
-	if Association(legacy) != "" {
-		t.Fatal("ignored invalid legacy chat")
-	}
-	legacy.ChatID = strings.Repeat("e", 32)
-	if Association(legacy) != legacy.ChatID {
-		t.Fatal("explicit association lost precedence")
-	}
 }
-func TestForChatAllPartsAndLegacyWithoutRewriting(t *testing.T) {
-	dir := t.TempDir()
-	st := New(dir)
-	chat := strings.Repeat("c", 32)
+func TestForChatAllParts(t *testing.T) {
+	st := New(t.TempDir())
 	base := sample()
-	base.Segments = nil
-	base.Errors = nil
-	base.Submissions = nil
+	base.Segments, base.Errors, base.Submissions = nil, nil, nil
 	base.EndedAt = time.Time{}
 	for i := 0; i < 205; i++ {
 		s := base
 		s.ID = fmt.Sprintf("%032x", i)
-		s.ChatID = chat
 		s.StartedAt = s.StartedAt.Add(time.Duration(i) * time.Second)
 		if err := st.Save(s); err != nil {
 			t.Fatal(err)
 		}
 	}
-	writeLegacy := func(index int, chatIDs ...string) []byte {
-		t.Helper()
-		s := sample()
-		s.ID = fmt.Sprintf("%032x", index)
-		s.Submissions = nil
-		for _, id := range chatIDs {
-			s.Submissions = append(s.Submissions, Submission{At: s.StartedAt, ChatID: id, OperationID: "op", SegmentIDs: []string{s.Segments[0].ID}})
-		}
-		normalize(&s)
-		raw, err := json.Marshal(document{Version: 1, Summary: summarize(s), Session: s})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = os.WriteFile(filepath.Join(dir, s.ID+".json"), raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-		return raw
-	}
-	before := writeLegacy(300, chat, chat)
-	writeLegacy(301)
-	writeLegacy(302, chat, strings.Repeat("d", 32))
-	rows, err := st.ForChat(chat)
-	if err != nil || len(rows) != 206 {
-		t.Fatalf("parts: %d %v", len(rows), err)
+	rows, err := st.ForChat(base.ChatID)
+	if err != nil || len(rows) != 205 {
+		t.Fatal(len(rows), err)
 	}
 	for i := 1; i < len(rows); i++ {
 		if rows[i].StartedAt.Before(rows[i-1].StartedAt) {
 			t.Fatal("not chronological")
 		}
 	}
-	legacyID := fmt.Sprintf("%032x", 300)
-	loaded, err := st.Load(legacyID)
-	if err != nil || loaded.ChatID != "" || Association(loaded) != chat {
-		t.Fatalf("legacy read: %v %v", loaded.ChatID, err)
-	}
-	after, _ := os.ReadFile(filepath.Join(dir, legacyID+".json"))
-	if !reflect.DeepEqual(before, after) {
-		t.Fatal("legacy rewritten")
-	}
-	if _, err = st.ForChat("../invalid"); err == nil {
-		t.Fatal("accepted invalid chat query")
-	}
-	if err = os.WriteFile(filepath.Join(dir, strings.Repeat("f", 32)+".json"), []byte(`{"version":3}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	rows, err = st.ForChat(chat)
-	if err == nil || len(rows) != 206 {
-		t.Fatalf("partial results: %d %v", len(rows), err)
+	if _, err := st.ForChat("../invalid"); err == nil {
+		t.Fatal("accepted invalid chat")
 	}
 }
 
-func TestAssignChatPreservesLegacyContentAndResolvesAssociation(t *testing.T) {
-	dir := t.TempDir()
-	st := New(dir)
-	session := sample()
-	session.Submissions = nil
-	normalize(&session)
-	raw, err := json.Marshal(document{Version: 1, Summary: summarize(session), Session: session})
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, session.ID+".json")
-	if err = os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	chat := strings.Repeat("c", 32)
-	for _, args := range [][2]string{{"../invalid", chat}, {session.ID, "bad-chat"}} {
-		if err = st.AssignChat(args[0], args[1]); err == nil {
-			t.Fatal("accepted invalid ID")
-		}
-		after, _ := os.ReadFile(path)
-		if !reflect.DeepEqual(raw, after) {
-			t.Fatal("invalid assignment changed file")
-		}
-	}
-	if err = st.AssignChat(session.ID, chat); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := st.Load(session.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := Clone(session)
-	expected.ChatID = chat
-	if !reflect.DeepEqual(loaded, expected) {
-		t.Fatal("assignment changed other content")
-	}
-	rows, err := st.ForChat(chat)
-	if err != nil || len(rows) != 1 || rows[0].ChatID != chat {
-		t.Fatalf("assigned query: %v %v", rows, err)
-	}
-	after, _ := os.ReadFile(path)
-	var doc document
-	if err = json.Unmarshal(after, &doc); err != nil || doc.Version != 2 {
-		t.Fatal("assignment did not write schema2", err)
-	}
-	if err = st.AssignChat(session.ID, chat); err != nil {
-		t.Fatal("idempotent assignment", err)
-	}
-	if err = st.AssignChat(session.ID, strings.Repeat("d", 32)); err == nil {
-		t.Fatal("reassigned explicit chat")
-	}
-	unchanged, _ := os.ReadFile(path)
-	if !reflect.DeepEqual(after, unchanged) {
-		t.Fatal("reassignment changed bytes")
+func TestOldFormatsAreIgnoredWithoutRewriting(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			st := New(t.TempDir())
+			old := sample()
+			old.ChatID = ""
+			old.Submissions[0].ChatID = strings.Repeat("c", 32)
+			normalize(&old)
+			raw, err := json.Marshal(document{Version: version, Summary: summarize(old), Session: old})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(st.dir, old.ID+".json")
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := st.ForChat(strings.Repeat("c", 32))
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("old history shown or warned: %v %v", rows, err)
+			}
+			if _, err := st.Load(old.ID); err == nil {
+				t.Fatal("old format still readable")
+			}
+			current := sample()
+			current.ChatID = strings.Repeat("c", 32)
+			if err := st.Save(current); err == nil {
+				t.Fatal("old document overwritten")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !reflect.DeepEqual(raw, after) {
+				t.Fatal("old file changed", err)
+			}
+			current.ID = strings.Repeat("b", 32)
+			if err := st.Save(current); err != nil {
+				t.Fatal(err)
+			}
+			rows, err = st.ForChat(current.ChatID)
+			if err != nil || len(rows) != 1 || rows[0].ID != current.ID {
+				t.Fatal("old records interfered with new history", rows, err)
+			}
+		})
 	}
 }
-func TestAssignChatAllowsExplicitResolutionOfAmbiguousLegacy(t *testing.T) {
-	st := New(t.TempDir())
+func TestChatIDIsRequired(t *testing.T) {
 	s := sample()
-	s.Submissions = []Submission{{At: s.StartedAt, ChatID: strings.Repeat("a", 32), OperationID: "one", SegmentIDs: []string{s.Segments[0].ID}}, {At: s.StartedAt, ChatID: strings.Repeat("b", 32), OperationID: "two", SegmentIDs: []string{s.Segments[0].ID}}}
-	if err := st.Save(s); err != nil {
+	s.ChatID = ""
+	if err := Validate(s); err == nil {
+		t.Fatal("accepted history without a chat")
+	}
+}
+
+func TestVersionOneWithChatIDIsIgnored(t *testing.T) {
+	st := New(t.TempDir())
+	old := sample()
+	normalize(&old)
+	raw, err := json.Marshal(document{Version: 1, Summary: summarize(old), Session: old})
+	if err != nil {
 		t.Fatal(err)
 	}
-	chat := strings.Repeat("c", 32)
-	if err := st.AssignChat(s.ID, chat); err != nil {
+	if err := os.WriteFile(filepath.Join(st.dir, old.ID+".json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.Load(s.ID)
-	if err != nil || Association(got) != chat || len(got.Submissions) != 2 {
-		t.Fatalf("resolution: %v %v", got.ChatID, err)
+	rows, err := st.ForChat(old.ChatID)
+	if err != nil || len(rows) != 0 {
+		t.Fatal("v1 was not ignored", rows, err)
 	}
-	if err := st.AssignChat(strings.Repeat("f", 32), chat); err == nil {
-		t.Fatal("assignment created absent session")
+	if _, err := st.Load(old.ID); err == nil {
+		t.Fatal("v1 is readable")
 	}
 }

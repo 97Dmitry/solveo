@@ -52,6 +52,7 @@ it("checks readiness when opened without status and offers preparation for missi
       ],
     }),
   );
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.getByText("Образ не собран")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Подготовить" }));
@@ -60,6 +61,7 @@ it("checks readiness when opened without status and offers preparation for missi
 
 it("starts the model only when all checks are ok", async () => {
   const a = renderPanel(audio({ checks: allOk }));
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.queryByRole("button", { name: "Подготовить" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Запустить модель" }));
   expect(a.startModel).toHaveBeenCalled();
@@ -82,6 +84,7 @@ it("toggles listening and unloads the model only when not listening", async () =
   const a = renderPanel(audio({ checks: allOk, model: "ready" }));
   await userEvent.click(screen.getByRole("button", { name: "Слушать" }));
   expect(a.startListening).toHaveBeenCalled();
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   await userEvent.click(screen.getByRole("button", { name: "Выгрузить модель" }));
   expect(a.stopModel).toHaveBeenCalled();
   cleanup();
@@ -171,6 +174,7 @@ const providers = [
 
 it("switches the provider only while recognition is stopped", async () => {
   const a = renderPanel(audio({ providers }));
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   await userEvent.selectOptions(screen.getByLabelText("Распознаватель"), "grok");
   expect(a.selectProvider).toHaveBeenCalledWith("grok");
   expect(screen.getByText(/Локально: звук не покидает компьютер/)).toBeTruthy();
@@ -179,7 +183,7 @@ it("switches the provider only while recognition is stopped", async () => {
   expect(screen.getByLabelText("Распознаватель").hasAttribute("disabled")).toBe(true);
 });
 
-it("marks a cloud provider and takes button wording from it", () => {
+it("marks a cloud provider and takes button wording from it", async () => {
   renderPanel(
     audio({
       provider: grok,
@@ -188,6 +192,7 @@ it("marks a cloud provider and takes button wording from it", () => {
       checks: [{ id: "key", label: "Ключ xAI", state: "ok", message: "Ключ задан" }],
     }),
   );
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.getByText("Облако: звук отправляется в xAI")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Подключить" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
@@ -196,6 +201,7 @@ it("marks a cloud provider and takes button wording from it", () => {
 
 it("stores the key without ever showing the saved one", async () => {
   const a = renderPanel(audio({ provider: grok, providers, key_configured: true }));
+  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.getByText("Ключ сохранён")).toBeTruthy();
   const field = screen.getByLabelText<HTMLInputElement>("API-ключ xAI");
   expect(field.value).toBe("");
@@ -206,4 +212,26 @@ it("stores the key without ever showing the saved one", async () => {
   expect(field.value).toBe("");
   await userEvent.click(screen.getByRole("button", { name: "Удалить ключ" }));
   expect(a.deleteKey).toHaveBeenCalledWith("grok");
+});
+
+it("keeps setup collapsed while listening without hiding stop or source failures", async () => {
+  const a = renderPanel(
+    audio({
+      model: "ready",
+      listening: true,
+      checks: allOk,
+      sources: [{ track: "mic", device: "Микрофон", active: false, error: "Потерян микрофон" }],
+    }),
+  );
+  const setup = screen.getByText("Настройки распознавания").closest("details");
+  expect(setup?.hasAttribute("open")).toBe(false);
+  expect(screen.getByText(/Потерян микрофон/).closest("details")).toBeNull();
+  const stop = screen.getByRole("button", { name: "Остановить" });
+  expect(stop.closest("details")).toBeNull();
+  await userEvent.click(screen.getByText("Настройки распознавания"));
+  expect(setup?.hasAttribute("open")).toBe(true);
+  await userEvent.click(screen.getByText("Настройки распознавания"));
+  expect(setup?.hasAttribute("open")).toBe(false);
+  await userEvent.click(stop);
+  expect(a.stopListening).toHaveBeenCalled();
 });

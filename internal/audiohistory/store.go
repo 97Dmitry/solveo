@@ -1,4 +1,4 @@
-// Package audiohistory persists text-only ASR sessions independently of chats.
+// Package audiohistory persists text-only ASR parts bound to chats.
 package audiohistory
 
 import (
@@ -27,6 +27,8 @@ const (
 var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 var directoryLocks sync.Map
 
+var errUnsupportedFormat = errors.New("unsupported audio history format")
+
 type Segment struct {
 	ID        string    `json:"id"`
 	StreamID  string    `json:"stream_id"`
@@ -52,7 +54,7 @@ type Submission struct {
 	SegmentIDs  []string  `json:"segment_ids"`
 }
 type Session struct {
-	ChatID        string       `json:"chat_id,omitempty"`
+	ChatID        string       `json:"chat_id"`
 	ID            string       `json:"id"`
 	ProviderID    string       `json:"provider_id"`
 	ProviderLabel string       `json:"provider_label"`
@@ -65,7 +67,7 @@ type Session struct {
 	Submissions   []Submission `json:"submissions"`
 }
 type Summary struct {
-	ChatID        string    `json:"chat_id,omitempty"`
+	ChatID        string    `json:"chat_id"`
 	ID            string    `json:"id"`
 	ProviderID    string    `json:"provider_id"`
 	ProviderLabel string    `json:"provider_label"`
@@ -174,7 +176,7 @@ func load(root *os.Root, id string) (Session, error) {
 	}
 	normalize(&doc.Session)
 	normalizeSummary(&doc.Summary)
-	if (doc.Version != 1 && doc.Version != 2) || doc.Session.ID != id {
+	if doc.Version != 2 || doc.Session.ID != id {
 		return Session{}, failure("документ повреждён или имеет неподдерживаемую версию")
 	}
 	if err = Validate(doc.Session); err != nil {
@@ -204,77 +206,6 @@ func (s *Store) Delete(id string) error {
 	}
 	return nil
 }
-func (s *Store) List() ([]Summary, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	result := []Summary{}
-	root, err := os.OpenRoot(s.dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return result, nil
-	}
-	if err != nil {
-		return result, failure("не удалось открыть хранилище")
-	}
-	defer root.Close()
-	dir, err := root.Open(".")
-	if err != nil {
-		return result, failure("не удалось прочитать список сеансов")
-	}
-	defer func() { _ = dir.Close() }()
-	entries, err := dir.ReadDir(-1)
-	if err != nil {
-		return result, failure("не удалось прочитать список сеансов")
-	}
-	type candidate struct {
-		name  string
-		mtime time.Time
-	}
-	candidates := make([]candidate, 0, len(entries))
-	invalid := false
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") || !idPattern.MatchString(strings.TrimSuffix(name, ".json")) {
-			continue
-		}
-		info, e := entry.Info()
-		if e != nil {
-			invalid = true
-			continue
-		}
-		if !info.Mode().IsRegular() {
-			invalid = true
-			continue
-		}
-		candidates = append(candidates, candidate{name, info.ModTime()})
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].mtime.Equal(candidates[j].mtime) {
-			return candidates[i].name < candidates[j].name
-		}
-		return candidates[i].mtime.After(candidates[j].mtime)
-	})
-	if len(candidates) > 200 {
-		candidates = candidates[:200]
-	}
-	for _, candidate := range candidates {
-		sum, e := readSummary(root, candidate.name)
-		if e != nil {
-			invalid = true
-			continue
-		}
-		result = append(result, sum)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].StartedAt.Equal(result[j].StartedAt) {
-			return result[i].ID < result[j].ID
-		}
-		return result[i].StartedAt.After(result[j].StartedAt)
-	})
-	if invalid {
-		return result, failure("не удалось прочитать заголовки некоторых сеансов")
-	}
-	return result, nil
-}
 func readSummary(root *os.Root, name string) (Summary, error) {
 	f, err := root.Open(name)
 	if err != nil {
@@ -296,7 +227,13 @@ func readSummary(root *os.Root, name string) (Summary, error) {
 		return Summary{}, failure("заголовок повреждён")
 	}
 	var version int
-	if decoder.Decode(&version) != nil || (version != 1 && version != 2) {
+	if decoder.Decode(&version) != nil {
+		return Summary{}, failure("заголовок повреждён")
+	}
+	if version == 1 {
+		return Summary{}, errUnsupportedFormat
+	}
+	if version != 2 {
 		return Summary{}, failure("версия документа не поддерживается")
 	}
 	key, err = decoder.Token()
@@ -308,6 +245,9 @@ func readSummary(root *os.Root, name string) (Summary, error) {
 		return Summary{}, failure("краткие сведения о сеансе повреждены")
 	}
 	normalizeSummary(&sum)
+	if sum.ChatID == "" {
+		return Summary{}, errUnsupportedFormat
+	}
 	if sum.ID+".json" != name || !validSummary(sum) {
 		return Summary{}, failure("краткие сведения о сеансе повреждены")
 	}
@@ -336,7 +276,7 @@ func validText(s string, max int, required bool) bool {
 }
 func validTrack(track string) bool { return track == "system" || track == "mic" }
 func validSummary(s Summary) bool {
-	return (s.ChatID == "" || idPattern.MatchString(s.ChatID)) && idPattern.MatchString(s.ID) && validText(s.ProviderID, 256, true) && validText(s.ProviderLabel, 512, true) && !s.StartedAt.IsZero() && (s.EndedAt.IsZero() || !s.EndedAt.Before(s.StartedAt)) && s.SegmentCount >= 0 && s.SegmentCount <= MaxSegments
+	return idPattern.MatchString(s.ChatID) && idPattern.MatchString(s.ID) && validText(s.ProviderID, 256, true) && validText(s.ProviderLabel, 512, true) && !s.StartedAt.IsZero() && (s.EndedAt.IsZero() || !s.EndedAt.Before(s.StartedAt)) && s.SegmentCount >= 0 && s.SegmentCount <= MaxSegments
 }
 
 // Validate checks whether a text-only session can be persisted.
@@ -449,31 +389,7 @@ func arraySize[T any](items []T) int {
 	return size
 }
 
-// Association returns the explicitly assigned chat, or an unambiguous legacy
-// association inferred from every submission. It never changes the document.
-func Association(session Session) string {
-	if session.ChatID != "" {
-		if idPattern.MatchString(session.ChatID) {
-			return session.ChatID
-		}
-		return ""
-	}
-	chatID := ""
-	for _, submission := range session.Submissions {
-		if !idPattern.MatchString(submission.ChatID) {
-			return ""
-		}
-		if chatID != "" && chatID != submission.ChatID {
-			return ""
-		}
-		chatID = submission.ChatID
-	}
-	return chatID
-}
-
-// ForChat reads all matching parts chronologically. Explicit associations need
-// only a bounded header; unassigned legacy parts require their body to infer a
-// unique association. Unlike List, this query deliberately has no 200-part cap.
+// ForChat reads all matching parts chronologically using bounded headers.
 func (s *Store) ForChat(chatID string) ([]Summary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -511,20 +427,14 @@ func (s *Store) ForChat(chatID string) ([]Summary, error) {
 			continue
 		}
 		sum, e := readSummary(root, name)
+		if errors.Is(e, errUnsupportedFormat) {
+			continue
+		}
 		if e != nil {
 			invalid = true
 			continue
 		}
-		association := sum.ChatID
-		if association == "" {
-			session, e := load(root, id)
-			if e != nil {
-				invalid = true
-				continue
-			}
-			association = Association(session)
-		}
-		if association == chatID {
+		if sum.ChatID == chatID {
 			result = append(result, sum)
 		}
 	}
@@ -540,35 +450,6 @@ func (s *Store) ForChat(chatID string) ([]Summary, error) {
 	return result, nil
 }
 
-// AssignChat explicitly associates an existing unassigned part with a chat.
-// Ordinary Save deliberately cannot change this immutable field. Assignment
-// preserves all other loaded content and can resolve ambiguous legacy parts.
-func (s *Store) AssignChat(id, chatID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !idPattern.MatchString(id) || !idPattern.MatchString(chatID) {
-		return failure("некорректный идентификатор сеанса или чата")
-	}
-	root, err := os.OpenRoot(s.dir)
-	if err != nil {
-		return failure("не удалось открыть хранилище")
-	}
-	defer root.Close()
-	session, err := load(root, id)
-	if err != nil {
-		return failure("не удалось прочитать сеанс")
-	}
-	if session.ChatID == chatID {
-		return nil
-	}
-	if session.ChatID != "" {
-		return failure("сеанс уже привязан к другому чату")
-	}
-	session = Clone(session)
-	session.ChatID = chatID
-	return replaceAssigned(root, session)
-}
-
 func encodeDocument(session Session) ([]byte, error) {
 	if err := Validate(session); err != nil {
 		return nil, err
@@ -578,16 +459,4 @@ func encodeDocument(session Session) ([]byte, error) {
 		return nil, failure("документ превышает допустимый размер")
 	}
 	return data, nil
-}
-
-// The caller holds the directory lock and has loaded the existing identity.
-func replaceAssigned(root *os.Root, session Session) error {
-	data, err := encodeDocument(session)
-	if err != nil {
-		return err
-	}
-	if err = storage.Replace(root, session.ID+".json", data); err != nil {
-		return failure("не удалось привязать сеанс к чату")
-	}
-	return nil
 }

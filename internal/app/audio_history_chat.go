@@ -95,7 +95,7 @@ func (c *Controller) LoadChatAudioHistory(chatID string) (AudioHistoryView, erro
 	bytes := 0
 	unfinished := false
 	for _, part := range parts {
-		doc, err := c.LoadAudioHistory(part.ID)
+		doc, err := c.loadAudioHistory(part.ID)
 		if err != nil {
 			out.Notice = "Некоторые записи чата не удалось прочитать; история показана не полностью"
 			continue
@@ -173,35 +173,12 @@ func (c *Controller) DeleteChatAudioHistory(chatID string) error {
 		return err
 	}
 	for _, part := range parts {
-		if err := c.DeleteAudioHistory(part.ID); err != nil {
+		if err := c.deleteAudioHistory(part.ID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func (c *Controller) AttachAudioHistory(id, chatID string) error {
-	if c.deps.Audio.History == nil {
-		return errors.New("История аудио недоступна")
-	}
-	h := &c.audio.history
-	h.persist.writeMu.Lock()
-	defer h.persist.writeMu.Unlock()
-	c.audio.mu.Lock()
-	doc := h.docs[id]
-	busy := id == h.current || (doc != nil && (doc.pins > 0 || doc.saved != doc.revision))
-	c.audio.mu.Unlock()
-	if busy {
-		return errors.New("Запись ещё используется; сначала остановите прослушивание")
-	}
-	if err := c.deps.Audio.History.AssignChat(id, chatID); err != nil {
-		return err
-	}
-	c.audio.mu.Lock()
-	delete(h.docs, id)
-	c.audio.mu.Unlock()
-	return nil
-}
-
 func historyBefore(a, b string) bool {
 	if b == "" {
 		return false

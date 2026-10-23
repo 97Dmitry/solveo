@@ -11,23 +11,13 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-.history-picker,
+.history-toolbar,
 .history-pagination,
 .history-delete {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-.history-picker label {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-.history-picker select {
-  max-width: 100%;
 }
 .history-delete p {
   flex-basis: 100%;
@@ -38,4 +28,12 @@
 .archive-title {
   font-size: 1em;
   margin: 8px 0;
+}
+
+.history-metadata > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.history-metadata[open] > :not(summary) {
+  margin-top: 8px;
 }
