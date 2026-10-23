@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--language", default=None, help="forced language name, e.g. Russian; default auto")
     parser.add_argument("--context", choices=("none", "manifest"), default="manifest")
     parser.add_argument("--context-template", choices=CONTEXT_TEMPLATES, default="instruction")
+    parser.add_argument("--pronunciations", type=Path, help="optional canonical-term to pronunciation JSON; use the worker's pronunciations.json to reproduce its context")
     parser.add_argument("--max-new-tokens", type=int, default=256, help="offline transcribe() token cap")
     parser.add_argument("--step-max-tokens", type=int, default=32, help="streaming decode step token cap")
     parser.add_argument("--max-model-len", type=int, default=2048)
@@ -87,13 +88,23 @@ def main(argv: list[str] | None = None) -> int:
         phrases = m.context_phrases if args.context == "manifest" else ()
     else:
         samples = [(p.name, p) for p in args.audio]
+    pronunciations = None
+    pronunciation_digest = None
+    if args.pronunciations:
+        raw = args.pronunciations.read_bytes()
+        pronunciations = json.loads(raw)
+        if not isinstance(pronunciations, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in pronunciations.items()):
+            parser.error("pronunciations must be a JSON object of string keys and values")
+        pronunciation_digest = hashlib.sha256(raw).hexdigest()
     context = build_context(phrases, args.context_template)
+    final_context = build_context(phrases, args.context_template, pronunciations=pronunciations)
     cfg = RunConfig(
         chunk_sec=args.chunk_sec,
         unfixed_chunk_num=args.unfixed_chunk_num,
         unfixed_token_num=args.unfixed_token_num,
         language=args.language,
         context=context,
+        final_context=final_context,
         step_max_tokens=args.step_max_tokens,
         offline_max_tokens=args.max_new_tokens,
     )
@@ -139,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
             "cold_load_sec": cold_load,
             "warmup_sec": warmup,
             "context_sha256": hashlib.sha256(context.encode()).hexdigest(),
+            "final_context_sha256": hashlib.sha256(final_context.encode()).hexdigest(),
             "context_phrases": len(phrases),
             "config": {
                 "chunk_sec": cfg.chunk_sec,
@@ -149,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                 "max_new_tokens": args.max_new_tokens,
                 "step_max_tokens": args.step_max_tokens,
                 "context_template": args.context_template,
+                "pronunciations_sha256": pronunciation_digest,
                 "max_model_len": args.max_model_len,
                 "gpu_memory_utilization": args.gpu_memory_utilization,
                 "max_num_seqs": args.max_num_seqs,

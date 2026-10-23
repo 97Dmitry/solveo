@@ -707,6 +707,7 @@ export namespace chat {
 	    }
 	}
 	export class Message {
+	    from_transcript?: boolean;
 	    reply_to_id?: string;
 	    reply_to_kind?: string;
 	    answers?: Answer[];
@@ -725,6 +726,7 @@ export namespace chat {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.from_transcript = source["from_transcript"];
 	        this.reply_to_id = source["reply_to_id"];
 	        this.reply_to_kind = source["reply_to_kind"];
 	        this.answers = this.convertValues(source["answers"], Answer);

@@ -730,8 +730,11 @@ func (c *Controller) StopListening() error {
 		defer c.workers.Done()
 		for _, stream := range streams {
 			flushCtx, cancel := context.WithTimeout(ctx, audioFlushTimeout)
-			_ = session.Flush(flushCtx, stream)
+			err := session.Flush(flushCtx, stream)
 			cancel()
+			if err != nil && ctx.Err() == nil {
+				c.audioStreamFailed(stt.StreamError{StreamID: stream, Message: "Не удалось завершить распознавание: " + err.Error()})
+			}
 			_ = session.CloseStream(stream)
 		}
 	}()

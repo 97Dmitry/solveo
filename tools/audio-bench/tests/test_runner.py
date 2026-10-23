@@ -1,4 +1,7 @@
+import importlib.util
+import json
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -81,6 +84,11 @@ def run(seconds, finish_reason="stop", **config):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_only_offline_pass_uses_final_context(self):
+        asr, _ = run(2.5, context="preview-dictionary", final_context="final-hints")
+        self.assertEqual(asr.states[0].context, "preview-dictionary")
+        self.assertEqual(asr.offline[0][2], "final-hints")
+
     def test_transport_frames_aggregate_to_model_chunk(self):
         _, result = run(2.5)
         utt = result["utterances"][0]
@@ -119,6 +127,28 @@ class RunnerTest(unittest.TestCase):
 
 
 class ContextTest(unittest.TestCase):
+    def test_worker_and_measurement_use_identical_context(self):
+        root = Path(__file__).resolve().parents[3]
+        source = root / "internal/stt/worker/solveo_stt/qwen.py"
+        spec = importlib.util.spec_from_file_location("worker_qwen", source)
+        worker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(worker)
+        hints = json.loads(source.with_name("pronunciations.json").read_text(encoding="utf-8"))
+        cases = [(), tuple(hints) + ("MySDK",), ("GoRoutine", "JWT"), ("x" * 128,) * 30 + ("goroutine", "JWT")]
+        for phrases in cases:
+            with self.subTest(phrases=phrases):
+                self.assertEqual(worker.build_context(list(phrases)), runner.build_context(phrases, pronunciations=hints))
+
+    def test_optional_pronunciations_keep_canonical_names_and_custom_terms(self):
+        text = runner.build_context(("GoRoutine", "MySDK"), pronunciations={"goroutine": "горутина"})
+        self.assertTrue(text.endswith("GoRoutine (pronunciation: горутина)\nMySDK"))
+
+    def test_optional_hints_fit_without_losing_dictionary_entries(self):
+        phrases = ("x" * 128,) * 30 + ("goroutine", "JWT")
+        text = runner.build_context(phrases, pronunciations={"goroutine": "я" * 100, "JWT": "я" * 100})
+        self.assertLessEqual(len(text.encode("utf-8")), runner.MAX_CONTEXT_BYTES)
+        self.assertTrue(text.endswith("\ngoroutine\nJWT"))
+
     def test_empty_dictionary_gives_empty_context(self):
         self.assertEqual(runner.build_context(()), "")
 

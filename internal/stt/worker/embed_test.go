@@ -8,7 +8,7 @@ import (
 )
 
 func TestContextHasBuildFiles(t *testing.T) {
-	for _, name := range []string{"Dockerfile", "requirements.lock", "solveo_stt/__init__.py", "solveo_stt/__main__.py", "solveo_stt/server.py"} {
+	for _, name := range []string{"Dockerfile", "requirements.lock", "solveo_stt/__init__.py", "solveo_stt/__main__.py", "solveo_stt/server.py", "solveo_stt/pronunciations.json"} {
 		if _, err := fs.Stat(Context, name); err != nil {
 			t.Fatalf("%s missing from build context: %v", name, err)
 		}

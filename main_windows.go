@@ -35,6 +35,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/settings"
 	"github.com/97Dmitry/solveo/internal/stt"
+	"github.com/97Dmitry/solveo/internal/stt/gemini"
 	"github.com/97Dmitry/solveo/internal/stt/grok"
 	"github.com/97Dmitry/solveo/internal/stt/qwen"
 	"github.com/97Dmitry/solveo/internal/workstate"
@@ -150,12 +151,13 @@ func run() error {
 	defer func() { _ = host.Close() }()
 	// Codex keeps Solveo's own state, login and sessions beside the archive.
 	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
-	// Local speech recognition: Docker Desktop's CLI drives the solveo-stt container; weights stay beside the archive.
+	// Speech providers share capture and transcript state; cloud keys live in Credential Manager.
 	keys := secrets.NewCredentialManager()
 	speech := core.AudioDeps{
 		Providers: []stt.Provider{
 			qwen.New(filepath.Join(dir, "models"), os.Getenv),
 			grok.New(func() (string, bool, error) { return keys.Get(stt.KeyName("grok")) }),
+			gemini.New(func() (string, bool, error) { return keys.Get(stt.KeyName("gemini")) }),
 		},
 		Capturer: audio.NewCapturer(),
 		Secrets:  keys,

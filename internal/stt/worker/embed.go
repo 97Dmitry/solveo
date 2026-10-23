@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-//go:embed Dockerfile requirements.lock solveo_stt/*.py
+//go:embed Dockerfile requirements.lock solveo_stt/*.py solveo_stt/*.json
 var files embed.FS
 
 // Context is the docker build context; tests and caches are never part of it.

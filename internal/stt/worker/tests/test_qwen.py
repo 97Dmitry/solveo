@@ -92,13 +92,32 @@ class QwenModelTest(unittest.TestCase):
 
 
 class ContextTest(unittest.TestCase):
+    def test_preview_context_keeps_original_dictionary(self):
+        self.assertEqual(qwen.build_context(["goroutine"], pronunciations=False), qwen.CONTEXT_TEMPLATE + "goroutine")
+
+    def test_known_terms_get_pronunciation_hints_without_changing_custom_terms(self):
+        text = qwen.build_context(["goroutine", "MyCustomSDK"])
+        self.assertIn("goroutine (pronunciation: горутина, горутину)", text)
+        self.assertTrue(text.endswith("\nMyCustomSDK"))
+
+    def test_pronunciation_lookup_preserves_user_spelling(self):
+        self.assertIn("GoRoutine (pronunciation:", qwen.build_context(["GoRoutine"]))
+
+    def test_hints_do_not_crowd_out_user_dictionary(self):
+        phrases = ["x" * 128] * 30 + ["goroutine", "JWT"]
+        text = qwen.build_context(phrases)
+        self.assertLessEqual(len(text.encode("utf-8")), qwen.MAX_CONTEXT_BYTES)
+        self.assertEqual(text.count("x" * 128), 30)
+        self.assertIn("\ngoroutine", text)
+        self.assertIn("\nJWT", text)
+
     def test_empty_dictionary_gives_empty_context(self):
         self.assertEqual(qwen.build_context([]), "")
 
     def test_context_template_and_order(self):
-        text = qwen.build_context(["NestJS", "JWT"])
+        text = qwen.build_context(["MySDK", "MyAPI"])
         self.assertTrue(text.startswith("Technical interview in Russian with English IT terms."))
-        self.assertTrue(text.endswith(":\nNestJS\nJWT"))
+        self.assertTrue(text.endswith(":\nMySDK\nMyAPI"))
 
     def test_context_over_limit_rejected(self):
         with self.assertRaisesRegex(ValueError, "4096"):

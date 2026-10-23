@@ -125,7 +125,7 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 				doc.Title = "Задание на снимках"
 			}
 		}
-		turn = chat.Message{ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+		turn = chat.Message{FromTranscript: origin.kind == originTranscript, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
 	}
 	if origin.kind == originComposer && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
 		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.DraftRevision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}

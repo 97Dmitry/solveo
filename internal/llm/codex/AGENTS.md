@@ -19,3 +19,5 @@
 - Follow-ups quote the exact selected answer from Request.History in prompt JSON referenced_answer (local message_id, optional kind, text). Validate the reference before launch; never silently redirect an unresolved reference to the latest answer. Send only this selected quote, not the full history again; instruction hashes/provider state remain unchanged.
 
 - Interview Position/Stack/InterviewFormat/Experience belong to stable instruction JSON and its hash, not the ordinary question. Omit empty interview fields for legacy defaults. Both main/approach receive the frozen Config; instructions explicitly forbid invented candidate experience, with clarification or a labeled draft when facts are missing. This is model guidance, not a factuality guarantee.
+
+- `Turn.FromTranscript` appends per-turn speech interpretation guidance to ordinary/approach/solution prompts. Keep it outside stable instructions/hash; preserve the original question and do not label ordinary typed messages as transcription.

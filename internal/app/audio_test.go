@@ -91,6 +91,7 @@ type fakeSession struct {
 	opens    []openCall
 	pushes   map[string]int
 	pushErr  error
+	flushErr error
 	flushed  []string
 	closedSt []string
 	closed   bool
@@ -122,7 +123,7 @@ func (s *fakeSession) Flush(_ context.Context, streamID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.flushed = append(s.flushed, streamID)
-	return nil
+	return s.flushErr
 }
 
 func (s *fakeSession) CloseStream(streamID string) error {
@@ -457,6 +458,9 @@ func TestSubmitTranscriptPreservesDraftAndQueue(t *testing.T) {
 	req := <-h.provider.started
 	h.provider.finish <- nil
 	waitIdle(t, h.c)
+	if !req.Turn.FromTranscript {
+		t.Fatal("transcript origin missing from request")
+	}
 	s := h.c.Snapshot()
 	var turn string
 	var attachments int
@@ -559,5 +563,52 @@ func TestProviderStatusAndLabelsReachTheView(t *testing.T) {
 	v = waitAudio(t, h.c, "checks", func(v AudioView) bool { return len(v.Checks) == 5 && v.Busy == "" })
 	if v.Checks[0].Label != "метка docker" {
 		t.Fatalf("check label %+v", v.Checks[0])
+	}
+}
+
+func TestStopListeningReportsFlushFailureAndClosesStreams(t *testing.T) {
+	h := setupAudio(t)
+	h.listen(t)
+	h.session.mu.Lock()
+	h.session.flushErr = errors.New("Финальный ответ не получен")
+	h.session.mu.Unlock()
+	if err := h.c.StopListening(); err != nil {
+		t.Fatal(err)
+	}
+	waitAudio(t, h.c, "flush failure", func(v AudioView) bool {
+		return len(v.Sources) == 2 && strings.Contains(v.Sources[0].Error, "Финальный ответ") && strings.Contains(v.Sources[1].Error, "Финальный ответ")
+	})
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		h.session.mu.Lock()
+		count := len(h.session.closedSt)
+		h.session.mu.Unlock()
+		if count == 2 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("failed streams were not closed")
+}
+
+func TestTranscriptRetryPreservesOrigin(t *testing.T) {
+	h := setupAudio(t)
+	h.listen(t)
+	chatID := h.c.Snapshot().ActiveChatID
+	ids := h.finals(t, "Что за горутинки?")
+	if _, err := h.c.SubmitTranscript(SubmitTranscriptInput{ChatID: chatID, RequestID: "audio", SegmentIDs: ids}); err != nil {
+		t.Fatal(err)
+	}
+	first := <-h.provider.started
+	h.provider.finish <- errors.New("temporary failure")
+	waitIdle(t, h.c)
+	if _, err := h.c.Submit(SubmitInput{ChatID: chatID, RequestID: "retry", RetryMessageID: first.Turn.ID}); err != nil {
+		t.Fatal(err)
+	}
+	retry := <-h.provider.started
+	h.provider.finish <- nil
+	waitIdle(t, h.c)
+	if !retry.Turn.FromTranscript || retry.Turn.Text != first.Turn.Text {
+		t.Fatal("retry lost transcript origin or text")
 	}
 }

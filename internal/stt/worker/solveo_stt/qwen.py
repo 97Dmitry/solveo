@@ -7,6 +7,9 @@ when the pin changes.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 
 SAMPLE_RATE = 16000
@@ -21,16 +24,33 @@ CONTEXT_TEMPLATE = (
     "Write these terms exactly as listed when they are spoken:\n"
 )
 ARCHITECTURE = "Qwen3ASRForConditionalGeneration"
+_PRONUNCIATIONS = {
+    term.casefold(): hint
+    for term, hint in json.loads(Path(__file__).with_name("pronunciations.json").read_text(encoding="utf-8")).items()
+}
 
 
-def build_context(phrases: list[str]) -> str:
+def build_context(phrases: list[str], *, pronunciations: bool = True) -> str:
     if not phrases:
         return ""
     text = CONTEXT_TEMPLATE + "\n".join(phrases)
     size = len(text.encode("utf-8"))
     if size > MAX_CONTEXT_BYTES:
         raise ValueError(f"словарь занимает {size} байт, допустимо {MAX_CONTEXT_BYTES}")
-    return text
+    if not pronunciations:
+        return text
+    remaining = MAX_CONTEXT_BYTES - size
+    enriched = []
+    for phrase in phrases:
+        hint = _PRONUNCIATIONS.get(phrase.casefold())
+        note = f" (pronunciation: {hint})" if hint else ""
+        cost = len(note.encode("utf-8"))
+        if cost <= remaining:
+            enriched.append(phrase + note)
+            remaining -= cost
+        else:
+            enriched.append(phrase)
+    return CONTEXT_TEMPLATE + "\n".join(enriched)
 
 
 class _GenerateProbe:

@@ -10,3 +10,5 @@
 - `Message.reply_to_id`/`reply_to_kind` are additive user-turn metadata. Empty kind addresses an ordinary assistant message; approach/solution addresses a completed block on a prior user turn. `ReferencedAnswer`/`ValidReference` resolve only complete, nonempty answers. Retry preserves the original reference.
 
 - Interview preparation is stored as optional Position/Stack/InterviewFormat/Experience strings on Config alongside free Context/Instructions. Old archives decode empty fields; profiles and per-turn RequestConfig copy the same value. Never generate sample experience or inject profile identity into chat state. `ValidateConfig` owns text limits/UTF-8/NUL, detail and reasoning-token validation.
+
+- `Message.from_transcript` marks direct transcript submissions, defaults false in legacy archives, and survives clone/archive/retry. It does not alter message text or mark mixed composer drafts.

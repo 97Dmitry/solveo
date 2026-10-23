@@ -155,10 +155,12 @@ class Server:
             if sid == "" or sid in streams:
                 return await self._fail(ws, streams, sid, "поток уже открыт или без идентификатора")
             try:
-                context = qwen.build_context([str(p) for p in msg.get("context", [])])
+                phrases = [str(p) for p in msg.get("context", [])]
+                context = qwen.build_context(phrases)
+                partial_context = qwen.build_context(phrases, pronunciations=False)
             except ValueError as e:
                 return await self._send(ws, {"type": "error", "stream_id": sid, "message": str(e)})
-            entry = _Stream(ws, Track(sid, context, self.model, self._make_vad()))
+            entry = _Stream(ws, Track(sid, context, self.model, self._make_vad(), partial_context=partial_context))
             streams[sid] = entry
             self._entries.append(entry)
             return await self._send(ws, {"type": "opened", "stream_id": sid})

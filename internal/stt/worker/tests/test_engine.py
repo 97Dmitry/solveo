@@ -36,8 +36,10 @@ class FakeVad:
 class FakeModel:
     def __init__(self, truncate=False):
         self.steps, self.finals, self.truncate = [], [], truncate
+        self.init_contexts, self.final_contexts = [], []
 
     def init_state(self, context):
+        self.init_contexts.append(context)
         return {"context": context}
 
     def step(self, state, pcm):
@@ -45,6 +47,7 @@ class FakeModel:
         return f"s{len(self.steps)}", self.truncate
 
     def transcribe(self, pcm, context):
+        self.final_contexts.append(context)
         self.finals.append(pcm.shape[0])
         return "final"
 
@@ -65,6 +68,16 @@ def drain(track):
 
 
 class TrackTest(unittest.TestCase):
+    def test_preview_and_final_use_separate_contexts(self):
+        model = FakeModel()
+        track = Track("s", "final-hints", model, FakeVad(), partial_context="preview-dictionary")
+        track.feed(speech(40))
+        drain(track)
+        track.feed(silence(1))
+        drain(track)
+        self.assertEqual(model.init_contexts, ["preview-dictionary"])
+        self.assertEqual(model.final_contexts, ["final-hints"])
+
     def setUp(self):
         self.model = FakeModel()
         self.track = Track("st", "ctx", self.model, FakeVad())

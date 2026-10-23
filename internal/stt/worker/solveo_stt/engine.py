@@ -71,9 +71,10 @@ def _concat(parts: list[np.ndarray]) -> np.ndarray:
 
 
 class Track:
-    def __init__(self, stream_id: str, context: str, model: Model, vad: Vad):
+    def __init__(self, stream_id: str, context: str, model: Model, vad: Vad, *, partial_context: str | None = None):
         self.stream_id = stream_id
         self.context = context
+        self.partial_context = context if partial_context is None else partial_context
         self.model = model
         self.vad = vad
         self._rest = np.zeros(0, dtype=np.float32)
@@ -169,7 +170,7 @@ class Track:
         if job.kind == "final":
             return self.model.transcribe(job.pcm, self.context), False
         if job.utterance.state is None:
-            job.utterance.state = self.model.init_state(self.context)
+            job.utterance.state = self.model.init_state(self.partial_context)
         return self.model.step(job.utterance.state, job.pcm)
 
     def finish_job(self, job: "Job", result) -> list[Update]:

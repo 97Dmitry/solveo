@@ -111,3 +111,9 @@ cd tools/audio-bench && python3 -m audio_bench.report --manifest "$CORPUS/manife
 - Память контейнер не измеряет: под WSL `torch.cuda.mem_get_info` не видит процесс EngineCore. Пик снимать на хосте параллельно с прогоном (`nvidia-smi --query-gpu=memory.used --format=csv,noheader -lms 500`) и вычитать занятость до запуска. vLLM заранее резервирует `--gpu-memory-utilization` от всего объёма.
 - Первые запросы компилируют ядра; runner делает прогрев на 2,5 с тишины и пишет его время в `warmup_sec`, cold load — в `cold_load_sec`.
 - Синтетические SAPI-фразы проверяют только тракт Windows→Docker→GPU, а не качество.
+
+## Подсказки произношения Qwen (2026-10-23)
+
+Текущий worker добавляет подсказки из `internal/stt/worker/solveo_stt/pronunciations.json` только к терминам, которые пользователь включил в словарь. Для воспроизведения передайте runner параметр `--pronunciations /pronunciations.json` и смонтируйте этот файл в контейнер read-only, например `-v "$PWD/internal/stt/worker/solveo_stt/pronunciations.json:/pronunciations.json:ro`. Используйте шаблон `instruction`; запуск без этого параметра остаётся исходным baseline. Подсказки применяются только к offline final, промежуточный streaming сохраняет исходный словарь. В заголовке JSONL сохраняются SHA256 файла подсказок и обоих контекстов.
+
+Канонические названия сохраняются целиком; дополнительные подсказки занимают только оставшееся место в лимите context 4096 байт. Текстовые автозамены не выполняются. Результаты подбора — в `docs/roadmap/2026-10-22-local-stt-evaluation.md`; это dev-корпус одного говорящего.

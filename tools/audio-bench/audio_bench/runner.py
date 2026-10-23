@@ -31,6 +31,7 @@ class RunConfig:
     unfixed_token_num: int = 5
     language: str | None = None
     context: str = ""
+    final_context: str | None = None
     max_utterance_sec: float = 20.0
     # qwen-asr shares one SamplingParams between streaming steps and offline transcribe(); a step only
     # needs the rolled-back tokens plus one chunk, so a small cap bounds a runaway decode. None keeps it.
@@ -41,7 +42,7 @@ class RunConfig:
 CONTEXT_TEMPLATES = ("instruction", "list")
 
 
-def build_context(phrases: tuple[str, ...], template: str = "instruction") -> str:
+def build_context(phrases: tuple[str, ...], template: str = "instruction", *, pronunciations: dict[str, str] | None = None) -> str:
     """'instruction': CONTEXT_TEMPLATE + one term per line; 'list': the terms alone, comma-separated."""
     if template not in CONTEXT_TEMPLATES:
         raise ValueError(f"unknown context template {template!r}")
@@ -51,6 +52,22 @@ def build_context(phrases: tuple[str, ...], template: str = "instruction") -> st
     size = len(text.encode("utf-8"))
     if size > MAX_CONTEXT_BYTES:
         raise ValueError(f"context is {size} bytes, limit {MAX_CONTEXT_BYTES}")
+    if pronunciations:
+        if template != "instruction":
+            raise ValueError("pronunciations require the instruction template")
+        hints = {term.casefold(): hint for term, hint in pronunciations.items()}
+        remaining = MAX_CONTEXT_BYTES - size
+        enriched = []
+        for phrase in phrases:
+            hint = hints.get(phrase.casefold())
+            note = f" (pronunciation: {hint})" if hint else ""
+            cost = len(note.encode("utf-8"))
+            if cost <= remaining:
+                enriched.append(phrase + note)
+                remaining -= cost
+            else:
+                enriched.append(phrase)
+        return CONTEXT_TEMPLATE + "\n".join(enriched)
     return text
 
 
@@ -123,7 +140,8 @@ def transcribe_utterance(asr, probe: GenerateProbe, pcm: np.ndarray, cfg: RunCon
     streaming_final = state.text
 
     _set_max_tokens(asr, cfg.offline_max_tokens)
-    result = asr.transcribe(audio=(pcm, SAMPLE_RATE), context=cfg.context, language=cfg.language)[0]
+    final_context = cfg.context if cfg.final_context is None else cfg.final_context
+    result = asr.transcribe(audio=(pcm, SAMPLE_RATE), context=final_context, language=cfg.language)[0]
     offline = {"text": result.text, "language": result.language, **_summary(probe.take())}
     del offline["called"]
     return {
