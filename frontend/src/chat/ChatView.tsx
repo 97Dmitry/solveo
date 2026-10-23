@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { ArrowDown, Check, Copy, SlidersHorizontal } from "lucide-react";
+import { ArrowDown, Check, Copy, SlidersHorizontal, SquarePen } from "lucide-react";
 import {
   recoveredText,
   streamText,
@@ -228,6 +228,16 @@ const MessageRow = memo(function MessageRow({
         tabIndex={-1}
       >
         <div className="message-meta">
+          {message.role === "user" && message.text && onReuse && (
+            <IconButton
+              label="Изменить и отправить заново"
+              title="Копировать текст в пустой редактор; прежние снимки не добавляются"
+              disabled={!canPrepareFollowup}
+              onClick={() => onReuse(message.id)}
+            >
+              <SquarePen size={13} />
+            </IconButton>
+          )}
           <span>{message.role === "assistant" ? "Solveo" : "Вы"}</span>
           {message.from_transcript && <span>Из транскрипции</span>}
           {message.role === "assistant" && (
@@ -242,6 +252,16 @@ const MessageRow = memo(function MessageRow({
               {copied ? <Check size={13} /> : <Copy size={13} />}
             </IconButton>
           )}
+          {message.role === "assistant" &&
+            message.status === "complete" &&
+            message.text.trim() &&
+            onFollowup && (
+              <FollowupActions
+                messageID={message.id}
+                disabled={!canPrepareFollowup}
+                onFollowup={onFollowup}
+              />
+            )}
         </div>
         {message.reply_to_id && (
           <AnswerReference
@@ -280,26 +300,6 @@ const MessageRow = memo(function MessageRow({
             <p className="user-text">{message.text || "Задание на снимках"}</p>
           )}
         </div>
-        {message.role === "assistant" &&
-          message.status === "complete" &&
-          message.text.trim() &&
-          onFollowup && (
-            <FollowupActions
-              messageID={message.id}
-              disabled={!canPrepareFollowup}
-              onFollowup={onFollowup}
-            />
-          )}
-        {message.role === "user" && message.text && onReuse && (
-          <Button
-            className="reuse-question"
-            disabled={!canPrepareFollowup}
-            title="Копировать текст в пустой редактор; прежние снимки не добавляются"
-            onClick={() => onReuse(message.id)}
-          >
-            Изменить и отправить заново
-          </Button>
-        )}
         {message.attachment_ids.length > 0 && (
           <AttachmentStrip
             items={message.attachment_ids.flatMap((id) =>

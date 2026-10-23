@@ -1,6 +1,6 @@
 import { useRef, type Ref } from "react";
 import { ArrowUp, Square, ImagePlus } from "lucide-react";
-import { Button, IconButton } from "../ui/Button";
+import { IconButton } from "../ui/Button";
 type Props = {
   textareaRef?: Ref<HTMLTextAreaElement>;
   canAddImage?: boolean;
@@ -36,7 +36,7 @@ export function Composer({
       <textarea
         ref={textareaRef}
         aria-label="Вопрос"
-        rows={2}
+        rows={1}
         value={text}
         disabled={disabled}
         placeholder="Задайте вопрос или добавьте снимок…"
@@ -92,20 +92,17 @@ export function Composer({
           }}
         />
       )}
-      <div className="composer-footer">
+      <div className="composer-actions">
         {onAddImage && (
-          <Button
+          <IconButton
+            label="Изображение из файла"
+            title="Добавить PNG/JPEG до 32 МиБ; изображение также можно вставить через Ctrl+V"
             disabled={!canAddImage}
             onClick={() => fileInput.current?.click()}
-            title="PNG/JPEG до 32 МиБ; изображение также можно вставить через Ctrl+V"
           >
-            <ImagePlus size={15} />
-            Из файла
-          </Button>
+            <ImagePlus size={17} />
+          </IconButton>
         )}
-        <span>
-          Enter — отправить <span className="secondary-hint"> / Shift+Enter — новая строка</span>
-        </span>
         {busy ? (
           <IconButton label="Отменить запрос" className="send-button cancel" onClick={onCancel}>
             <Square size={16} />
@@ -113,6 +110,7 @@ export function Composer({
         ) : (
           <IconButton
             label="Отправить вопрос"
+            title="Отправить вопрос (Enter; Shift+Enter — новая строка)"
             className="send-button"
             disabled={!canSend || disabled}
             onClick={onSend}

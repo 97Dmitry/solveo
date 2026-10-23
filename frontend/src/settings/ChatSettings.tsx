@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatConfig, Model, Snapshot } from "../bridge/state";
 import { configSchema, errorText } from "../bridge/state";
+import { RefreshCw } from "lucide-react";
 import { Button } from "../ui/Button";
 import { ProfileControls, type ProfileActions } from "./ProfileControls";
 
@@ -226,7 +227,7 @@ export function ChatSettings({
       }}
     >
       <p className="form-intro">
-        Подготовьте контекст до начала работы. Сохранение настроек не отправляет запрос модели.
+        Подготовьте контекст до начала работы. Сохранение не отправляет запрос модели.
       </p>
       {profileActions && (
         <ProfileControls
@@ -278,8 +279,8 @@ export function ChatSettings({
         />
       </label>
       <p className="form-intro">
-        Только предоставленные вами факты. Если сведений об опыте нет, помощник должен уточнить их
-        или дать явно обозначенную заготовку.
+        Только ваши реальные факты. Без них помощник уточнит опыт или даст явно обозначенную
+        заготовку.
       </p>
       <label>
         Что будет происходить
@@ -334,9 +335,22 @@ export function ChatSettings({
         </select>
       </label>
       <div className="form-divider" />
+      <div className="section-heading">
+        <h3>{form.parallel_answers ? "Основное решение" : "Модель ответа"}</h3>
+        <Button
+          className="small"
+          disabled={catalog.status === "loading" || disabled}
+          onClick={() => {
+            setCatalog({ status: "loading" });
+            setRefresh((value) => value + 1);
+          }}
+        >
+          <RefreshCw size={13} />
+          Обновить модели
+        </Button>
+      </div>
       <p className="form-intro">
-        Подключение: {snapshot.provider.label}. Модели и уровни рассуждения загружаются через
-        подключение Codex.
+        Модели и уровни рассуждения загружаются через подключение {snapshot.provider.label}.
       </p>
       {catalog.status === "loading" && <p role="status">Загружаю модели…</p>}
       {catalog.status === "error" && (
@@ -345,7 +359,6 @@ export function ChatSettings({
           изменений.
         </p>
       )}
-      {form.parallel_answers && <h3>Основное решение</h3>}
       <ModelFields
         models={models}
         modelID={form.model}
@@ -363,13 +376,14 @@ export function ChatSettings({
           type="checkbox"
           checked={form.parallel_answers}
           disabled={disabled}
+          aria-describedby="parallel-help"
           onChange={(event) => change("parallel_answers", event.target.checked)}
         />
         Параллельные подход и решение
       </label>
-      <p className="form-intro">
-        Эксперимент: два запроса на вопрос. Предварительный подход может отличаться от решения.
-        Время каждого ответа отображается в чате.
+      <p className="form-intro" id="parallel-help">
+        Эксперимент: два запроса на вопрос. Быстрый предварительный подход может отличаться от
+        решения; время каждого ответа видно в чате.
       </p>
       {form.parallel_answers && (
         <>
@@ -399,17 +413,8 @@ export function ChatSettings({
           текущем списке.
         </p>
       )}
-      <Button
-        disabled={catalog.status === "loading" || disabled}
-        onClick={() => {
-          setCatalog({ status: "loading" });
-          setRefresh((value) => value + 1);
-        }}
-      >
-        Обновить модели
-      </Button>
-      {error && <p role="alert">{error}</p>}
-      <div className="form-actions">
+      <div className="form-footer">
+        {error && <p role="alert">{error}</p>}
         <Button onClick={onClose} disabled={disabled}>
           Отмена
         </Button>

@@ -1,6 +1,8 @@
 import { ArrowLeft, ArrowRight, Plus, X } from "lucide-react";
 import type { Snapshot } from "../bridge/state";
 import { IconButton } from "../ui/Button";
+// Tiles keep a fixed height: order numbers stay visible, while reorder/reuse tools overlay the
+// thumbnail on hover or keyboard focus instead of adding a row under it.
 export function AttachmentStrip({
   items,
   disabled,
@@ -27,10 +29,7 @@ export function AttachmentStrip({
   return (
     <div className="attachments">
       {items.map((item, index) => (
-        <div
-          className={`attachment ${onReorder || onReuse ? "attachment-actions" : ""}`}
-          key={item.id}
-        >
+        <div className="attachment" key={item.id}>
           <button
             className="thumbnail"
             type="button"
@@ -50,9 +49,9 @@ export function AttachmentStrip({
               <X size={12} />
             </IconButton>
           )}
-          {(onReorder || onReuse) && (
+          {((onReorder && items.length > 1) || onReuse) && (
             <div className="attachment-tools">
-              {onReorder && (
+              {onReorder && items.length > 1 && (
                 <>
                   <IconButton
                     label={`Раньше: ${item.label}`}

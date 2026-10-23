@@ -40,7 +40,7 @@ export function Drawer({
           <X size={19} />
         </IconButton>
       </div>
-      {children}
+      <div className="drawer-body">{children}</div>
     </dialog>
   );
 }

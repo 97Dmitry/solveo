@@ -8,7 +8,6 @@ import {
   Layers,
   Mic,
   Pin,
-  PinOff,
   Plus,
   Search,
   Settings,
@@ -35,13 +34,13 @@ import { AppSettings } from "../settings/AppSettings";
 import { HistoryDrawer } from "../history/HistoryDrawer";
 import { Button, IconButton } from "../ui/Button";
 import { Drawer } from "../ui/Drawer";
+import { Menu } from "../ui/Menu";
 import "./theme.css";
 type Panel = "closed" | "configuration" | "settings" | "history" | "images";
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getState);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [panel, setPanel] = useState<Panel>("closed");
-  const [captureMenu, setCaptureMenu] = useState(false);
   const [notice, setNotice] = useState("");
   // 0 hides conversation search; every Ctrl+F increments it to refocus the field.
   const [chatSearch, setChatSearch] = useState(0);
@@ -189,19 +188,22 @@ export default function App() {
           </svg>
           <div>
             <span className="brand-name">Solveo</span>
-            <span className="chat-title">{s.title}</span>
+            <span className="chat-title" title={s.title}>
+              {s.title}
+            </span>
           </div>
         </div>
         <nav className="header-actions">
           <IconButton
             label={s.settings.always_on_top ? "Открепить окно" : "Поверх всех окон"}
+            aria-pressed={s.settings.always_on_top}
             className={s.settings.always_on_top ? "selected" : ""}
             disabled={busy}
             onClick={() => {
               void actions.pin(!s.settings.always_on_top);
             }}
           >
-            {s.settings.always_on_top ? <Pin size={17} /> : <PinOff size={17} />}
+            <Pin size={17} />
           </IconButton>
           <IconButton
             label="Поиск в разговоре (Ctrl+F)"
@@ -252,7 +254,12 @@ export default function App() {
           {s.provider_id === s.provider.id ? s.provider.label : `${s.provider_id} недоступен`}
         </span>
         {s.images.length > 0 && (
-          <Button className="images-chip" onClick={() => setPanel("images")}>
+          <Button
+            className="images-chip"
+            aria-label={`Снимки чата: ${s.images.length}`}
+            title="Все снимки этого чата"
+            onClick={() => setPanel("images")}
+          >
             <Image size={14} />
             {s.images.length}
           </Button>
@@ -310,29 +317,23 @@ export default function App() {
               <Camera size={16} />
               Снимок
             </Button>
-            <div className="capture-options">
-              <IconButton
-                label="Варианты снимка"
-                disabled={busy || !s.controls.can_capture}
-                aria-expanded={captureMenu}
-                onClick={() => setCaptureMenu((v) => !v)}
-              >
-                <ChevronDown size={14} />
-              </IconButton>
-              {captureMenu && (
-                <div className="capture-menu">
-                  <Button
-                    title="Отправит только новый снимок; текст и очередь останутся"
-                    onClick={() => {
-                      setCaptureMenu(false);
-                      void actions.capture("quick-full");
-                    }}
-                  >
-                    Весь экран и ответ
-                  </Button>
-                </div>
-              )}
-            </div>
+            <Menu
+              label="Варианты снимка"
+              className="capture-options"
+              disabled={busy || !s.controls.can_capture}
+              side="top"
+              items={[
+                {
+                  label: "Весь экран и ответ",
+                  title: "Отправит только новый снимок; текст и очередь останутся",
+                  onSelect: () => {
+                    void actions.capture("quick-full");
+                  },
+                },
+              ]}
+            >
+              <ChevronDown size={14} />
+            </Menu>
             <Button
               disabled={busy || !s.controls.can_capture}
               onClick={() => {
@@ -340,7 +341,11 @@ export default function App() {
               }}
             >
               <Layers size={15} />В очередь
-              {s.queue.length > 0 && <span className="count">{s.queue.length}</span>}
+              {s.queue.length > 0 && (
+                <span className="count" title="Изображений к вопросу, не более 20">
+                  {s.queue.length}
+                </span>
+              )}
             </Button>
           </div>
           <div className="answer-tools">
@@ -355,7 +360,7 @@ export default function App() {
             </IconButton>
           </div>
         </div>
-        <p className="queue-summary" aria-live="polite">
+        <p className="visually-hidden" aria-live="polite">
           {s.queue.length ? `К вопросу: ${s.queue.length} из 20 изображений` : "Изображений нет"}
         </p>
         <AttachmentStrip
@@ -408,9 +413,10 @@ export default function App() {
         <footer className="status-bar">
           <span className={`status-dot ${s.operation.phase !== "idle" ? "active" : ""}`} />
           <span aria-live="polite">{operationLabel}</span>
-          {s.settings.hotkeys.toggle && (
-            <span className="hide-hint">{s.settings.hotkeys.toggle} — скрыть</span>
-          )}
+          <span className="hide-hint">
+            Shift+Enter — новая строка
+            {s.settings.hotkeys.toggle && ` · ${s.settings.hotkeys.toggle} — скрыть`}
+          </span>
         </footer>
       </section>
       {panel !== "closed" && (
@@ -432,16 +438,11 @@ export default function App() {
                 actions.saveConfig(s.active_chat_id, title, config, s.config_revision)
               }
             />
-          )}{" "}
+          )}
           {panel === "settings" && (
             <AppSettings
               busy={busy}
               hotkeyActions={{ loadDefaults: defaultHotkeys, suspend: suspendHotkeys }}
-              dictionaryLimits={{
-                label: state.audio.provider.label,
-                phrases: state.audio.provider.max_phrases,
-                runes: state.audio.provider.max_phrase_runes,
-              }}
               connection={{
                 loadAccount,
                 onLogin: () => {

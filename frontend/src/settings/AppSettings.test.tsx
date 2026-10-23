@@ -95,7 +95,8 @@ it("saves global instructions explicitly without checking the model connection",
       onExit={vi.fn()}
     />,
   );
-  expect(screen.getByText("Применяется к новым чатам")).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: "Ответы" }));
+  expect(screen.getByText(/^Применяется к новым чатам/)).toBeTruthy();
   await userEvent.type(screen.getByLabelText("Общие инструкции"), "Отвечай кратко");
   expect(save).not.toHaveBeenCalled();
   await userEvent.click(screen.getByText("Сохранить общие инструкции"));
@@ -124,43 +125,46 @@ it("keeps newer edits while a settings save completes", async () => {
     />
   );
   const { rerender } = render(view(snapshot));
+  await userEvent.click(screen.getByRole("tab", { name: "Ответы" }));
   await userEvent.type(screen.getByLabelText("Общие инструкции"), "A");
   await userEvent.click(screen.getByText("Сохранить общие инструкции"));
   await userEvent.type(screen.getByLabelText("Общие инструкции"), "B");
   rerender(view({ ...snapshot, settings: { ...snapshot.settings, global_instructions: "A" } }));
   expect(screen.getByLabelText<HTMLTextAreaElement>("Общие инструкции").value).toBe("AB");
+  // Unsaved text survives switching to another settings tab and back.
+  await userEvent.click(screen.getByRole("tab", { name: "Клавиши" }));
+  await userEvent.click(screen.getByRole("tab", { name: "Ответы" }));
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Общие инструкции").value).toBe("AB");
 });
 
-it("saves the recognition dictionary as trimmed phrases, one per line", async () => {
+it("shows save recovery above the tabs and keeps exit in general settings", async () => {
   const snapshot = snapshotFixture();
-  snapshot.settings.audio.context_phrases = ["NestJS"];
-  const save = vi.fn();
+  snapshot.controls.can_discard = true;
+  const retry = vi.fn();
+  const exit = vi.fn();
   render(
     <AppSettings
       snapshot={snapshot}
       hotkeyActions={hotkeyBridge}
       connection={connection()}
-      onSettings={save}
+      onSettings={vi.fn()}
       onCheck={vi.fn()}
       onLog={vi.fn()}
-      onRetrySave={vi.fn()}
+      onRetrySave={retry}
       onDiscard={vi.fn()}
-      onExit={vi.fn()}
-      dictionaryLimits={{ label: "Grok STT (облако xAI)", phrases: 100, runes: 50 }}
+      onExit={exit}
     />,
   );
-  expect(screen.getByText(/Grok STT \(облако xAI\): до 100 терминов по 50 символов/)).toBeTruthy();
-  const field = screen.getByLabelText<HTMLTextAreaElement>("Словарь терминов для распознавания");
-  expect(field.value).toBe("NestJS");
-  await userEvent.type(field, "{Enter}  JWT  {Enter}{Enter}PostgreSQL");
-  await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
-  expect(save).toHaveBeenCalledWith({
-    ...snapshot.settings,
-    audio: {
-      ...snapshot.settings.audio,
-      provider: "",
-      context_phrases: ["NestJS", "JWT", "PostgreSQL"],
-    },
-  });
-  expect(screen.getByText(/Применяется при следующем запуске прослушивания/)).toBeTruthy();
+  const recovery = screen.getByRole("alert");
+  expect(
+    recovery.compareDocumentPosition(screen.getByRole("tablist")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Повторить сохранение" }));
+  expect(retry).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Выйти из Solveo" }));
+  expect(exit).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  expect(screen.queryByRole("button", { name: "Выйти из Solveo" })).toBeNull();
+  expect(screen.getByRole("alert")).toBe(recovery);
 });

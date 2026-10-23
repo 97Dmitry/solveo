@@ -44,6 +44,7 @@ type View struct {
 	Theme       string            `json:"theme"`
 	UIScale     int               `json:"ui_scale"`
 	ShowVersion uint64            `json:"show_version"`
+	Dictionary  []string          `json:"dictionary"`
 }
 type Command struct {
 	Question *core.QuestionCommand `json:"question,omitempty"`
@@ -53,6 +54,7 @@ type Command struct {
 	IDs      []string              `json:"ids,omitempty"`
 	Text     string                `json:"text,omitempty"`
 	ChatID   string                `json:"chat_id,omitempty"`
+	Phrases  []string              `json:"phrases,omitempty"`
 }
 type Insert struct {
 	ExpiresAt int64  `json:"expires_at"`
@@ -120,6 +122,10 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 				http.Error(w, "too many segments", http.StatusBadRequest)
 				return
 			}
+			if len(cmd.Phrases) > 1024 {
+				http.Error(w, "too many phrases", http.StatusBadRequest)
+				return
+			}
 			if err := execute(r.Context(), cmd); err != nil {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
@@ -135,7 +141,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey":
+	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary":
 		return true
 	}
 	return false

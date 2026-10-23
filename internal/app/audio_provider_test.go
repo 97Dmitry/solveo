@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,11 +105,40 @@ func TestUpdateSettingsKeepsTheProviderChoice(t *testing.T) {
 	if _, err := c.UpdateSettings(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Snapshot().Settings.Audio; got.Provider != "cloud" || len(got.ContextPhrases) != 1 {
+	if got := c.Snapshot().Settings.Audio; got.Provider != "cloud" || len(got.ContextPhrases) != 0 {
 		t.Fatalf("settings %+v", got)
 	}
 	if c.AudioSnapshot().Provider.ID != "cloud" {
 		t.Fatal("provider changed outside SetAudioProvider")
+	}
+}
+
+func TestDictionaryChangesOnlyFromSpeechWindow(t *testing.T) {
+	c, _, _, _ := setupTwoProviders(t, "")
+	if err := c.SetContextPhrases([]string{" Kafka ", "gRPC", "Kafka", ""}); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.AudioWindowTarget().Dictionary; !slices.Equal(got, []string{"Kafka", "gRPC"}) {
+		t.Fatalf("dictionary %v", got)
+	}
+	// A main-window save carrying an older dictionary must not overwrite the speech window's edit.
+	cfg := c.Snapshot().Settings
+	cfg.Audio.ContextPhrases = nil
+	cfg.Theme = "light"
+	if _, err := c.UpdateSettings(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Snapshot().Settings; got.Theme != "light" || !slices.Equal(got.Audio.ContextPhrases, []string{"Kafka", "gRPC"}) {
+		t.Fatalf("settings %+v", got)
+	}
+	if err := c.SetContextPhrases([]string{strings.Repeat("x", 129)}); err == nil {
+		t.Fatal("overlong term accepted")
+	}
+	if got := c.AudioWindowTarget().Dictionary; len(got) != 2 {
+		t.Fatalf("rejected dictionary replaced the saved one: %v", got)
+	}
+	if err := c.SetContextPhrases(nil); err != nil || c.AudioWindowTarget().Dictionary == nil {
+		t.Fatal("cleared dictionary must stay an empty list", err)
 	}
 }
 

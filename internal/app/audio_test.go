@@ -301,9 +301,7 @@ func TestAudioOperationsAreExclusive(t *testing.T) {
 
 func TestStartModelDialsAndListeningOpensBothTracks(t *testing.T) {
 	h := setupAudio(t)
-	cfg := h.c.Snapshot().Settings
-	cfg.Audio.ContextPhrases = []string{"NestJS", "JWT"}
-	if _, err := h.c.UpdateSettings(cfg); err != nil {
+	if err := h.c.SetContextPhrases([]string{"NestJS", "JWT"}); err != nil {
 		t.Fatal(err)
 	}
 	h.listen(t)

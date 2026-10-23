@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -393,9 +394,11 @@ func (c *Controller) UpdateSettings(cfg settings.Config) (Snapshot, error) {
 	return c.updateSettingsLocked(cfg)
 }
 func (c *Controller) updateSettingsLocked(cfg settings.Config) (Snapshot, error) {
-	// The recognizer changes only through SetAudioProvider, which checks that nothing runs.
+	// The recognizer changes only through SetAudioProvider, which checks that nothing runs;
+	// the dictionary only through SetContextPhrases from the speech window.
 	c.mu.Lock()
 	cfg.Audio.Provider = c.settings.Audio.Provider
+	cfg.Audio.ContextPhrases = slices.Clone(c.settings.Audio.ContextPhrases)
 	cfg.Audio.BuilderModel = c.settings.Audio.BuilderModel
 	cfg.Audio.BuilderReasoning = c.settings.Audio.BuilderReasoning
 	c.mu.Unlock()

@@ -37,9 +37,14 @@ it("prepares an action for the selected old answer and copies a question separat
   );
   const old = screen.getByText("old answer").closest("article");
   if (!old) throw new Error("missing answer");
-  await userEvent.click(within(old).getByRole("button", { name: "Короче" }));
+  await userEvent.click(within(old).getByRole("button", { name: "Уточнить ответ" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Короче" }));
   expect(onFollowup).toHaveBeenCalledWith("old", "", "Дай более краткий ответ.");
-  await userEvent.click(within(old).getByRole("button", { name: "Напиши код" }));
+  await userEvent.click(within(old).getByRole("button", { name: "Уточнить ответ" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Свой вопрос к ответу" }));
+  expect(onFollowup).toHaveBeenLastCalledWith("old", "", "");
+  await userEvent.click(within(old).getByRole("button", { name: "Уточнить ответ" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Напиши код" }));
   expect(onFollowup).toHaveBeenLastCalledWith(
     "old",
     "",
@@ -65,7 +70,7 @@ it("does not offer followups for unfinished previews", () => {
       canPrepareFollowup
     />,
   );
-  expect(screen.queryByRole("button", { name: "Короче" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Уточнить ответ" })).toBeNull();
 });
 
 it("addresses parallel blocks independently and leaves failed blocks unavailable", async () => {
@@ -100,13 +105,14 @@ it("addresses parallel blocks independently and leaves failed blocks unavailable
   );
   await userEvent.click(
     within(screen.getByRole("region", { name: "Подход" })).getByRole("button", {
-      name: "Подробнее",
+      name: "Уточнить ответ",
     }),
   );
+  await userEvent.click(screen.getByRole("menuitem", { name: "Подробнее" }));
   expect(onFollowup).toHaveBeenCalledWith("parallel", "approach", "Раскрой ответ подробнее.");
   expect(
     within(screen.getByRole("region", { name: "Решение" })).queryByRole("button", {
-      name: "Подробнее",
+      name: "Уточнить ответ",
     }),
   ).toBeNull();
 });

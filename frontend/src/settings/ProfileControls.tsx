@@ -155,35 +155,32 @@ export function ProfileControls({
   };
   return (
     <section className="profile-controls" aria-label="Профили подготовки интервью">
-      <h3>Профили подготовки интервью</h3>
-      <p className="form-intro">
-        Профиль сохраняет поля подготовки. Новый чат получает копию и текущие общие инструкции.
-        Изменение профиля не меняет созданные чаты. Сохранение и обновление берут текущие поля
-        формы; новый чат — сохранённый профиль.
-      </p>
       {snapshot.profiles_error && <p role="alert">{snapshot.profiles_error}</p>}
-      <label>
-        Профиль подготовки
-        <select
-          value={
-            confirmation?.kind === "load" ? confirmation.profile.id : selected ? selectedID : ""
-          }
-          disabled={libraryBlocked}
-          onChange={(e) => selectProfile(e.target.value)}
-        >
-          <option value="">Выберите профиль</option>
-          {snapshot.profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {new Date(p.updated_at).toLocaleString("ru-RU")}
+      <div className="profile-row">
+        <label>
+          Профиль подготовки
+          <select
+            value={
+              confirmation?.kind === "load" ? confirmation.profile.id : selected ? selectedID : ""
+            }
+            disabled={libraryBlocked}
+            onChange={(e) => selectProfile(e.target.value)}
+          >
+            <option value="">
+              {snapshot.profiles.length ? "Выберите профиль" : "Профилей пока нет"}
             </option>
-          ))}
-        </select>
-      </label>
-      <div className="form-actions">
+            {snapshot.profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {new Date(p.updated_at).toLocaleString("ru-RU")}
+              </option>
+            ))}
+          </select>
+        </label>
         <Button
           disabled={
             libraryBlocked || !selected || !canUseConfig(selected.config) || confirmation !== null
           }
+          title="Создать новый чат с сохранённой версией профиля"
           onClick={() => request("new")}
         >
           Новый чат из профиля
@@ -194,37 +191,49 @@ export function ProfileControls({
           Модель или reasoning профиля недоступны. Исправьте параметры в форме и обновите профиль.
         </p>
       )}
-      <label>
-        Название профиля
-        <input value={name} disabled={blocked} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <div className="form-actions">
-        <Button disabled={libraryBlocked || confirmation !== null} onClick={() => save(false)}>
-          Сохранить как профиль
-        </Button>
-        <Button
-          disabled={libraryBlocked || !selected || confirmation !== null}
-          onClick={() => save(true)}
-        >
-          Обновить профиль
-        </Button>
-        <Button
-          disabled={libraryBlocked || !selected || confirmation !== null}
-          onClick={() => request("delete")}
-        >
-          Удалить профиль
-        </Button>
-        <Button
-          disabled={blocked || confirmation !== null}
-          onClick={() => {
-            void run(actions.reload, "Профили перечитаны.");
-          }}
-        >
-          Перечитать профили
-        </Button>
-      </div>
+      <details className="profile-manage">
+        <summary>Сохранить или изменить профиль</summary>
+        <p className="form-intro">
+          Профиль хранит поля подготовки ниже. Новый чат получает его копию и текущие общие
+          инструкции; изменение профиля не меняет созданные чаты.
+        </p>
+        <label>
+          Название профиля
+          <input value={name} disabled={blocked} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <div className="button-row">
+          <Button disabled={libraryBlocked || confirmation !== null} onClick={() => save(false)}>
+            Сохранить как профиль
+          </Button>
+          <Button
+            disabled={libraryBlocked || !selected || confirmation !== null}
+            onClick={() => save(true)}
+          >
+            Обновить профиль
+          </Button>
+          <Button
+            className="danger"
+            disabled={libraryBlocked || !selected || confirmation !== null}
+            onClick={() => request("delete")}
+          >
+            Удалить профиль
+          </Button>
+          <Button
+            disabled={blocked || confirmation !== null}
+            onClick={() => {
+              void run(actions.reload, "Профили перечитаны.");
+            }}
+          >
+            Перечитать профили
+          </Button>
+        </div>
+      </details>
       {confirmation && (
-        <div role="group" aria-label="Подтверждение действия с профилем">
+        <div
+          role="group"
+          className="profile-confirm"
+          aria-label="Подтверждение действия с профилем"
+        >
           <p>
             {confirmation.kind === "delete"
               ? `Удалить профиль «${confirmation.profile.name}»? Созданные чаты сохранятся.`
@@ -234,6 +243,7 @@ export function ProfileControls({
           </p>
           <div className="form-actions">
             <Button
+              className={confirmation.kind === "delete" ? "danger" : "primary"}
               disabled={
                 blocked ||
                 (confirmation.kind === "new" && !canUseConfig(confirmation.profile.config))

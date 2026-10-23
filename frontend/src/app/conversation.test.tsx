@@ -11,6 +11,7 @@ const transport = vi.hoisted(() => ({
   reorder: vi.fn(),
   listeners: new Map<string, (data: unknown) => void>(),
   submit: vi.fn<() => Promise<string>>(),
+  capture: vi.fn(),
 }));
 vi.mock("../bridge/wails", async () => {
   const { SolveoClient } = await import("../bridge/client");
@@ -39,6 +40,7 @@ vi.mock("../bridge/wails", async () => {
       reuseImage: transport.reuseImage,
       importImage: transport.importImage,
       reorder: transport.reorder,
+      capture: transport.capture,
     },
     loadAccount: async () => ({ signed_in: true, kind: "fake" }),
     loadModels: async () => [],
@@ -178,4 +180,14 @@ it("opens detached audio without placing a panel in the conversation", async () 
   expect(transport.showAudio).toHaveBeenCalled();
   expect(screen.queryByRole("region", { name: "Распознавание речи" })).toBeNull();
   expect(screen.getByRole("textbox", { name: "Вопрос" })).toBeTruthy();
+});
+
+it("offers full-screen capture from the snapshot menu", async () => {
+  Element.prototype.scrollTo = vi.fn();
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Варианты снимка" }));
+  await user.click(screen.getByRole("menuitem", { name: "Весь экран и ответ" }));
+  expect(transport.capture).toHaveBeenCalledWith("quick-full");
+  expect(screen.queryByRole("menuitem")).toBeNull();
 });

@@ -38,6 +38,7 @@ it("shows the target chat and sends selected final IDs with that target", async 
     theme: "dark",
     ui_scale: 100,
     show_version: 1,
+    dictionary: [],
   });
   api.ready.mockResolvedValue(undefined);
   api.execute.mockResolvedValue(undefined);
@@ -62,6 +63,7 @@ it("switches between floating and left-attached modes", async () => {
     theme: "dark",
     ui_scale: 100,
     show_version: 1,
+    dictionary: [],
     pinned: false,
     docked: false,
     window_error: "",
@@ -101,6 +103,7 @@ it("keeps live selection across tabs and requests the model catalog when setting
     theme: "dark",
     ui_scale: 100,
     show_version: 1,
+    dictionary: [],
     pinned: false,
     docked: false,
     window_error: "",
@@ -138,6 +141,7 @@ it("hides the history tab when history is disabled", async () => {
     theme: "dark",
     ui_scale: 100,
     show_version: 1,
+    dictionary: [],
     pinned: false,
     docked: false,
     window_error: "",
@@ -145,5 +149,52 @@ it("hides the history tab when history is disabled", async () => {
   api.ready.mockResolvedValue(undefined);
   render(<AudioWindow />);
   expect(await screen.findByText("Чат: Новый чат")).toBeTruthy();
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Эфир", "Настройки"]);
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    "Эфир",
+    "Словарь",
+    "Настройки",
+  ]);
+});
+
+it("saves the dictionary from its tab and keeps unsaved text across polling", async () => {
+  const base = {
+    question: questionFixture(),
+    audio: { ...audioFixture(), listening: true },
+    chat_id: "chat",
+    chat_title: "Интервью",
+    can_send: true,
+    disabled: false,
+    theme: "dark",
+    ui_scale: 100,
+    show_version: 1,
+    pinned: false,
+    docked: false,
+    window_error: "",
+    dictionary: ["NestJS"],
+  };
+  api.state.mockResolvedValue(base);
+  api.ready.mockResolvedValue(undefined);
+  api.execute.mockResolvedValue(undefined);
+  render(<AudioWindow />);
+  await userEvent.click(await screen.findByRole("tab", { name: "Словарь" }));
+  expect(screen.getByText(/Qwen3-ASR \(локально\): до 256 по 128 символов/)).toBeTruthy();
+  expect(screen.getByText(/изменения применятся после следующего запуска/)).toBeTruthy();
+  const field = screen.getByLabelText<HTMLTextAreaElement>("Словарь терминов для распознавания");
+  expect(field.value).toBe("NestJS");
+  await userEvent.type(field, "{Enter}  JWT  {Enter}{Enter}PostgreSQL");
+  // Another tab and several polls keep the unsaved text.
+  await userEvent.click(screen.getByRole("tab", { name: "Эфир" }));
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await userEvent.click(screen.getByRole("tab", { name: "Словарь" }));
+  expect(field.value).toBe("NestJS\n  JWT  \n\nPostgreSQL");
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
+  expect(api.execute).toHaveBeenCalledWith({
+    name: "setDictionary",
+    phrases: ["NestJS", "JWT", "PostgreSQL"],
+  });
+  await userEvent.type(field, "{Enter}" + "x".repeat(129));
+  expect(screen.getByRole("alert").textContent).toMatch(/длиннее 128 символов/);
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Сохранить словарь" }).disabled,
+  ).toBe(true);
 });
