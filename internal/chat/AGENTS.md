@@ -12,3 +12,7 @@
 - Interview preparation is stored as optional Position/Stack/InterviewFormat/Experience strings on Config alongside free Context/Instructions. Old archives decode empty fields; profiles and per-turn RequestConfig copy the same value. Never generate sample experience or inject profile identity into chat state. `ValidateConfig` owns text limits/UTF-8/NUL, detail and reasoning-token validation.
 
 - `Message.from_transcript` marks direct transcript submissions, defaults false in legacy archives, and survives clone/archive/retry. It does not alter message text or mark mixed composer drafts.
+
+- Message.Question is an optional accepted question-card snapshot (ID/version/text/source copies/previous user-question ID), additive in archive v2. PreviousQuestionID links user questions and is distinct from ReplyToID, which targets an assistant answer. Retries retain the snapshot; no pending analysis/card is restored or sent from it.
+
+- Question.origin is additive: automatic/manual. Missing origin in old archives is unknown, not inferred from FromTranscript; do not enrich legacy or manual questions with old conditions. Clone/archive/retry must preserve new origins so automatic question evidence reaches both answer paths.

@@ -229,6 +229,7 @@ const MessageRow = memo(function MessageRow({
       >
         <div className="message-meta">
           <span>{message.role === "assistant" ? "Solveo" : "Вы"}</span>
+          {message.from_transcript && <span>Из транскрипции</span>}
           {message.role === "assistant" && (
             <IconButton
               label={copied ? "Ответ скопирован" : "Скопировать ответ"}
@@ -248,6 +249,29 @@ const MessageRow = memo(function MessageRow({
             messageID={message.reply_to_id}
             kind={message.reply_to_kind ?? ""}
           />
+        )}
+        {message.question && (
+          <details className="question-provenance">
+            <summary>Исходные реплики вопроса · версия {message.question.version}</summary>
+            {message.question.previous_question_id && (
+              <Button
+                onClick={() => {
+                  const target = document.getElementById(
+                    answerElementID(message.question?.previous_question_id ?? "", ""),
+                  );
+                  target?.scrollIntoView({ block: "center" });
+                  target?.focus();
+                }}
+              >
+                К предыдущему вопросу
+              </Button>
+            )}
+            {message.question.sources.map((source) => (
+              <p key={source.id}>
+                {source.track === "system" ? "Собеседник" : "Микрофон"}: {source.text}
+              </p>
+            ))}
+          </details>
         )}
         <div className="message-body">
           {message.role === "assistant" ? (

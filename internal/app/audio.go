@@ -12,6 +12,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/audio"
 	"github.com/97Dmitry/solveo/internal/audiohistory"
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/questionbuilder"
 	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/stt"
 )
@@ -796,6 +797,13 @@ func (c *Controller) StopListening() error {
 }
 
 func (c *Controller) applyAudioUpdate(u stt.Update) {
+	var observed *questionbuilder.Segment
+	var ownerChat string
+	defer func() {
+		if observed != nil {
+			c.observeQuestion(ownerChat, *observed)
+		}
+	}()
 	c.syncAudioHistoryChat()
 	c.bindAudioHistoryUtterance(u.StreamID, u.UtteranceID)
 	if u.Kind == stt.KindFinal {
@@ -811,6 +819,12 @@ func (c *Controller) applyAudioUpdate(u stt.Update) {
 		return
 	}
 	if owner := a.history.utteranceChats[u.UtteranceID]; owner != "" && owner != a.history.chatID {
+		ownerChat = owner
+		at := a.history.started[u.UtteranceID]
+		if at == "" {
+			at = c.deps.Now().UTC().Format(time.RFC3339Nano)
+		}
+		observed = &questionbuilder.Segment{ID: u.UtteranceID, Track: track, Text: strings.TrimSpace(u.Text), At: at, Final: u.Kind == stt.KindFinal}
 		if u.Kind == stt.KindFinal {
 			c.recordAudioFinalLocked(u.StreamID, TranscriptSegment{ID: u.UtteranceID, Track: track, StartedAt: a.history.started[u.UtteranceID], Text: strings.TrimSpace(u.Text), Final: true})
 			delete(a.history.started, u.UtteranceID)
@@ -822,6 +836,15 @@ func (c *Controller) applyAudioUpdate(u stt.Update) {
 	if i >= 0 && (a.segments[i].Final || u.Revision <= a.revisions[u.UtteranceID]) && u.Kind != stt.KindStarted {
 		return
 	}
+	ownerChat = a.history.chatID
+	if ownerChat == "" {
+		ownerChat = a.history.utteranceChats[u.UtteranceID]
+	}
+	at, _ := time.Parse(time.RFC3339, a.history.started[u.UtteranceID])
+	if at.IsZero() {
+		at = c.deps.Now().UTC()
+	}
+	observed = &questionbuilder.Segment{ID: u.UtteranceID, Track: track, Text: strings.TrimSpace(u.Text), At: at.UTC().Format(time.RFC3339Nano), Final: u.Kind == stt.KindFinal}
 	if u.Kind == stt.KindFinal && strings.TrimSpace(u.Text) == "" {
 		if i >= 0 {
 			a.segments = slices.Delete(a.segments, i, i+1)

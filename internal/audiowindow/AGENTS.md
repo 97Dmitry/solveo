@@ -11,3 +11,5 @@
 - DockState/LeftDock own only presentation state and physical geometry. Dock/float commands are handled in the child, never sent to the parent controller. Manual close and automatic hide must remain distinct. ClosePolicy requires HideWindowOnClose=false so Wails actually calls OnBeforeClose; explicit parent-loss exit must BeginQuit first.
 
 - Explicit authenticated /chat-history/<ChatID> GETs read archived text through the parent controller. They are separate from frequent state polling, with bounded 64 MiB detail reads. Only deleteChatHistory is exposed for history mutation; no per-part browsing or assignment APIs. Delete is an explicit parent command; the child never opens archive files. History failure must not terminate the renderer or affect live STT.
+
+- QuestionView shares the target chat snapshot under c.mu; the child uses only the allowlisted question command with card identity/revision. Model catalog discovery is explicit, never a background model request. Cards and model preferences are parent-owned; child-local text must survive 200 ms polling until explicit save/rebuild/skip.

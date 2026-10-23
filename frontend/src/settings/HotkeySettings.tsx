@@ -5,6 +5,8 @@ import { Button, IconButton } from "../ui/Button";
 
 // Labels match internal/hotkeys, which names actions in conflict errors.
 const labels: Record<HotkeyAction, string> = {
+  "send-question": "Отправить собранный вопрос",
+  "skip-question": "Пропустить собранный вопрос",
   "quick-region": "Снимок области и ответ",
   "queue-region": "Добавить область в очередь",
   "quick-full": "Снимок всего экрана и ответ",

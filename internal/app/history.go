@@ -81,6 +81,9 @@ func (c *Controller) DeleteChats(ids []string) (DeleteResult, error) {
 		}
 	}
 	if switching {
+		c.mu.Lock()
+		c.pauseQuestionLocked()
+		c.mu.Unlock()
 		doc, e := chat.Chat{}, errors.New("нет других чатов")
 		if next != "" {
 			doc, e = c.deps.Store.Load(next)
@@ -138,6 +141,9 @@ func (c *Controller) DeleteChats(ids []string) (DeleteResult, error) {
 		result.Deleted = append(result.Deleted, id)
 	}
 	c.mu.Lock()
+	for _, id := range result.Deleted {
+		delete(c.question.builders, id)
+	}
 	kept := c.summaries[:0]
 	for _, s := range c.summaries {
 		if !selected[s.ID] || failed[s.ID] {

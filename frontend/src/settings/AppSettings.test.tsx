@@ -156,7 +156,11 @@ it("saves the recognition dictionary as trimmed phrases, one per line", async ()
   await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
   expect(save).toHaveBeenCalledWith({
     ...snapshot.settings,
-    audio: { provider: "", context_phrases: ["NestJS", "JWT", "PostgreSQL"] },
+    audio: {
+      ...snapshot.settings.audio,
+      provider: "",
+      context_phrases: ["NestJS", "JWT", "PostgreSQL"],
+    },
   });
   expect(screen.getByText(/Применяется при следующем запуске прослушивания/)).toBeTruthy();
 });

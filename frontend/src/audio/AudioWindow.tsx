@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { audioWindow, type AudioWindowView } from "../bridge/wails";
 import { AudioPanel, type AudioActions, type ArchivedTranscript } from "./AudioPanel";
+import { QuestionCard } from "./QuestionCard";
+import type { QuestionCommand } from "../bridge/state";
 import { AudioHistory } from "./AudioHistory";
 import { Button } from "../ui/Button";
 
@@ -44,6 +46,7 @@ export function AudioWindow() {
     async (
       name: string,
       extra: {
+        question?: QuestionCommand;
         provider?: string;
         key?: string;
         ids?: string[];
@@ -116,6 +119,20 @@ export function AudioWindow() {
       {view.audio.history_enabled && (
         <AudioHistory chatID={view.chat_id} chatTitle={view.chat_title} onArchive={setArchive} />
       )}
+      <QuestionCard
+        key={view.chat_id}
+        view={view.question}
+        busy={pending}
+        canSend={view.can_send}
+        execute={async (question) => {
+          setPending(true);
+          try {
+            await audioWindow.execute({ name: "question", question });
+          } finally {
+            setPending(false);
+          }
+        }}
+      />
       <AudioPanel
         archive={archive}
         audio={view.audio}

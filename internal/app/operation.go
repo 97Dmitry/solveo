@@ -10,6 +10,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/questionbuilder"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
@@ -17,6 +18,7 @@ import (
 // quick capture and the transcript never read, acknowledge or clear it.
 type submitOrigin struct {
 	kind      int
+	question  *QuestionCommand
 	captureID string // capture operation that may submit while it still owns the slot
 }
 
@@ -24,6 +26,7 @@ const (
 	originComposer = iota
 	originCapture
 	originTranscript
+	originQuestion
 )
 
 func (c *Controller) Submit(in SubmitInput) (string, error) {
@@ -56,6 +59,16 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	if in.RetryMessageID == "" && !chat.ValidReference(c.active.Messages, in.ReplyToID, in.ReplyToKind) {
 		c.mu.Unlock()
 		return "", errors.New("выбранный ответ недоступен для уточнения")
+	}
+	var questionCard *questionbuilder.Card
+	if origin.kind == originQuestion {
+		card, err := c.acceptQuestionLocked(*origin.question)
+		if err != nil {
+			c.mu.Unlock()
+			return "", err
+		}
+		questionCard = &card
+		in.Text = card.Text
 	}
 	doc := chat.Clone(c.active)
 	var turn chat.Message
@@ -125,7 +138,7 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 				doc.Title = "Задание на снимках"
 			}
 		}
-		turn = chat.Message{FromTranscript: origin.kind == originTranscript, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+		turn = chat.Message{Question: questionCard, FromTranscript: origin.kind == originTranscript || origin.kind == originQuestion, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
 	}
 	if origin.kind == originComposer && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
 		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.DraftRevision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}
@@ -157,6 +170,10 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	opID := chat.ID()
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
+	if origin.kind == originQuestion {
+		c.question.builders[in.ChatID].Sent(turn.ID)
+		c.scheduleQuestionLocked()
+	}
 	c.requests[in.RequestID] = true
 	if origin.kind == originComposer && in.RetryMessageID == "" {
 		// After a crash this tells whether the saved draft only repeats this question.
@@ -417,6 +434,7 @@ func (c *Controller) DiscardUnsaved() (Snapshot, error) {
 		c.mu.Unlock()
 		return Snapshot{}, ErrBusy
 	}
+	c.pauseQuestionLocked()
 	oldID := c.active.ID
 	doc := newChat(c.settings.GlobalInstructions)
 	c.pending = nil

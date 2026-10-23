@@ -32,25 +32,27 @@ type Config struct {
 	Y            int    `json:"y"`
 }
 type View struct {
-	Docked      bool           `json:"docked"`
-	WindowError string         `json:"window_error"`
-	Pinned      bool           `json:"pinned"`
-	Audio       core.AudioView `json:"audio"`
-	ChatID      string         `json:"chat_id"`
-	ChatTitle   string         `json:"chat_title"`
-	CanSend     bool           `json:"can_send"`
-	Disabled    bool           `json:"disabled"`
-	Theme       string         `json:"theme"`
-	UIScale     int            `json:"ui_scale"`
-	ShowVersion uint64         `json:"show_version"`
+	Question    core.QuestionView `json:"question"`
+	Docked      bool              `json:"docked"`
+	WindowError string            `json:"window_error"`
+	Pinned      bool              `json:"pinned"`
+	Audio       core.AudioView    `json:"audio"`
+	ChatID      string            `json:"chat_id"`
+	ChatTitle   string            `json:"chat_title"`
+	CanSend     bool              `json:"can_send"`
+	Disabled    bool              `json:"disabled"`
+	Theme       string            `json:"theme"`
+	UIScale     int               `json:"ui_scale"`
+	ShowVersion uint64            `json:"show_version"`
 }
 type Command struct {
-	Name     string   `json:"name"`
-	Provider string   `json:"provider,omitempty"`
-	Key      string   `json:"key,omitempty"`
-	IDs      []string `json:"ids,omitempty"`
-	Text     string   `json:"text,omitempty"`
-	ChatID   string   `json:"chat_id,omitempty"`
+	Question *core.QuestionCommand `json:"question,omitempty"`
+	Name     string                `json:"name"`
+	Provider string                `json:"provider,omitempty"`
+	Key      string                `json:"key,omitempty"`
+	IDs      []string              `json:"ids,omitempty"`
+	Text     string                `json:"text,omitempty"`
+	ChatID   string                `json:"chat_id,omitempty"`
 }
 type Insert struct {
 	ExpiresAt int64  `json:"expires_at"`
@@ -133,7 +135,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey":
+	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey":
 		return true
 	}
 	return false

@@ -1,5 +1,13 @@
 import { z } from "zod";
-import type { app, chat, history, llm, settings, stt } from "../../wailsjs/go/models";
+import type {
+  app,
+  chat,
+  history,
+  llm,
+  questionbuilder,
+  settings,
+  stt,
+} from "../../wailsjs/go/models";
 // Generated classes contain conversion methods. UI state is validated plain data.
 export type Wire<T> = T extends readonly (infer U)[]
   ? Wire<U>[]
@@ -102,7 +110,43 @@ const answerSchema = z.object({
   reasoning: z.string(),
   elapsed_ms: revision,
 } satisfies Shape<chat.Answer>);
+export const questionSourceSchema = z.object({
+  id: z.string().max(256),
+  track: z.enum(["system", "mic"]),
+  text: z.string().max(64000),
+  at: z.iso.datetime(),
+  final: z.boolean(),
+  seq: revision,
+} satisfies Shape<questionbuilder.Segment>);
+export const questionCardSchema = z.object({
+  origin: z.enum(["automatic", "manual"]).optional(),
+  id: z.string().max(256),
+  version: revision,
+  text: z.string().max(32000),
+  sources: z.array(questionSourceSchema).max(80),
+  previous_question_id: z.string().max(256),
+} satisfies Shape<questionbuilder.Card>);
+export const questionSchema = questionCardSchema.extend({
+  chat_id: z.string().max(256),
+  enabled: z.boolean(),
+  status: z.enum(["waiting", "draft", "analyzing", "ready", "editing", "error"]),
+  error: z.string().max(8192),
+  can_send: z.boolean(),
+  can_confirm: z.boolean(),
+  manual: z.boolean(),
+  editing: z.boolean(),
+  unincluded: z.boolean(),
+  revision,
+  available: z.boolean(),
+  model: z.string().max(256),
+  reasoning: z.string().max(64),
+  models: z.array(modelSchema).max(10000),
+}) satisfies z.ZodType<Wire<app.QuestionView>>;
+export type QuestionState = z.infer<typeof questionSchema>;
+export type QuestionCommand = Wire<app.QuestionCommand>;
 export const messageSchema = z.object({
+  question: questionCardSchema.optional(),
+  from_transcript: z.boolean().optional(),
   reply_to_id: z.string().optional(),
   reply_to_kind: z.enum(["", "approach", "solution"]).optional(),
   answers: z.array(answerSchema).max(2).optional(),
@@ -133,6 +177,8 @@ export const hotkeyActions = [
   "queue-region",
   "submit",
   "quick-full",
+  "send-question",
+  "skip-question",
 ] as const;
 export type HotkeyAction = (typeof hotkeyActions)[number];
 const hotkeyText = z.string().regex(/^$|^((Ctrl|Alt|Shift|Win)\+){1,4}[A-Za-z0-9]+$/);
@@ -142,9 +188,13 @@ export const hotkeysSchema = z.object({
   "queue-region": hotkeyText,
   submit: hotkeyText,
   "quick-full": hotkeyText,
+  "send-question": hotkeyText.default(""),
+  "skip-question": hotkeyText.default(""),
 });
 // Go normalizes and limits the dictionary; the renderer checks only the shape.
 export const audioSettingsSchema = z.object({
+  builder_model: z.string().max(256).default(""),
+  builder_reasoning: z.string().max(64).default(""),
   provider: z.string().max(64),
   context_phrases: z.array(z.string().min(1).max(512)).max(256),
 } satisfies Shape<settings.Audio>);

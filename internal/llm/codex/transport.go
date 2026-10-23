@@ -33,10 +33,24 @@ func isolationArgs() []string {
 	return args
 }
 
+// Analysis restrictions belong to the process: a thread/start config entry named
+// "features" replaces the whole table, undoing unrelated startup disables.
+func (a *appServer) isolationArgs() []string {
+	args := isolationArgs()
+	if !a.analysis {
+		return args
+	}
+	for _, f := range []string{"shell_tool", "unified_exec", "view_image", "multi_agent", "sleep_tool", "code_mode", "code_mode_host", "code_mode_only", "request_permissions_tool", "token_budget", "deferred_executor", "send_message_to_user_async", "current_time_reminder", "hooks", "workspace_dependencies", "skill_search"} {
+		args = append(args, "--disable", f)
+	}
+	return append(args, "-c", `web_search="disabled"`, "-c", "tools.view_image=false", "-c", "tools.update_plan.enabled=false", "-c", "tools.experimental_request_user_input.enabled=false")
+}
+
 // appServer is the single app-server connection shared by a Client and all its
 // copies. Its mutex and connection are reached only through this pointer.
 type appServer struct {
 	binary, home, work string
+	analysis           bool
 	start              func(context.Context, appserver.Options) (*appserver.Conn, error)
 
 	mu                sync.Mutex
@@ -142,7 +156,7 @@ func (a *appServer) launch(ctx context.Context) (*appserver.Conn, startInfo, err
 	}
 	conn, err := a.start(ctx, appserver.Options{
 		Binary:    a.binary,
-		Args:      isolationArgs(),
+		Args:      a.isolationArgs(),
 		Dir:       a.work,
 		Env:       append(os.Environ(), "CODEX_HOME="+a.home),
 		Configure: configureSubprocess,
@@ -355,7 +369,14 @@ func (c *Client) StartLogin(ctx context.Context, done func(error)) (llm.LoginPro
 	if r.Type != "chatgptDeviceCode" || r.LoginID == "" || r.UserCode == "" || !strings.HasPrefix(r.VerificationURL, "https://") {
 		return llm.LoginPrompt{}, errors.New("Codex вернул некорректные данные для входа")
 	}
-	next := &pendingLogin{id: r.LoginID, done: done}
+	next := &pendingLogin{id: r.LoginID, done: func(err error) {
+		if err == nil {
+			c.analysis.resetConnection()
+		}
+		if done != nil {
+			done(err)
+		}
+	}}
 	c.app.mu.Lock()
 	previous := c.app.login
 	result, finished := c.app.unclaimed[r.LoginID]
@@ -402,7 +423,9 @@ func (c *Client) Prepare(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) Close(ctx context.Context) error { return c.app.close(ctx) }
+func (c *Client) Close(ctx context.Context) error {
+	return errors.Join(c.app.close(ctx), c.analysis.close(ctx))
+}
 
 func threadParams(cwd string, cfg chat.Config) map[string]any {
 	p := map[string]any{
@@ -435,6 +458,8 @@ type turnSpec struct {
 	prompt           string
 	ephemeral        bool
 	timeout          time.Duration
+	analysis         bool
+	outputSchema     json.RawMessage
 }
 
 // run sends one request through the persistent connection.
@@ -513,6 +538,12 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	threadStart := time.Now()
 	preparedThreadUsed := preparedID != ""
 	params := threadParams(c.app.work, spec.config)
+	if spec.analysis {
+		params["baseInstructions"] = questionInstructions
+		params["developerInstructions"] = questionInstructions
+
+	}
+
 	var thread struct {
 		Thread struct {
 			ID string `json:"id"`
@@ -573,6 +604,9 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 		input = append(input, map[string]any{"type": "localImage", "path": p})
 	}
 	turn := map[string]any{"input": input}
+	if spec.outputSchema != nil {
+		turn["outputSchema"] = spec.outputSchema
+	}
 	if spec.config.Model != "" {
 		turn["model"] = spec.config.Model
 	}
@@ -643,4 +677,16 @@ func timingLine(purpose string, info startInfo, account, thread time.Duration, p
 	}
 	return fmt.Sprintf("Codex timing: purpose=%s process=%s account_ms=%s thread_ms=%s prepared_thread=%t first_text_ms=%s first_readable_ms=%s completed_ms=%s\n",
 		purpose, process, ms(account), ms(thread), prepared, ms(t.FirstText), ms(t.FirstReadable), ms(t.Completed))
+}
+
+// A successful credential change invalidates the auxiliary process auth cache.
+func (a *appServer) resetConnection() {
+	a.mu.Lock()
+	conn := a.conn
+	a.conn = nil
+	a.loaded = nil
+	a.mu.Unlock()
+	if conn != nil {
+		conn.Kill()
+	}
 }

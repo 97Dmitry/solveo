@@ -3,8 +3,9 @@
 package main
 
 import (
-	"github.com/97Dmitry/solveo/internal/audiowindow"
 	"testing"
+
+	"github.com/97Dmitry/solveo/internal/audiowindow"
 )
 
 func TestAudioRevealWaitsForRendererAndIgnoresOldSnapshots(t *testing.T) {

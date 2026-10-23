@@ -91,3 +91,28 @@ func TestAudioDictionaryLimits(t *testing.T) {
 		t.Fatalf("128 code points must pass: %v", err)
 	}
 }
+
+func TestBuilderPreferencesSurviveAudioNormalizationAndReload(t *testing.T) {
+	store := Open(t.TempDir())
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Audio.BuilderModel = "gpt-test"
+	cfg.Audio.BuilderReasoning = "low"
+	cfg.Audio.ContextPhrases = []string{" Go ", "Go"}
+	cfg, err = Normalize(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Audio.BuilderModel != "gpt-test" || got.Audio.BuilderReasoning != "low" || len(got.Audio.ContextPhrases) != 1 {
+		t.Fatal(got.Audio)
+	}
+}

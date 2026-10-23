@@ -14,3 +14,5 @@
 
 - ChatView and MessageRow are memoized for long chats: App passes stable callbacks, the bridge keeps unchanged messages/images as previous objects, and rows receive primitive preview/recovered strings. Do not pass new object/array literals or inline callbacks to rows. Measurement: long-chat.test.tsx (logs timings, no timing asserts).
 - Conversation search (ChatSearch/search.ts) uses DOM Ranges and the CSS Custom Highlight API; never rewrite rendered Markdown for highlighting. It skips buttons and message meta, scrolls only on navigation, and does not match across formatting boundaries.
+
+- Accepted Message.question metadata renders source text under collapsed details and can jump to the preceding user question. Keep this link distinct from AnswerReference; history/retry never changes the accepted card snapshot.

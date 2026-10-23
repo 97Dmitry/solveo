@@ -12,3 +12,5 @@
 - `hotkeys` is additive in schema v1: a missing field means `hotkeys.Defaults()`, missing actions get defaults, unknown (newer) actions are ignored on load. Values are canonical `Ctrl+Alt+Shift+Win+Key` text or "" (disabled); Load/Save reject invalid or duplicate shortcuts. `Normalize` canonicalizes user input before `Validate`.
 
 - `audio.context_phrases` is additive in schema v1 (missing → empty, never null on the wire): the speech recognition dictionary. `Normalize` trims and drops empty/duplicate phrases; `Validate` allows ≤ 256 phrases, ≤ 128 code points each, no NUL/invalid UTF-8, ≤ 3800 bytes joined (the worker caps the full context, template included, at 4 KiB). Saving it never calls STT or the LLM; it applies at the next listening start.
+
+- audio.builder_model/builder_reasoning are additive schema-v1 model preferences, empty by default. Enabled/card/analysis state is never persisted in settings. Preserve these fields through Audio normalization and unrelated settings saves.

@@ -20,3 +20,5 @@
 - Detached audio renderer: same EXE `--audio-window`, isolated from singleton/stores/providers; parent-owned IPC is documented in [internal/audiowindow](internal/audiowindow/AGENTS.md). Frontend has main/audio HTML entries. Under wails dev the child uses embedded assets; rebuild frontend and restart the app to update that window (no child HMR).
 
 - Text ASR archives are technical parts grouped by ChatID in solveo-data/audio-history, owned by [internal/audiohistory](internal/audiohistory/AGENTS.md) and internal/app/audio_history.go. No audio recording, keys or provider state are persisted there.
+
+- Interview question cards: [internal/questionbuilder](internal/questionbuilder/AGENTS.md) owns the bounded state machine; internal/app/question_builder.go owns scheduling, model preferences and explicit submission. Cards live above the detached audio transcript; only accepted versions persist in chat messages. Analysis is independent of the main generation slot and uses a separate lazy Codex transport.

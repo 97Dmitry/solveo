@@ -17,3 +17,7 @@
 - Archive text is the primary content: metadata (dates, counts, errors, submissions, devices, dictionary and deletion) stays under a collapsed «Метаданные» details. Show pagination only for multiple pages; readonly archive rows retain full text contrast.
 
 - Interview layout keeps listening/stop controls and transcript visible. Provider/key/model/Docker checks live in a collapsed settings details; devices and window explanations have separate collapsed details. Toggle state must survive 200 ms parent polling. Current source/controller/history errors stay outside collapsed sections.
+
+- QuestionCard stays above the transcript in the detached renderer; Go owns card readiness/freshness. Editing immediately freezes the parent card; local text is keyed only by ChatID so first-card ID assignment and polling cannot erase typed text. Save carries the text explicitly. Rebuilding a nonempty manual version requires explicit in-panel confirmation. Model/effort selectors use the provider catalog inside collapsed settings; there is no default model or automatic send.
+
+- Show draft as «Черновик вопроса», not a running analysis. can_confirm is parent-owned and enables explicit «Подтвердить этот текст» without editing/submitting; only analyzing says «Собираю вопрос…». Pending system speech/analysis/error must never be locally promoted by a timer. Polling still owns the accepted confirmation result.

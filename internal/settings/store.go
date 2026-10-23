@@ -27,6 +27,8 @@ type Config struct {
 
 // Audio holds speech recognition preferences; ContextPhrases is the term dictionary sent at listening start.
 type Audio struct {
+	BuilderModel     string `json:"builder_model"`
+	BuilderReasoning string `json:"builder_reasoning"`
 	// Provider is the selected recognizer ID; "" or an unknown ID means the application's default.
 	Provider       string   `json:"provider"`
 	ContextPhrases []string `json:"context_phrases"`
@@ -44,6 +46,9 @@ func validProviderID(id string) bool {
 }
 
 func validateAudio(a Audio) error {
+	if len(a.BuilderModel) > 256 || !utf8.ValidString(a.BuilderModel) || strings.ContainsRune(a.BuilderModel, 0) || !chat.ValidReasoning(a.BuilderReasoning) {
+		return errors.New("некорректные настройки модели сборщика")
+	}
 	if !validProviderID(a.Provider) {
 		return errors.New("некорректный идентификатор распознавателя")
 	}
@@ -80,7 +85,7 @@ func normalizeAudio(a Audio) Audio {
 	if !validProviderID(provider) {
 		provider = "" // a hand-edited or future ID must not block startup; the default provider applies
 	}
-	return Audio{Provider: provider, ContextPhrases: out}
+	return Audio{Provider: provider, ContextPhrases: out, BuilderModel: a.BuilderModel, BuilderReasoning: a.BuilderReasoning}
 }
 
 type Store struct{ Dir string }
