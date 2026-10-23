@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { app, chat, llm, settings } from "../../wailsjs/go/models";
+import type { app, chat, history, llm, settings, stt } from "../../wailsjs/go/models";
 // Generated classes contain conversion methods. UI state is validated plain data.
 export type Wire<T> = T extends readonly (infer U)[]
   ? Wire<U>[]
@@ -126,12 +126,36 @@ export const globalInstructionsSchema = z
     (text) => Array.from(text).length <= 16384 && !/[\uD800-\uDFFF]/u.test(text),
     "Не более 16384 символов Unicode",
   );
+// Go validates and canonicalizes shortcuts; the renderer checks only the shape.
+export const hotkeyActions = [
+  "quick-region",
+  "toggle",
+  "queue-region",
+  "submit",
+  "quick-full",
+] as const;
+export type HotkeyAction = (typeof hotkeyActions)[number];
+const hotkeyText = z.string().regex(/^$|^((Ctrl|Alt|Shift|Win)\+){1,4}[A-Za-z0-9]+$/);
+export const hotkeysSchema = z.object({
+  "quick-region": hotkeyText,
+  toggle: hotkeyText,
+  "queue-region": hotkeyText,
+  submit: hotkeyText,
+  "quick-full": hotkeyText,
+});
+// Go normalizes and limits the dictionary; the renderer checks only the shape.
+export const audioSettingsSchema = z.object({
+  provider: z.string().max(64),
+  context_phrases: z.array(z.string().min(1).max(512)).max(256),
+} satisfies Shape<settings.Audio>);
 export const settingsSchema = z.object({
   global_instructions: globalInstructionsSchema,
   ui_scale: z.number().int().min(80).max(150),
   theme: z.enum(["light", "dark"]),
   font_size: z.number().int().min(14).max(30),
   always_on_top: z.boolean(),
+  hotkeys: hotkeysSchema,
+  audio: audioSettingsSchema,
 } satisfies Shape<settings.Config>);
 const capabilities = z.object({
   images: z.boolean(),
@@ -148,7 +172,35 @@ const summarySchema = z.object({
   provider_id: z.string(),
   updated_at: z.string(),
   prepared: z.boolean(),
+  pinned: z.boolean(),
 } satisfies Shape<app.HistorySummary>);
+export const searchHitsSchema = z
+  .array(
+    z.object({
+      chat_id: z.string(),
+      title: z.string(),
+      snippet: z.string(),
+      matches: z.number().int().positive(),
+      pinned: z.boolean(),
+      updated_at: z.string(),
+    } satisfies Shape<app.SearchHit>),
+  )
+  .max(50);
+export const deleteResultSchema = z.object({
+  deleted: z.array(z.string()),
+  failed: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      error: z.string(),
+    } satisfies Shape<app.DeleteFailure>),
+  ),
+} satisfies Shape<app.DeleteResult>);
+export const exportResultSchema = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  missing: z.number().int().nonnegative(),
+} satisfies Shape<history.ExportResult>);
 const controlsSchema = z.object({
   can_submit: z.boolean(),
   can_capture: z.boolean(),
@@ -208,6 +260,7 @@ export const snapshotSchema = z.object({
   login: loginSchema,
   work_error: z.string(),
   recovered: z.array(streamBlockSchema).max(8),
+  hotkey_errors: z.partialRecord(z.enum(hotkeyActions), z.string()),
 } satisfies Shape<app.Snapshot>);
 export const streamSchema = z.object({
   revision,
@@ -223,19 +276,138 @@ export const intentSchema = z.object({
   draft_revision: revision,
   expires_at: revision,
 } satisfies Shape<app.SubmitIntent>);
+const audioTrack = z.enum(["system", "mic"]);
+// Checks and wording come from the active provider; the renderer shows them as given.
+const audioCheckSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().max(256),
+  state: z.enum(["ok", "missing", "error", "unknown"]),
+  message: z.string().max(8192),
+} satisfies Shape<stt.Check>);
+const audioProviderSchema = z.object({
+  id: z.string().max(64),
+  label: z.string().max(256),
+  local: z.boolean(),
+  preparable: z.boolean(),
+  needs_key: z.boolean(),
+  vendor: z.string().max(128),
+  key_label: z.string().max(128),
+  start_label: z.string().max(128),
+  stop_label: z.string().max(128),
+  max_phrases: z.number().int().min(0),
+  max_phrase_runes: z.number().int().min(0),
+} satisfies Shape<stt.Description>);
+const audioProviderOptionSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().max(256),
+  local: z.boolean(),
+} satisfies Shape<app.AudioProviderOption>);
+const audioSourceSchema = z.object({
+  track: audioTrack,
+  device: z.string().max(1024),
+  active: z.boolean(),
+  error: z.string().max(8192),
+} satisfies Shape<app.AudioSourceView>);
+const transcriptSegmentSchema = z.object({
+  provider_label: z.string().max(1024).optional(),
+  id: z.string().min(1).max(256),
+  track: audioTrack,
+  started_at: z.iso.datetime(),
+  text: z.string().max(65536),
+  final: z.boolean(),
+} satisfies Shape<app.TranscriptSegment>);
+export const audioSchema = z.object({
+  history_enabled: z.boolean(),
+  history_error: z.string().max(8192),
+  available: z.boolean(),
+  provider: audioProviderSchema,
+  providers: z.array(audioProviderOptionSchema).max(8),
+  revision,
+  checks: z.array(audioCheckSchema).max(16),
+  busy: z.enum(["", "checking", "preparing", "starting", "stopping", "opening", "switching"]),
+  progress: z.string().max(2048),
+  model: z.enum(["stopped", "starting", "ready", "failed"]),
+  listening: z.boolean(),
+  sources: z.array(audioSourceSchema).max(2),
+  segments: z.array(transcriptSegmentSchema).max(300),
+  error: z.string().max(8192),
+  key_configured: z.boolean(),
+} satisfies Shape<app.AudioView>);
+export type AudioState = z.infer<typeof audioSchema>;
+export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
+// Before the first AudioSnapshot: revision -1 accepts any real state.
+export const emptyAudio: AudioState = {
+  history_enabled: false,
+  history_error: "",
+  available: false,
+  provider: {
+    id: "",
+    label: "",
+    local: true,
+    preparable: false,
+    needs_key: false,
+    vendor: "",
+    key_label: "",
+    start_label: "",
+    stop_label: "",
+    max_phrases: 0,
+    max_phrase_runes: 0,
+  },
+  providers: [],
+  revision: -1,
+  checks: [],
+  busy: "",
+  progress: "",
+  model: "stopped",
+  listening: false,
+  sources: [],
+  segments: [],
+  error: "",
+  key_configured: false,
+};
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type ChatConfig = z.infer<typeof configSchema>;
 export type AppSettings = z.infer<typeof settingsSchema>;
 export type Message = z.infer<typeof messageSchema>;
+export type AttachmentView = z.infer<typeof attachmentSchema>;
 export type SubmitIntent = z.infer<typeof intentSchema>;
 export type StreamSnapshot = z.infer<typeof streamSchema>;
 export type StreamBlock = z.infer<typeof streamBlockSchema>;
 export type Account = z.infer<typeof accountSchema>;
+export type SearchHit = z.infer<typeof searchHitsSchema>[number];
+export type DeleteResult = z.infer<typeof deleteResultSchema>;
+export type ExportResult = z.infer<typeof exportResultSchema>;
+export type Hotkeys = z.infer<typeof hotkeysSchema>;
 export function parseSnapshot(input: unknown): Snapshot {
   return snapshotSchema.parse(input);
 }
 export function acceptSnapshot(current: Snapshot | null, incoming: Snapshot): Snapshot {
-  return current === null || incoming.revision > current.revision ? incoming : current;
+  return current === null || incoming.revision > current.revision
+    ? shareUnchanged(current, incoming)
+    : current;
+}
+// Serialized forms of already accepted values; kept per object, so every
+// unchanged message is serialized once rather than on each snapshot.
+const serialized = new WeakMap<object, string>();
+function wire(value: object): string {
+  let text = serialized.get(value);
+  if (text === undefined) {
+    text = JSON.stringify(value);
+    serialized.set(value, text);
+  }
+  return text;
+}
+// shareUnchanged keeps equal messages and images as the previous objects, so
+// memoized rows of a long conversation skip rendering on every snapshot.
+export function shareUnchanged(current: Snapshot | null, incoming: Snapshot): Snapshot {
+  if (current === null) return incoming;
+  const old = new Map(current.messages.map((m) => [m.id, m]));
+  const messages = incoming.messages.map((m) => {
+    const previous = old.get(m.id);
+    return previous !== undefined && wire(previous) === wire(m) ? previous : m;
+  });
+  const images = wire(current.images) === wire(incoming.images) ? current.images : incoming.images;
+  return { ...incoming, messages, images };
 }
 export const emptyStream: StreamSnapshot = { revision: 0, blocks: [] };
 

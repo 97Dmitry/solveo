@@ -1,12 +1,15 @@
 import type { app } from "../../wailsjs/go/models";
 import {
   acceptSnapshot,
+  audioSchema,
+  emptyAudio,
   referencedAnswer,
   emptyStream,
   errorText,
   intentSchema,
   parseSnapshot,
   streamSchema,
+  type AudioState,
   type Snapshot,
   type StreamSnapshot,
   type Wire,
@@ -19,6 +22,8 @@ export interface Transport {
   setDraft(input: Wire<app.DraftInput>): Promise<void>;
   submit(input: SubmitInput): Promise<string>;
   streamSnapshot(): Promise<unknown>;
+  audioSnapshot(): Promise<unknown>;
+  submitTranscript(input: Wire<app.SubmitTranscriptInput>): Promise<string>;
 }
 type Editor = {
   chatID: string;
@@ -40,6 +45,8 @@ export type ClientState =
       error: string;
       // Unfinished answer text; presentation filters it by the running attempt.
       stream: StreamSnapshot;
+      // Speech recognition state; independent of chat snapshots.
+      audio: AudioState;
     };
 export class SolveoClient {
   private state: ClientState = { status: "loading", error: "" };
@@ -50,6 +57,7 @@ export class SolveoClient {
   private writes: Promise<void> = Promise.resolve();
   private intents = new Set<string>();
   private stream: StreamSnapshot = emptyStream;
+  private audio: AudioState = emptyAudio;
   constructor(private readonly transport: Transport) {}
   getState = (): ClientState => this.state;
   subscribe = (listener: () => void): (() => void) => {
@@ -97,6 +105,7 @@ export class SolveoClient {
         submitting: old.status === "ready" && old.submitting,
         error: old.error,
         stream: this.stream,
+        audio: this.audio,
       });
     } catch (error) {
       this.update({ status: "error", error: `Ошибка обмена с приложением: ${errorText(error)}` });
@@ -108,6 +117,16 @@ export class SolveoClient {
       if (incoming.revision <= this.stream.revision) return;
       this.stream = incoming;
       if (this.state.status === "ready") this.update({ ...this.state, stream: incoming });
+    } catch (error) {
+      this.fail(`Ошибка обмена с приложением: ${errorText(error)}`);
+    }
+  };
+  private receiveAudio = (data: unknown) => {
+    try {
+      const incoming = audioSchema.parse(data);
+      if (incoming.revision <= this.audio.revision) return;
+      this.audio = incoming;
+      if (this.state.status === "ready") this.update({ ...this.state, audio: incoming });
     } catch (error) {
       this.fail(`Ошибка обмена с приложением: ${errorText(error)}`);
     }
@@ -124,6 +143,9 @@ export class SolveoClient {
     const offStream = this.transport.on("solveo:stream", (data) => {
       if (generation === this.generation) this.receiveStream(data);
     });
+    const offAudio = this.transport.on("solveo:audio", (data) => {
+      if (generation === this.generation) this.receiveAudio(data);
+    });
     void this.transport
       .snapshot()
       .then((data) => {
@@ -135,6 +157,13 @@ export class SolveoClient {
           .streamSnapshot()
           .then((stream) => {
             if (generation === this.generation) this.receiveStream(stream);
+          })
+          .catch(() => {});
+        // Listening survives renderer reloads; the transcript comes back from Go.
+        void Promise.resolve()
+          .then(() => this.transport.audioSnapshot())
+          .then((audio) => {
+            if (generation === this.generation) this.receiveAudio(audio);
           })
           .catch(() => {});
         return this.transport.ready();
@@ -153,6 +182,7 @@ export class SolveoClient {
       offState();
       offSubmit();
       offStream();
+      offAudio();
       if (this.draftTimer !== undefined) clearTimeout(this.draftTimer);
     };
   };
@@ -164,6 +194,29 @@ export class SolveoClient {
     this.draftTimer = setTimeout(() => {
       void this.flushDraft().catch((error) => this.fail(error));
     }, 120);
+  }
+  // insertTranscript appends recognized text to the live editor (a new line after existing text).
+  insertTranscript(text: string) {
+    if (
+      this.state.status !== "ready" ||
+      this.state.editor.composing ||
+      (this.state.working && !this.state.submitting) ||
+      text.trim() === ""
+    )
+      return false;
+    const current = this.state.editor.text;
+    this.edit(current === "" ? text : `${current}\n${text}`);
+    return true;
+  }
+  // submitTranscript sends selected final phrases as a question; the draft is not involved.
+  async submitTranscript(segmentIDs: string[]) {
+    if (this.state.status !== "ready" || segmentIDs.length === 0) return false;
+    const input = {
+      chat_id: this.state.snapshot.active_chat_id,
+      request_id: crypto.randomUUID(),
+      segment_ids: segmentIDs,
+    };
+    return this.run(() => this.transport.submitTranscript(input));
   }
   prepareFollowup(messageID: string, kind: string, text: string) {
     if (this.state.status !== "ready") return false;
@@ -268,6 +321,18 @@ export class SolveoClient {
       reply_to_kind: editor.replyToKind,
     };
     await this.run(() => this.transport.submit(input), false, false, true);
+  }
+  // result is run for actions whose value the caller needs; undefined means failure.
+  async result<T>(action: () => Promise<T>, flush = false): Promise<T | undefined> {
+    let value: T | undefined;
+    const ok = await this.run(
+      async () => {
+        value = await action();
+      },
+      false,
+      flush,
+    );
+    return ok ? value : undefined;
   }
   async run(
     action: () => Promise<unknown>,

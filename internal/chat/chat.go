@@ -77,6 +77,7 @@ type Answer struct {
 }
 
 type Message struct {
+	FromTranscript bool      `json:"from_transcript,omitempty"`
 	ReplyToID      string    `json:"reply_to_id,omitempty"`
 	ReplyToKind    string    `json:"reply_to_kind,omitempty"`
 	Answers        []Answer  `json:"answers,omitempty"`

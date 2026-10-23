@@ -15,11 +15,13 @@ endif
 GO_VERSION := $(firstword $(subst :, ,$(subst -, ,$(shell go env GOVERSION))))
 GOLANGCI_LINT_DIR := .tools/$(GOLANGCI_LINT_VERSION)-$(GO_VERSION)
 GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint$(EXE)
-.PHONY: help bindings frontend-check frontend-test frontend-build test lint vet build check dev
+.PHONY: help bindings frontend-check frontend-test frontend-build test lint vet build check dev audio-bench-test audio-bench-image audio-bench-nemotron-image stt-worker-test
 help:
 	@echo make dev: Run desktop development on Windows
 	@echo make build: Build build/bin/Solveo.exe
-	@echo make check: Check frontend, tests, Go lint, Windows vet and build
+	@echo make check: Check frontend, tests, speech worker tests, Go lint, Windows vet and build
+	@echo make audio-bench-test: Test the STT benchmark scorer and runner with fakes
+	@echo make audio-bench-image: Build the local Qwen3-ASR benchmark image
 bindings:
 	go run -tags bindings .
 # The generator marks runtime files executable; keep the committed 0644 modes.
@@ -49,6 +51,17 @@ vet: frontend-build
 	$(WIN_ENV) go vet ./...
 build: frontend-build
 	$(WAILS) build -platform windows/amd64 -skipbindings -s -o Solveo.exe
-check: frontend-check frontend-test test lint vet build
+check: frontend-check frontend-test test stt-worker-test lint vet build
 dev:
 	$(WAILS) dev
+# Worker unit tests run with the worker's runtime pins (numpy of the pinned base image), never the GPU stack.
+STT_WORKER_PY := uv run --no-project --python 3.12 --with numpy==2.2.6 --with websockets==17.2 --with soxr==1.1.0
+stt-worker-test:
+	cd internal/stt/worker && $(STT_WORKER_PY) python -m unittest discover -s tests -t .
+# Stage 9.0 STT benchmark: opt-in, not part of check (needs python3 + numpy; the image needs Docker).
+audio-bench-test:
+	cd tools/audio-bench && python3 -m unittest discover -s tests -t .
+audio-bench-image:
+	docker build -t solveo-audio-bench:dev -f tools/audio-bench/docker/Dockerfile tools/audio-bench
+audio-bench-nemotron-image:
+	docker build -t solveo-audio-bench-nemotron:dev -f tools/audio-bench/docker/nemotron.Dockerfile tools/audio-bench

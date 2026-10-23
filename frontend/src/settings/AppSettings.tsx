@@ -5,17 +5,26 @@ import {
   globalInstructionsSchema,
   type Account as AccountState,
   type AppSettings as Config,
+  type Hotkeys,
   type Snapshot,
 } from "../bridge/state";
 import { Button } from "../ui/Button";
+import { HotkeySettings } from "./HotkeySettings";
 export type ConnectionActions = {
   loadAccount: () => Promise<AccountState>;
   onLogin: () => void;
   onCancelLogin: () => void;
   onOpenLink: (url: string) => void;
 };
+export type DictionaryLimits = { label: string; phrases: number; runes: number };
+export type HotkeyBridge = {
+  loadDefaults: () => Promise<Hotkeys>;
+  suspend: (on: boolean) => Promise<void>;
+};
 export function AppSettings({
   snapshot,
+  busy = false,
+  hotkeyActions,
   connection,
   onSettings,
   onCheck,
@@ -23,8 +32,12 @@ export function AppSettings({
   onRetrySave,
   onDiscard,
   onExit,
+  dictionaryLimits,
 }: {
+  dictionaryLimits?: DictionaryLimits;
   snapshot: Snapshot;
+  busy?: boolean;
+  hotkeyActions: HotkeyBridge;
   connection: ConnectionActions;
   onSettings: (config: Config) => void;
   onCheck: () => void;
@@ -37,6 +50,11 @@ export function AppSettings({
   return (
     <div className="settings-form">
       <GlobalInstructions settings={snapshot.settings} onSettings={onSettings} />
+      <RecognitionDictionary
+        settings={snapshot.settings}
+        onSettings={onSettings}
+        {...(dictionaryLimits ? { limits: dictionaryLimits } : {})}
+      />
       <label>
         Тема
         <select
@@ -115,18 +133,14 @@ export function AppSettings({
       </div>
       <div className="form-divider" />
       <h3>Горячие клавиши</h3>
-      <dl className="shortcuts">
-        <dt>Ctrl+Alt+S</dt>
-        <dd>Снимок области и ответ</dd>
-        <dt>Ctrl+Alt+A</dt>
-        <dd>Добавить область в очередь</dd>
-        <dt>Ctrl+Alt+F</dt>
-        <dd>Снимок всего экрана и ответ</dd>
-        <dt>Ctrl+Alt+Enter</dt>
-        <dd>Отправить вопрос и очередь</dd>
-        <dt>Ctrl+Alt+O</dt>
-        <dd>Показать / скрыть окно</dd>
-      </dl>
+      <HotkeySettings
+        hotkeys={snapshot.settings.hotkeys}
+        errors={snapshot.hotkey_errors}
+        disabled={busy}
+        onSave={(hotkeys) => onSettings({ ...snapshot.settings, hotkeys })}
+        loadDefaults={hotkeyActions.loadDefaults}
+        suspend={hotkeyActions.suspend}
+      />
       <Button onClick={onExit}>Выйти из Solveo</Button>
       {snapshot.controls.can_discard && (
         <div className="recovery">
@@ -255,6 +269,59 @@ function GlobalInstructions({
         }}
       >
         Сохранить общие инструкции
+      </Button>
+      <div className="form-divider" />
+    </>
+  );
+}
+
+// The dictionary is a plain list, one term per line; Go trims, deduplicates and limits it.
+function RecognitionDictionary({
+  settings,
+  onSettings,
+  limits,
+}: {
+  settings: Config;
+  onSettings: (config: Config) => void;
+  limits?: DictionaryLimits;
+}) {
+  const saved = settings.audio.context_phrases.join("\n");
+  const [draft, setDraft] = useState({ base: saved, text: saved });
+  if (draft.base !== saved)
+    setDraft({ base: saved, text: draft.text === draft.base ? saved : draft.text });
+  const phrases = draft.text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  const tooMany = phrases.length > 256;
+  return (
+    <>
+      <label>
+        Словарь терминов для распознавания
+        <textarea
+          rows={5}
+          value={draft.text}
+          aria-describedby="dictionary-help"
+          onChange={(event) => setDraft({ ...draft, text: event.target.value })}
+        />
+      </label>
+      <p id="dictionary-help" className="form-intro">
+        По одному термину на строку: названия технологий, библиотек и аббревиатуры, которые нужно
+        писать точно. Применяется при следующем запуске прослушивания.
+      </p>
+      {limits && limits.phrases > 0 && (
+        <p className="form-intro">
+          {limits.label}: до {limits.phrases} терминов по {limits.runes} символов
+        </p>
+      )}
+      {tooMany && <p role="alert">Не более 256 терминов</p>}
+      <Button
+        disabled={tooMany || phrases.join("\n") === saved}
+        onClick={() =>
+          onSettings({ ...settings, audio: { ...settings.audio, context_phrases: phrases } })
+        }
+      >
+        Сохранить словарь
       </Button>
       <div className="form-divider" />
     </>

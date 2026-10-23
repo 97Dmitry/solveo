@@ -8,6 +8,7 @@ import (
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
 )
@@ -94,7 +95,7 @@ func streamingSetup(t *testing.T) (*Controller, *streamingProvider, *emitted) {
 		t.Fatal(err)
 	}
 	st := settings.Open(s.Dir)
-	if err = st.Save(settings.Config{Theme: "dark", FontSize: 17, UIScale: 100}); err != nil {
+	if err = st.Save(settings.Config{Theme: "dark", FontSize: 17, UIScale: 100, Hotkeys: hotkeys.Defaults()}); err != nil {
 		t.Fatal(err)
 	}
 	p := &streamingProvider{calls: make(chan streamCall, 4), finish: map[string]chan llm.Result{"": make(chan llm.Result, 1), chat.AnswerApproach: make(chan llm.Result, 1), chat.AnswerSolution: make(chan llm.Result, 1)}}

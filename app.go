@@ -4,15 +4,19 @@ package main
 
 import (
 	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/history"
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/settings"
 )
 
 // App is the generated Wails boundary. All behavior lives in the Go controller.
 type App struct {
-	controller *core.Controller
-	ready      func() error
-	exit       func() error
+	controller        *core.Controller
+	showAudio         func() error
+	audioInsertResult func(string, string)
+	ready             func() error
+	exit              func() error
 }
 
 func (a *App) Snapshot() core.Snapshot      { return a.controller.Snapshot() }
@@ -23,9 +27,19 @@ func (a *App) Ready() error {
 	}
 	return nil
 }
-func (a *App) NewChat() (core.Snapshot, error)             { return a.controller.NewChat() }
-func (a *App) OpenChat(id string) (core.Snapshot, error)   { return a.controller.OpenChat(id) }
-func (a *App) DeleteChat(id string) (core.Snapshot, error) { return a.controller.DeleteChat(id) }
+func (a *App) NewChat() (core.Snapshot, error)           { return a.controller.NewChat() }
+func (a *App) OpenChat(id string) (core.Snapshot, error) { return a.controller.OpenChat(id) }
+func (a *App) DeleteChats(ids []string) (core.DeleteResult, error) {
+	return a.controller.DeleteChats(ids)
+}
+func (a *App) SetChatPinned(id string, pinned bool) error {
+	return a.controller.SetChatPinned(id, pinned)
+}
+func (a *App) SearchHistory(query string) ([]core.SearchHit, error) {
+	return a.controller.SearchHistory(query)
+}
+func (a *App) ExportChat(id string) (history.ExportResult, error) { return a.controller.ExportChat(id) }
+func (a *App) RevealExport(name string) error                     { return a.controller.RevealExport(name) }
 func (a *App) SaveChatConfig(in core.ConfigInput) (core.Snapshot, error) {
 	return a.controller.SaveChatConfig(in)
 }
@@ -85,3 +99,21 @@ func (a *App) ReuseAttachment(chatID, id string) error {
 func (a *App) ReorderAttachments(chatID string, ids []string) error {
 	return a.controller.ReorderAttachments(chatID, ids)
 }
+
+func (a *App) SuspendHotkeys(suspend bool) error { return a.controller.SuspendHotkeys(suspend) }
+func (a *App) DefaultHotkeys() map[string]string { return hotkeys.Defaults() }
+
+func (a *App) AudioSnapshot() core.AudioView { return a.controller.AudioSnapshot() }
+func (a *App) RefreshAudio() error           { return a.controller.RefreshAudio() }
+func (a *App) PrepareAudio() error           { return a.controller.PrepareAudio() }
+func (a *App) StartAudioModel() error        { return a.controller.StartAudioModel() }
+func (a *App) StopAudioModel() error         { return a.controller.StopAudioModel() }
+func (a *App) StartListening() error         { return a.controller.StartListening() }
+func (a *App) StopListening() error          { return a.controller.StopListening() }
+func (a *App) ClearTranscript() error        { return a.controller.ClearTranscript() }
+func (a *App) SubmitTranscript(in core.SubmitTranscriptInput) (string, error) {
+	return a.controller.SubmitTranscript(in)
+}
+func (a *App) SetSTTKey(provider, key string) error { return a.controller.SetSTTKey(provider, key) }
+func (a *App) DeleteSTTKey(provider string) error   { return a.controller.DeleteSTTKey(provider) }
+func (a *App) SetAudioProvider(id string) error     { return a.controller.SetAudioProvider(id) }

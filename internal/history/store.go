@@ -2,6 +2,7 @@
 package history
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type Summary struct {
 	ProviderID string    `json:"provider_id"`
 	UpdatedAt  time.Time `json:"updated_at"`
 	Prepared   bool      `json:"prepared"`
+	Pinned     bool      `json:"pinned"`
 }
 type Store struct {
 	Dir string
@@ -50,7 +52,47 @@ func Open(dir string) (*Store, error) {
 			return nil, e
 		}
 	}
-	return &Store{Dir: dir}, nil
+	s := &Store{Dir: dir}
+	s.sweepTrash()
+	// Exports interrupted before their final rename are never shown to the user.
+	if entries, e := os.ReadDir(filepath.Join(dir, exportsDir)); e == nil {
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".tmp-") {
+				_ = os.RemoveAll(filepath.Join(dir, exportsDir, entry.Name()))
+			}
+		}
+	}
+	return s, nil
+}
+
+// sweepTrash finishes deletions interrupted between moving a chat's images to
+// trash and removing its document: images of a chat that still exists are
+// restored, the rest are removed. It is best effort; leftovers are retried on
+// the next start.
+func (s *Store) sweepTrash() {
+	entries, e := os.ReadDir(filepath.Join(s.Dir, "trash"))
+	if e != nil {
+		return
+	}
+	root, e := os.OpenRoot(s.Dir)
+	if e != nil {
+		return
+	}
+	defer root.Close()
+	for _, entry := range entries {
+		id, _, ok := strings.Cut(entry.Name(), ".")
+		if !ok || !idPattern.MatchString(id) {
+			continue
+		}
+		name := "trash/" + entry.Name()
+		if _, e := root.Lstat("chats/" + id + ".json"); e == nil {
+			if _, e := root.Lstat("images/" + id); errors.Is(e, os.ErrNotExist) {
+				_ = root.Rename(name, "images/"+id)
+			}
+			continue
+		}
+		_ = root.RemoveAll(name)
+	}
 }
 func validPath(id, p string) bool {
 	return p != "" && !strings.ContainsAny(p, `\:`) && path.Clean(p) == p && strings.HasPrefix(p, "images/"+id+"/") && path.Base(p) != "." && strings.Count(p, "/") == 2
@@ -221,6 +263,12 @@ func (s *Store) List() ([]Summary, error) {
 	if e != nil {
 		return nil, e
 	}
+	pins := map[string]bool{}
+	if root, e := os.OpenRoot(s.Dir); e == nil {
+		// Unreadable pins only lose the grouping; the history itself stays usable.
+		pins, _ = s.readPins(root)
+		_ = root.Close()
+	}
 	out := []Summary{}
 	for _, f := range entries {
 		if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
@@ -230,7 +278,7 @@ func (s *Store) List() ([]Summary, error) {
 		if e != nil {
 			continue
 		}
-		out = append(out, Summary{c.ID, c.Title, c.ProviderID, c.UpdatedAt, len(c.Messages) == 0})
+		out = append(out, Summary{c.ID, c.Title, c.ProviderID, c.UpdatedAt, len(c.Messages) == 0, pins[c.ID]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out, nil
@@ -297,6 +345,10 @@ func (s *Store) AttachmentPath(chatID string, a chat.Attachment) (string, error)
 	}
 	return resolved, nil
 }
+
+// Delete removes a chat with its images. Images are moved to trash first, so a
+// failure can never leave them without a chat document: if the document cannot
+// be removed they are moved back, and sweepTrash settles an interrupted attempt.
 func (s *Store) Delete(id string) error {
 	if !idPattern.MatchString(id) {
 		return errors.New("некорректный ID чата")
@@ -308,8 +360,34 @@ func (s *Store) Delete(id string) error {
 		return e
 	}
 	defer root.Close()
-	if e = root.Remove("chats/" + id + ".json"); e != nil {
+	if _, e = root.Lstat("chats/" + id + ".json"); e != nil {
 		return e
 	}
-	return root.RemoveAll("images/" + id)
+	trash := ""
+	if _, e = root.Lstat("images/" + id); e == nil {
+		if e = root.MkdirAll("trash", 0700); e != nil {
+			return e
+		}
+		trash = "trash/" + id + "." + rand.Text()
+		if e = root.Rename("images/"+id, trash); e != nil {
+			return fmt.Errorf("не удалось удалить снимки чата: %w", e)
+		}
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return e
+	}
+	if e = root.Remove("chats/" + id + ".json"); e != nil {
+		if trash != "" {
+			e = errors.Join(e, root.Rename(trash, "images/"+id))
+		}
+		return e
+	}
+	// The chat is gone; leftovers below are only disk space for the next sweep.
+	if trash != "" {
+		_ = root.RemoveAll(trash)
+	}
+	if pins, e := s.readPins(root); e == nil && pins[id] {
+		delete(pins, id)
+		_ = s.writePins(root, pins)
+	}
+	return nil
 }

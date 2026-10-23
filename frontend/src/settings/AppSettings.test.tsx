@@ -5,6 +5,10 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import { AppSettings } from "./AppSettings";
 import { snapshotFixture } from "../bridge/test-fixture";
 afterEach(cleanup);
+const hotkeyBridge = {
+  loadDefaults: vi.fn(async () => snapshotFixture().settings.hotkeys),
+  suspend: vi.fn(async () => undefined),
+};
 const connection = () => ({
   loadAccount: vi.fn(async () => ({ signed_in: false, kind: "" })),
   onLogin: vi.fn(),
@@ -18,6 +22,7 @@ it("changes interface scale independently of text size and restores the saved va
   render(
     <AppSettings
       snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
       connection={connection()}
       onSettings={save}
       onCheck={vi.fn()}
@@ -38,6 +43,7 @@ it("shows the device-code login from Go state and refreshes the account", async 
   const view = (s: typeof snapshot) => (
     <AppSettings
       snapshot={s}
+      hotkeyActions={hotkeyBridge}
       connection={actions}
       onSettings={vi.fn()}
       onCheck={vi.fn()}
@@ -79,6 +85,7 @@ it("saves global instructions explicitly without checking the model connection",
   render(
     <AppSettings
       snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
       connection={connection()}
       onSettings={save}
       onCheck={check}
@@ -106,6 +113,7 @@ it("keeps newer edits while a settings save completes", async () => {
   const view = (s: typeof snapshot) => (
     <AppSettings
       snapshot={s}
+      hotkeyActions={hotkeyBridge}
       connection={actions}
       onSettings={save}
       onCheck={vi.fn()}
@@ -121,4 +129,34 @@ it("keeps newer edits while a settings save completes", async () => {
   await userEvent.type(screen.getByLabelText("Общие инструкции"), "B");
   rerender(view({ ...snapshot, settings: { ...snapshot.settings, global_instructions: "A" } }));
   expect(screen.getByLabelText<HTMLTextAreaElement>("Общие инструкции").value).toBe("AB");
+});
+
+it("saves the recognition dictionary as trimmed phrases, one per line", async () => {
+  const snapshot = snapshotFixture();
+  snapshot.settings.audio.context_phrases = ["NestJS"];
+  const save = vi.fn();
+  render(
+    <AppSettings
+      snapshot={snapshot}
+      hotkeyActions={hotkeyBridge}
+      connection={connection()}
+      onSettings={save}
+      onCheck={vi.fn()}
+      onLog={vi.fn()}
+      onRetrySave={vi.fn()}
+      onDiscard={vi.fn()}
+      onExit={vi.fn()}
+      dictionaryLimits={{ label: "Grok STT (облако xAI)", phrases: 100, runes: 50 }}
+    />,
+  );
+  expect(screen.getByText(/Grok STT \(облако xAI\): до 100 терминов по 50 символов/)).toBeTruthy();
+  const field = screen.getByLabelText<HTMLTextAreaElement>("Словарь терминов для распознавания");
+  expect(field.value).toBe("NestJS");
+  await userEvent.type(field, "{Enter}  JWT  {Enter}{Enter}PostgreSQL");
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить словарь" }));
+  expect(save).toHaveBeenCalledWith({
+    ...snapshot.settings,
+    audio: { provider: "", context_phrases: ["NestJS", "JWT", "PostgreSQL"] },
+  });
+  expect(screen.getByText(/Применяется при следующем запуске прослушивания/)).toBeTruthy();
 });

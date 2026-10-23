@@ -182,7 +182,7 @@ func (c *Controller) finishSelection(e platform.Event) {
 		}
 		c.publish()
 		if mode != "queue-region" {
-			_, err = c.submit(SubmitInput{RequestID: chat.ID(), ChatID: chatID, AttachmentIDs: []string{id}}, e.OperationID)
+			_, err = c.submit(SubmitInput{RequestID: chat.ID(), ChatID: chatID, AttachmentIDs: []string{id}}, submitOrigin{kind: originCapture, captureID: e.OperationID})
 			if err != nil {
 				c.captureError(e.OperationID, err)
 			}
@@ -206,6 +206,8 @@ func (c *Controller) RequestSubmit() (SubmitIntent, error) {
 
 // Snapshot refresh after a renderer reload invalidates native submit handshakes.
 func (c *Controller) RendererReady() Snapshot {
+	// A reloaded renderer can no longer end a recording pause itself.
+	c.ReportError(c.SuspendHotkeys(false))
 	c.mu.Lock()
 	c.intent = nil
 	c.mu.Unlock()

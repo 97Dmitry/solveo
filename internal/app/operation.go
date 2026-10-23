@@ -13,10 +13,25 @@ import (
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
-func (c *Controller) Submit(in SubmitInput) (string, error) { return c.submit(in, "") }
-func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
+// submitOrigin tells which source a question comes from. Only the composer owns the draft:
+// quick capture and the transcript never read, acknowledge or clear it.
+type submitOrigin struct {
+	kind      int
+	captureID string // capture operation that may submit while it still owns the slot
+}
+
+const (
+	originComposer = iota
+	originCapture
+	originTranscript
+)
+
+func (c *Controller) Submit(in SubmitInput) (string, error) {
+	return c.submit(in, submitOrigin{kind: originComposer})
+}
+func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error) {
 	c.mu.Lock()
-	if e := c.availableLocked(); e != nil && (captureID == "" || c.op.ID != captureID || c.op.Phase != phaseCapturing) {
+	if e := c.availableLocked(); e != nil && (origin.kind != originCapture || c.op.ID != origin.captureID || c.op.Phase != phaseCapturing) {
 		c.mu.Unlock()
 		return "", e
 	}
@@ -110,9 +125,9 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 				doc.Title = "Задание на снимках"
 			}
 		}
-		turn = chat.Message{ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
+		turn = chat.Message{FromTranscript: origin.kind == originTranscript, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind, ID: chat.ID(), Role: chat.RoleUser, Text: in.Text, AttachmentIDs: ids, Attempts: []chat.Attempt{}}
 	}
-	if captureID == "" && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
+	if origin.kind == originComposer && in.RetryMessageID == "" && in.DraftRevision >= c.drafts[in.ChatID].Revision {
 		c.drafts[in.ChatID] = Draft{Text: in.Text, Revision: in.DraftRevision, ReplyToID: in.ReplyToID, ReplyToKind: in.ReplyToKind}
 	}
 	if turn.RequestConfig == nil {
@@ -143,7 +158,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
 	c.requests[in.RequestID] = true
-	if captureID == "" && in.RetryMessageID == "" {
+	if origin.kind == originComposer && in.RetryMessageID == "" {
 		// After a crash this tells whether the saved draft only repeats this question.
 		c.submitted[doc.ID] = workstate.Submitted{MessageID: turn.ID, Revision: in.DraftRevision}
 		c.statePersist.mark()
@@ -160,7 +175,7 @@ func (c *Controller) submit(in SubmitInput, captureID string) (string, error) {
 	c.err = ""
 	c.changedLocked()
 	draft := c.drafts[doc.ID]
-	clearDraft := captureID == "" && in.RetryMessageID == "" && draft.Text == in.Text && draft.Revision == in.DraftRevision && draft.ReplyToID == in.ReplyToID && draft.ReplyToKind == in.ReplyToKind
+	clearDraft := origin.kind == originComposer && in.RetryMessageID == "" && draft.Text == in.Text && draft.Revision == in.DraftRevision && draft.ReplyToID == in.ReplyToID && draft.ReplyToKind == in.ReplyToKind
 	c.workers.Add(1)
 	c.mu.Unlock()
 	c.publish()

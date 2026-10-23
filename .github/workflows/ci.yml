@@ -43,6 +43,13 @@ jobs:
           bash -n .github/scripts/publish-release.sh
           python3 .github/scripts/test_publish_release.py
 
+      # The speech worker's unit tests run with its pinned numpy/websockets/soxr; no torch, GPU or model.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - name: Test speech recognition worker
+        run: make stt-worker-test
+
   checks:
     name: Lint and frontend checks
     runs-on: ubuntu-24.04

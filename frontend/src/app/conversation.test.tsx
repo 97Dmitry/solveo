@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import App from "./App";
 
 const transport = vi.hoisted(() => ({
+  showAudio: vi.fn(),
   reuseImage: vi.fn(),
   importImage: vi.fn(),
   reorder: vi.fn(),
@@ -21,6 +22,8 @@ vi.mock("../bridge/wails", async () => {
       setDraft: async () => {},
       submit: transport.submit,
       streamSnapshot: async () => ({ revision: 0, blocks: [] }),
+      audioSnapshot: async () => ({}),
+      submitTranscript: async () => "op",
       on: (name, cb) => {
         transport.listeners.set(name, cb);
         return () => {
@@ -28,7 +31,9 @@ vi.mock("../bridge/wails", async () => {
         };
       },
     }),
+    onAudioInsert: () => () => {},
     actions: {
+      showAudioWindow: transport.showAudio,
       copy: async () => true,
       openLink: () => {},
       reuseImage: transport.reuseImage,
@@ -164,4 +169,13 @@ it("connects composer and historical image actions to the active chat", async ()
   fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { files: [file] } });
   expect(transport.importImage).toHaveBeenCalledWith("first", file);
   expect(screen.getByText("К вопросу: 1 из 20 изображений")).toBeTruthy();
+});
+
+it("opens detached audio without placing a panel in the conversation", async () => {
+  render(<App />);
+  const button = await screen.findByRole("button", { name: "Распознавание речи" });
+  await userEvent.click(button);
+  expect(transport.showAudio).toHaveBeenCalled();
+  expect(screen.queryByRole("region", { name: "Распознавание речи" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Вопрос" })).toBeTruthy();
 });

@@ -341,8 +341,8 @@ func TestDeleteChatRemovesItsWork(t *testing.T) {
 	if _, e := c.NewChat(); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := c.DeleteChat(old); e != nil {
-		t.Fatal(e)
+	if r, e := c.DeleteChats([]string{old}); e != nil || len(r.Deleted) != 1 {
+		t.Fatal(r, e)
 	}
 	if hasQueuedFile(t, c.deps.Work, img) {
 		t.Fatal("queued image of deleted chat kept")

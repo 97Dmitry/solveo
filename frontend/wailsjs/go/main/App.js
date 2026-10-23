@@ -6,6 +6,10 @@ export function Account() {
   return window['go']['main']['App']['Account']();
 }
 
+export function AudioSnapshot() {
+  return window['go']['main']['App']['AudioSnapshot']();
+}
+
 export function BeginCapture(arg1) {
   return window['go']['main']['App']['BeginCapture'](arg1);
 }
@@ -26,12 +30,28 @@ export function ClearQueue(arg1) {
   return window['go']['main']['App']['ClearQueue'](arg1);
 }
 
-export function DeleteChat(arg1) {
-  return window['go']['main']['App']['DeleteChat'](arg1);
+export function ClearTranscript() {
+  return window['go']['main']['App']['ClearTranscript']();
+}
+
+export function CompleteAudioInsert(arg1, arg2) {
+  return window['go']['main']['App']['CompleteAudioInsert'](arg1, arg2);
+}
+
+export function DefaultHotkeys() {
+  return window['go']['main']['App']['DefaultHotkeys']();
+}
+
+export function DeleteChats(arg1) {
+  return window['go']['main']['App']['DeleteChats'](arg1);
 }
 
 export function DeleteProfile(arg1, arg2) {
   return window['go']['main']['App']['DeleteProfile'](arg1, arg2);
+}
+
+export function DeleteSTTKey(arg1) {
+  return window['go']['main']['App']['DeleteSTTKey'](arg1);
 }
 
 export function DiscardUnsaved() {
@@ -40,6 +60,10 @@ export function DiscardUnsaved() {
 
 export function Exit() {
   return window['go']['main']['App']['Exit']();
+}
+
+export function ExportChat(arg1) {
+  return window['go']['main']['App']['ExportChat'](arg1);
 }
 
 export function ImportAttachment(arg1, arg2, arg3) {
@@ -66,8 +90,16 @@ export function OpenImage(arg1, arg2) {
   return window['go']['main']['App']['OpenImage'](arg1, arg2);
 }
 
+export function PrepareAudio() {
+  return window['go']['main']['App']['PrepareAudio']();
+}
+
 export function Ready() {
   return window['go']['main']['App']['Ready']();
+}
+
+export function RefreshAudio() {
+  return window['go']['main']['App']['RefreshAudio']();
 }
 
 export function ReloadProfiles() {
@@ -98,6 +130,10 @@ export function ReuseAttachment(arg1, arg2) {
   return window['go']['main']['App']['ReuseAttachment'](arg1, arg2);
 }
 
+export function RevealExport(arg1) {
+  return window['go']['main']['App']['RevealExport'](arg1);
+}
+
 export function SaveChatConfig(arg1) {
   return window['go']['main']['App']['SaveChatConfig'](arg1);
 }
@@ -106,12 +142,32 @@ export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }
 
+export function SearchHistory(arg1) {
+  return window['go']['main']['App']['SearchHistory'](arg1);
+}
+
 export function SetAlwaysOnTop(arg1) {
   return window['go']['main']['App']['SetAlwaysOnTop'](arg1);
 }
 
+export function SetAudioProvider(arg1) {
+  return window['go']['main']['App']['SetAudioProvider'](arg1);
+}
+
+export function SetChatPinned(arg1, arg2) {
+  return window['go']['main']['App']['SetChatPinned'](arg1, arg2);
+}
+
 export function SetDraft(arg1) {
   return window['go']['main']['App']['SetDraft'](arg1);
+}
+
+export function SetSTTKey(arg1, arg2) {
+  return window['go']['main']['App']['SetSTTKey'](arg1, arg2);
+}
+
+export function ShowAudioWindow() {
+  return window['go']['main']['App']['ShowAudioWindow']();
 }
 
 export function ShowLog() {
@@ -122,8 +178,24 @@ export function Snapshot() {
   return window['go']['main']['App']['Snapshot']();
 }
 
+export function StartAudioModel() {
+  return window['go']['main']['App']['StartAudioModel']();
+}
+
+export function StartListening() {
+  return window['go']['main']['App']['StartListening']();
+}
+
 export function StartLogin() {
   return window['go']['main']['App']['StartLogin']();
+}
+
+export function StopAudioModel() {
+  return window['go']['main']['App']['StopAudioModel']();
+}
+
+export function StopListening() {
+  return window['go']['main']['App']['StopListening']();
 }
 
 export function StreamSnapshot() {
@@ -132,6 +204,14 @@ export function StreamSnapshot() {
 
 export function Submit(arg1) {
   return window['go']['main']['App']['Submit'](arg1);
+}
+
+export function SubmitTranscript(arg1) {
+  return window['go']['main']['App']['SubmitTranscript'](arg1);
+}
+
+export function SuspendHotkeys(arg1) {
+  return window['go']['main']['App']['SuspendHotkeys'](arg1);
 }
 
 export function UpdateSettings(arg1) {

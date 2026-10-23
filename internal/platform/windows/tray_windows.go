@@ -30,7 +30,6 @@ const (
 var (
 	shell32                = syscall.NewLazyDLL("shell32.dll")
 	procShellNotifyIconW   = shell32.NewProc("Shell_NotifyIconW")
-	procLoadIconW          = user32.NewProc("LoadIconW")
 	procRegisterWindowMsgW = user32.NewProc("RegisterWindowMessageW")
 	procCreatePopupMenu    = user32.NewProc("CreatePopupMenu")
 	procAppendMenuW        = user32.NewProc("AppendMenuW")

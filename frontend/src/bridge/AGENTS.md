@@ -15,3 +15,9 @@
 - Profiles are required Snapshot fields (`profiles`, `profiles_error`) validated against generated ProfileView. Config's additive interview strings are normalized by Go when reading old archives. Profile commands use client.run; NewChatFromProfile flushes the live draft before navigation just like NewChat. Keep stored-profile creation separate from applying the editable form.
 
 - Image imports capture chatID before async FileReader; read inside client.run so navigation/duplicate imports remain serialized. attachments.ts bounds File.size before base64, while Go validates bytes/format/dimensions. Do not pass renderer paths to Go. Reuse and reorder use confirmed Go snapshots; preserve the live text/reference.
+
+- `acceptSnapshot` shares unchanged messages/images with the previous snapshot (serialized comparison, cached per object) so memoized rows can skip rendering; never mutate snapshot objects. History search and hotkey suspend/defaults bypass client.run (no operation slot); DeleteChats/ExportChat use client.result to return validated values.
+
+- `solveo:audio` carries the full `AudioView` (validated by `audioSchema`, accepted only with a newer revision, re-read through `AudioSnapshot` after connect; the empty state has revision -1). It is independent of chat snapshots. `insertTranscript` appends to the live editor through `edit` (new line after existing text, never during IME, keeps the reference); `submitTranscript` sends only segment IDs with the active chat and a fresh request ID — Go assembles the text, the draft is untouched. Audio commands go through `client.run`.
+
+- Detached audio uses AudioWindowApp through wails.ts, validated minimal View and sequential polling. Main onAudioInsert checks expiration, active chat and live editor eligibility, then acknowledges success/failure; never fall back to a stale Go draft.

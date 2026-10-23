@@ -6,14 +6,25 @@ import {
   History,
   Image,
   Layers,
+  Mic,
   Pin,
   PinOff,
   Plus,
+  Search,
   Settings,
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { actions, client, loadAccount, loadModels } from "../bridge/wails";
+import {
+  actions,
+  client,
+  defaultHotkeys,
+  onAudioInsert,
+  loadAccount,
+  loadModels,
+  searchHistory,
+  suspendHotkeys,
+} from "../bridge/wails";
 import { ChatView } from "../chat/ChatView";
 import { AnswerReference } from "../chat/AnswerReference";
 import { Composer } from "../chat/Composer";
@@ -32,12 +43,66 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>("closed");
   const [captureMenu, setCaptureMenu] = useState(false);
   const [notice, setNotice] = useState("");
+  // 0 hides conversation search; every Ctrl+F increments it to refocus the field.
+  const [chatSearch, setChatSearch] = useState(0);
   const copy = useCallback(async (text: string) => {
     const ok = await actions.copy(text);
     if (!ok) setNotice("Не удалось скопировать в буфер обмена");
     return ok;
   }, []);
+  // Stable callbacks let the memoized ChatView skip rendering while typing.
+  const activeChatID = state.status === "ready" ? state.snapshot.active_chat_id : "";
+  const followup = useCallback((id: string, kind: string, text: string) => {
+    if (client.prepareFollowup(id, kind, text)) composerRef.current?.focus();
+  }, []);
+  const reuseQuestion = useCallback((id: string) => {
+    if (client.reuseQuestion(id)) composerRef.current?.focus();
+  }, []);
+  const configure = useCallback(() => setPanel("configuration"), []);
+  const reuseImage = useCallback(
+    (id: string) => {
+      void actions.reuseImage(activeChatID, id);
+    },
+    [activeChatID],
+  );
+  const openImage = useCallback(
+    (id: string) => {
+      void actions.image(activeChatID, id);
+    },
+    [activeChatID],
+  );
+  const retry = useCallback((id: string) => {
+    void client.submit("", id);
+  }, []);
+  const closeSearch = useCallback(() => {
+    setChatSearch(0);
+    composerRef.current?.focus();
+  }, []);
   useEffect(() => client.connect(), []);
+  useEffect(
+    () =>
+      onAudioInsert((chatID, text) => {
+        const current = client.getState();
+        if (current.status !== "ready" || current.snapshot.active_chat_id !== chatID) return false;
+        const ok = client.insertTranscript(text);
+        if (ok) composerRef.current?.focus();
+        return ok;
+      }),
+    [],
+  );
+
+  // Ctrl+F searches the open conversation; e.code keeps it layout-independent.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === "KeyF") {
+        if (document.querySelector("dialog[open]")) return;
+        e.preventDefault();
+        setChatSearch((n) => n + 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     if (state.status === "ready") {
       document.documentElement.dataset["theme"] = state.snapshot.settings.theme;
@@ -138,6 +203,22 @@ export default function App() {
           >
             {s.settings.always_on_top ? <Pin size={17} /> : <PinOff size={17} />}
           </IconButton>
+          <IconButton
+            label="Поиск в разговоре (Ctrl+F)"
+            className={chatSearch ? "selected" : ""}
+            onClick={() => setChatSearch((n) => (n ? 0 : 1))}
+          >
+            <Search size={17} />
+          </IconButton>
+          <IconButton
+            label={
+              state.audio.listening ? "Распознавание речи (идёт запись)" : "Распознавание речи"
+            }
+            className={`audio-toggle ${state.audio.listening ? "recording" : ""}`}
+            onClick={() => void actions.showAudioWindow()}
+          >
+            <Mic size={17} />
+          </IconButton>
           <IconButton label="История чатов" onClick={() => setPanel("history")}>
             <History size={18} />
           </IconButton>
@@ -202,24 +283,16 @@ export default function App() {
         key={s.active_chat_id}
         snapshot={s}
         stream={state.stream}
+        searchFocus={chatSearch}
+        onSearchClose={closeSearch}
         canPrepareFollowup={canPrepareFollowup}
-        onFollowup={(id, kind, text) => {
-          if (client.prepareFollowup(id, kind, text)) composerRef.current?.focus();
-        }}
-        onReuse={(id) => {
-          if (client.reuseQuestion(id)) composerRef.current?.focus();
-        }}
-        onConfigure={() => setPanel("configuration")}
+        onFollowup={followup}
+        onReuse={reuseQuestion}
+        onConfigure={configure}
         canReuseImage={canAddImage}
-        onReuseImage={(id) => {
-          void actions.reuseImage(s.active_chat_id, id);
-        }}
-        onOpenImage={(id) => {
-          void actions.image(s.active_chat_id, id);
-        }}
-        onRetry={(id) => {
-          void client.submit("", id);
-        }}
+        onReuseImage={reuseImage}
+        onOpenImage={openImage}
+        onRetry={retry}
         onCopy={copy}
         onOpenLink={actions.openLink}
       />
@@ -335,7 +408,9 @@ export default function App() {
         <footer className="status-bar">
           <span className={`status-dot ${s.operation.phase !== "idle" ? "active" : ""}`} />
           <span aria-live="polite">{operationLabel}</span>
-          <span className="hide-hint">Ctrl+Alt+O — скрыть</span>
+          {s.settings.hotkeys.toggle && (
+            <span className="hide-hint">{s.settings.hotkeys.toggle} — скрыть</span>
+          )}
         </footer>
       </section>
       {panel !== "closed" && (
@@ -360,6 +435,13 @@ export default function App() {
           )}{" "}
           {panel === "settings" && (
             <AppSettings
+              busy={busy}
+              hotkeyActions={{ loadDefaults: defaultHotkeys, suspend: suspendHotkeys }}
+              dictionaryLimits={{
+                label: state.audio.provider.label,
+                phrases: state.audio.provider.max_phrases,
+                runes: state.audio.provider.max_phrase_runes,
+              }}
               connection={{
                 loadAccount,
                 onLogin: () => {
@@ -396,6 +478,15 @@ export default function App() {
           {panel === "history" && (
             <HistoryDrawer
               snapshot={s}
+              busy={busy}
+              search={searchHistory}
+              onPin={(id, pinned) => {
+                void actions.pinChat(id, pinned);
+              }}
+              onExport={actions.exportChat}
+              onReveal={(name) => {
+                void actions.revealExport(name);
+              }}
               onNew={() => {
                 void actions.newChat().then((ok) => {
                   if (ok) close();
@@ -406,9 +497,7 @@ export default function App() {
                   if (ok) close();
                 });
               }}
-              onDelete={(id) => {
-                void actions.deleteChat(id);
-              }}
+              onDelete={actions.deleteChats}
             />
           )}
           {panel === "images" && (

@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -16,7 +17,7 @@ func TestGlobalInstructionsUnicodeLimitAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.Load()
-	if err != nil || got != c {
+	if err != nil || !reflect.DeepEqual(got, c) {
 		t.Fatalf("round trip: %v", err)
 	}
 	c.GlobalInstructions += "a"

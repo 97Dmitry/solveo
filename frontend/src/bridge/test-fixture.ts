@@ -1,4 +1,35 @@
-import type { Snapshot } from "./state";
+import type { AudioState, Snapshot } from "./state";
+export function audioFixture(): AudioState {
+  return {
+    available: true,
+    history_enabled: false,
+    history_error: "",
+    provider: {
+      id: "qwen",
+      label: "Qwen3-ASR (локально)",
+      local: true,
+      preparable: true,
+      needs_key: false,
+      vendor: "",
+      key_label: "",
+      start_label: "Запустить модель",
+      stop_label: "Выгрузить модель",
+      max_phrases: 256,
+      max_phrase_runes: 128,
+    },
+    providers: [{ id: "qwen", label: "Qwen3-ASR (локально)", local: true }],
+    revision: 5,
+    checks: [],
+    busy: "",
+    progress: "",
+    model: "stopped",
+    listening: false,
+    sources: [],
+    segments: [],
+    error: "",
+    key_configured: false,
+  };
+}
 export function snapshotFixture(): Snapshot {
   return {
     profiles: [],
@@ -44,6 +75,14 @@ export function snapshotFixture(): Snapshot {
       theme: "dark",
       font_size: 17,
       always_on_top: false,
+      hotkeys: {
+        "quick-region": "Ctrl+Alt+S",
+        toggle: "Ctrl+Alt+O",
+        "queue-region": "Ctrl+Alt+A",
+        submit: "Ctrl+Alt+Enter",
+        "quick-full": "Ctrl+Alt+F",
+      },
+      audio: { provider: "", context_phrases: [] },
     },
     provider: {
       id: "codex",
@@ -56,5 +95,6 @@ export function snapshotFixture(): Snapshot {
     login: { id: "", url: "", code: "", state: "", error: "" },
     work_error: "",
     recovered: [],
+    hotkey_errors: {},
   };
 }

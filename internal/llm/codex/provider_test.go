@@ -137,3 +137,20 @@ func TestOrdinaryPromptUsesMainSolutionFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestTranscriptPromptIsScopedToAudioTurns(t *testing.T) {
+	c := New("codex", "", time.Minute, "", "")
+	for _, purpose := range []string{"", chat.AnswerApproach, chat.AnswerSolution} {
+		r := llm.Request{Purpose: purpose, Turn: chat.Message{Text: "Что за горутинки?", FromTranscript: true}}
+		p := c.prompt(r)
+		for _, want := range []string{"транскрипция", "сленг", "произношение", "отрицания", "числа"} {
+			if !strings.Contains(p, want) {
+				t.Fatalf("missing %q for %q: %s", want, purpose, p)
+			}
+		}
+		r.Turn.FromTranscript = false
+		if strings.Contains(c.prompt(r), "транскрипция") {
+			t.Fatal("manual question marked as transcript")
+		}
+	}
+}

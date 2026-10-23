@@ -82,20 +82,10 @@ const (
 	btnOpenChat           = 1023
 	btnViewChatImage      = 1024
 	btnDiscardChat        = 1025
-	hotkeyCapture         = 2001
-	hotkeyToggle          = 2002
-	hotkeyAdd             = 2003
-	hotkeySend            = 2004
-	modAlt                = 0x0001
-	modCtrl               = 0x0002
-	modNoRepeat           = 0x4000
-	keyS                  = 0x53
-	keyO                  = 0x4F
-	keyA                  = 0x41
-	keyEnter              = 0x0D
-	hotkeyFull            = 2005
-	keyF                  = 0x46
-	defaultGUIFont        = 17
+	// Global hotkey IDs are hotkeyBase + index in hotkeys.Actions.
+	hotkeyBase     = 2001
+	modNoRepeat    = 0x4000
+	defaultGUIFont = 17
 )
 
 var (

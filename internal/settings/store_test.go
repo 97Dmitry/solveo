@@ -3,17 +3,20 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/97Dmitry/solveo/internal/hotkeys"
 )
 
 func TestSettingsRoundTrip(t *testing.T) {
 	s := Open(t.TempDir())
-	want := Config{Theme: "light", FontSize: 18, UIScale: 100, AlwaysOnTop: true}
+	want := Config{Theme: "light", FontSize: 18, UIScale: 100, AlwaysOnTop: true, Hotkeys: hotkeys.Defaults(), Audio: Audio{ContextPhrases: []string{}}}
 	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Load()
-	if err != nil || got != want {
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
@@ -35,7 +38,7 @@ func TestDefaultAndLegacyFontIncreaseOnlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := s.Load()
-	if err != nil || loaded != migrated {
+	if err != nil || !reflect.DeepEqual(loaded, migrated) {
 		t.Fatalf("font grew twice: %+v %v", loaded, err)
 	}
 }
@@ -82,7 +85,38 @@ func TestRemovedStreamingSettingIsIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.Load()
-	if err != nil || got != (Config{Theme: "light", FontSize: 18, UIScale: 110}) {
+	if err != nil || !reflect.DeepEqual(got, Config{Theme: "light", FontSize: 18, UIScale: 110, Hotkeys: hotkeys.Defaults(), Audio: Audio{ContextPhrases: []string{}}}) {
 		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+func TestHotkeysDefaultMigrateAndRejectInvalid(t *testing.T) {
+	s := Open(t.TempDir())
+	write := func(data string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(s.Dir, "settings.json"), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"schema_version":1,"theme":"light","font_size":19,"ui_scale":120,"always_on_top":true,"hotkeys":{"toggle":"alt+ctrl+h","submit":"","future":"Ctrl+Alt+Z"}}`)
+	got, err := s.Load()
+	want := hotkeys.Defaults()
+	want[hotkeys.Toggle], want[hotkeys.Submit] = "Ctrl+Alt+H", ""
+	if err != nil || !reflect.DeepEqual(got.Hotkeys, want) || got.Theme != "light" || got.FontSize != 19 || got.UIScale != 120 || !got.AlwaysOnTop {
+		t.Fatalf("%+v %v", got, err)
+	}
+	write(`{"schema_version":1,"theme":"dark","font_size":17,"ui_scale":100,"hotkeys":{"toggle":"Ctrl+Alt+S"}}`)
+	if _, err := s.Load(); err == nil {
+		t.Fatal("conflicting hotkeys accepted")
+	}
+	bad := got
+	bad.Hotkeys = map[string]string{hotkeys.Toggle: "Ctrl+Alt+H"}
+	if err := s.Save(bad); err == nil {
+		t.Fatal("incomplete hotkeys saved")
+	}
+	bad.Hotkeys = hotkeys.Defaults()
+	bad.Hotkeys[hotkeys.Toggle] = "alt+ctrl+h"
+	if err := s.Save(bad); err == nil {
+		t.Fatal("non-canonical hotkeys saved")
 	}
 }

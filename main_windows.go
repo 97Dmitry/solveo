@@ -23,6 +23,8 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/audio"
+	"github.com/97Dmitry/solveo/internal/audiohistory"
 	"github.com/97Dmitry/solveo/internal/capture"
 	"github.com/97Dmitry/solveo/internal/config"
 	"github.com/97Dmitry/solveo/internal/history"
@@ -31,7 +33,12 @@ import (
 	"github.com/97Dmitry/solveo/internal/platform"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 	"github.com/97Dmitry/solveo/internal/profiles"
+	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/settings"
+	"github.com/97Dmitry/solveo/internal/stt"
+	"github.com/97Dmitry/solveo/internal/stt/gemini"
+	"github.com/97Dmitry/solveo/internal/stt/grok"
+	"github.com/97Dmitry/solveo/internal/stt/qwen"
 	"github.com/97Dmitry/solveo/internal/workstate"
 )
 
@@ -98,6 +105,9 @@ func startupError(err error) {
 	syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
 }
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "--audio-window" {
+		return runAudioWindow()
+	}
 	flags, e := config.Parse(os.Args[1:])
 	if e != nil {
 		return e
@@ -145,6 +155,18 @@ func run() error {
 	defer func() { _ = host.Close() }()
 	// Codex keeps Solveo's own state, login and sessions beside the archive.
 	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
+	// Speech providers share capture and transcript state; cloud keys live in Credential Manager.
+	keys := secrets.NewCredentialManager()
+	speech := core.AudioDeps{
+		History: audiohistory.New(filepath.Join(dir, "audio-history")),
+		Providers: []stt.Provider{
+			qwen.New(filepath.Join(dir, "models"), os.Getenv),
+			grok.New(func() (string, bool, error) { return keys.Get(stt.KeyName("grok")) }),
+			gemini.New(func() (string, bool, error) { return keys.Get(stt.KeyName("gemini")) }),
+		},
+		Capturer: audio.NewCapturer(),
+		Secrets:  keys,
+	}
 	controller, e := core.New(core.Dependencies{
 		Store:         store,
 		SettingsStore: settings.Open(dir),
@@ -154,6 +176,7 @@ func run() error {
 		NativeHost:    host,
 		Window:        window,
 		Work:          work,
+		Audio:         speech,
 		Emit: func(name string, data interface{}) {
 			window.mu.Lock()
 			runtimeCtx := window.ctx
@@ -167,6 +190,11 @@ func run() error {
 		return e
 	}
 	app := &App{controller: controller}
+	audioUI, err := configureAudioWindow(controller, window, app)
+	if err != nil {
+		return err
+	}
+	defer audioUI.Close()
 	app.exit = func() error {
 		window.mu.Lock()
 		runtimeCtx := window.ctx
@@ -281,6 +309,7 @@ func run() error {
 			return false
 		},
 		OnShutdown: func(context.Context) {
+			audioUI.Close()
 			cancel()
 			shutdownCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)
 			defer stop()
