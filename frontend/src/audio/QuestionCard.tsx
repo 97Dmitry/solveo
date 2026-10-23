@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { Pencil, RefreshCw, RotateCcw, Send, SkipForward } from "lucide-react";
 import type { QuestionCommand, QuestionState } from "../bridge/state";
-import { Button } from "../ui/Button";
+import { Button, IconButton } from "../ui/Button";
+import { sourceLabel } from "./actions";
+import { questionCommand } from "./question";
 
 const statuses: Record<QuestionState["status"], string> = {
   waiting: "Жду вопрос интервьюера",
@@ -10,70 +13,121 @@ const statuses: Record<QuestionState["status"], string> = {
   editing: "Ручная правка",
   error: "Сборка остановлена",
 };
+// QuestionCard is the live part of the question builder: status, text and the per-card actions.
+// Model and enable settings live in QuestionSettings.
 export function QuestionCard({
   view,
   busy,
   canSend,
   execute,
+  onOpenSettings,
 }: {
   view: QuestionState;
   busy: boolean;
   canSend: boolean;
   execute: (command: QuestionCommand) => Promise<void>;
+  onOpenSettings: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const [model, setModel] = useState(view.model);
-  const [effort, setEffort] = useState(view.reasoning);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [error, setError] = useState("");
-  const selected = view.models.find((m) => m.id === model);
   const editing = draft !== null;
   const run = async (action: string, extra: Partial<QuestionCommand> = {}) => {
     setError("");
     try {
-      await execute({
-        action,
-        chat_id: view.chat_id,
-        id: view.id,
-        revision: view.revision,
-        version: view.version,
-        text: "",
-        model: "",
-        reasoning: "",
-        confirm: false,
-        ...extra,
-      });
+      await execute(questionCommand(view, action, extra));
       return true;
     } catch (e) {
       setError(String(e));
       return false;
     }
   };
+  if (!view.available)
+    return (
+      <section className="question-card compact" aria-label="Собранный вопрос">
+        <p className="audio-note">Подключение не поддерживает сборку вопросов.</p>
+      </section>
+    );
+  if (!view.enabled && !view.text && !editing && !view.error)
+    return (
+      <section className="question-card compact" aria-label="Собранный вопрос">
+        <span className="question-status" role="status">
+          Сборщик вопросов выключен
+        </span>
+        {view.model ? (
+          <Button disabled={busy} onClick={() => void run("enable")}>
+            Включить сборщик
+          </Button>
+        ) : (
+          <Button onClick={onOpenSettings}>Выбрать модель</Button>
+        )}
+        {error && (
+          <p role="alert" className="audio-error">
+            {error}
+          </p>
+        )}
+      </section>
+    );
   return (
-    <section className="question-card" aria-label="Собранный вопрос">
-      <div className="audio-window-tools">
-        <strong>Вопрос интервьюера</strong>
-        <Button
-          disabled={busy || !view.available || (!view.enabled && !view.model)}
-          aria-pressed={view.enabled}
-          onClick={() => void run(view.enabled ? "disable" : "enable")}
-        >
-          {view.enabled ? "Выключить сборщик" : "Включить сборщик"}
-        </Button>
+    <section className={`question-card ${view.status}`} aria-label="Собранный вопрос">
+      <div className="question-card-head">
+        <span className="question-status" role="status">
+          {statuses[view.status]}
+          {!view.enabled && " · выключен"}
+          {view.manual &&
+            (view.origin === "manual" ? " · ручная версия" : " · подтверждено пользователем")}
+        </span>
+        <div className="question-card-tools">
+          {!editing && (
+            <IconButton
+              label="Редактировать"
+              disabled={busy}
+              onClick={() => {
+                setDraft(view.text);
+                void run("edit", { text: view.text });
+              }}
+            >
+              <Pencil size={16} />
+            </IconButton>
+          )}
+          <IconButton
+            label="Пропустить вопрос"
+            disabled={busy || (!view.id && view.status !== "analyzing" && !view.error)}
+            onClick={() =>
+              void run("skip").then((ok) => {
+                if (ok) setDraft(null);
+              })
+            }
+          >
+            <SkipForward size={16} />
+          </IconButton>
+          <IconButton
+            label="Пересобрать"
+            disabled={busy || !view.enabled}
+            onClick={() => {
+              if (editing || view.manual) setConfirmRebuild(true);
+              else void run("rebuild");
+            }}
+          >
+            <RefreshCw size={16} />
+          </IconButton>
+          {view.error && (
+            <IconButton
+              label="Повторить анализ"
+              disabled={busy || !view.enabled}
+              onClick={() => void run("retry")}
+            >
+              <RotateCcw size={16} />
+            </IconButton>
+          )}
+        </div>
       </div>
-      {!view.available && <p>Подключение не поддерживает сборку вопросов.</p>}
-      <p role="status">
-        {statuses[view.status]}
-        {!view.enabled && " · выключен"}
-        {view.manual &&
-          (view.origin === "manual" ? " · ручная версия" : " · подтверждено пользователем")}
-      </p>
       {view.status === "draft" && (
-        <p>
+        <small className="question-hint">
           {view.can_confirm
             ? "Анализ завершён. Модель оставила вопрос черновиком: проверьте текст и подтвердите его либо дождитесь продолжения."
             : "Ожидаю окончательных системных реплик или их анализа."}
-        </p>
+        </small>
       )}
       {(error || view.error) && (
         <p role="alert" className="audio-error">
@@ -81,14 +135,14 @@ export function QuestionCard({
         </p>
       )}
       {view.unincluded && (
-        <small>
+        <small className="question-hint">
           {view.manual
             ? "Есть новые реплики, не включённые в подтверждённый текст."
             : "Есть реплики, ещё не включённые в карточку."}
         </small>
       )}
       {editing ? (
-        <label>
+        <label className="question-editor">
           Текст вопроса
           <textarea
             aria-label="Текст собранного вопроса"
@@ -101,74 +155,45 @@ export function QuestionCard({
         <p className="question-card-text">{view.text}</p>
       ) : null}
       {editing && !view.editing && !busy && (
-        <p>
+        <p className="question-hint">
           Правка ещё не подтверждена или карточка уже изменена. Текст сохранён в редакторе.{" "}
           <Button onClick={() => setDraft(null)}>Закрыть локальную правку</Button>
         </p>
       )}
-      {view.previous_question_id && <small>Уточнение предыдущего отправленного вопроса</small>}
-      <div className="question-card-actions">
-        {view.can_confirm && !editing && (
-          <Button disabled={busy} onClick={() => void run("confirm")}>
-            Подтвердить этот текст
-          </Button>
-        )}
-
-        {editing ? (
+      {view.previous_question_id && (
+        <small className="question-hint">Уточнение предыдущего отправленного вопроса</small>
+      )}
+      {(editing || view.text) && (
+        <div className="question-card-actions">
+          {view.can_confirm && !editing && (
+            <Button disabled={busy} onClick={() => void run("confirm")}>
+              Подтвердить этот текст
+            </Button>
+          )}
+          {editing && (
+            <Button
+              disabled={busy || !view.editing || !draft.trim() || Array.from(draft).length > 8000}
+              onClick={() =>
+                void run("save", { text: draft }).then((saved) => {
+                  if (saved) setDraft(null);
+                })
+              }
+            >
+              Сохранить правки
+            </Button>
+          )}
           <Button
-            disabled={busy || !view.editing || !draft.trim() || Array.from(draft).length > 8000}
-            onClick={() =>
-              void run("save", { text: draft }).then((saved) => {
-                if (saved) setDraft(null);
-              })
-            }
+            className="primary"
+            disabled={busy || editing || !view.can_send || !canSend}
+            onClick={() => void run("send")}
           >
-            Сохранить правки
+            <Send size={14} />
+            Отправить вопрос
           </Button>
-        ) : (
-          <Button
-            disabled={busy}
-            onClick={() => {
-              setDraft(view.text);
-              void run("edit", { text: view.text });
-            }}
-          >
-            Редактировать
-          </Button>
-        )}
-        <Button
-          disabled={busy || editing || !view.can_send || !canSend}
-          onClick={() => void run("send")}
-        >
-          Отправить собранный вопрос
-        </Button>
-        <Button
-          disabled={busy || (!view.id && view.status !== "analyzing" && !view.error)}
-          onClick={() =>
-            void run("skip").then((ok) => {
-              if (ok) setDraft(null);
-            })
-          }
-        >
-          Пропустить вопрос
-        </Button>
-        <Button
-          disabled={busy || !view.enabled}
-          onClick={() => {
-            if (editing || view.manual) setConfirmRebuild(true);
-            else void run("rebuild");
-          }}
-        >
-          Пересобрать
-        </Button>
-        {view.error && (
-          <Button disabled={busy || !view.enabled} onClick={() => void run("retry")}>
-            Повторить анализ
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
       {confirmRebuild && (
-        <div role="group" aria-label="Замена ручной версии">
+        <div className="question-confirm" role="group" aria-label="Замена ручной версии">
           <p>Заменить текущий текст результатом сборщика?</p>
           <Button
             disabled={busy}
@@ -191,60 +216,11 @@ export function QuestionCard({
           <summary>Исходные реплики ({view.sources.length})</summary>
           {view.sources.map((source) => (
             <p key={source.id}>
-              <small>{source.track === "system" ? "Собеседник" : "Микрофон"}</small> {source.text}
+              <small>{sourceLabel[source.track]}</small> {source.text}
             </p>
           ))}
         </details>
       )}
-      <details
-        className="question-settings"
-        onToggle={(event) => {
-          if (event.currentTarget.open && view.models.length === 0) void run("models");
-        }}
-      >
-        <summary>Модель сборщика{view.model && ` · ${view.model}`}</summary>
-        <p>Отдельные запросы к Codex по мере речи. Основной чат и его настройки не меняются.</p>
-        <Button disabled={busy} onClick={() => void run("models")}>
-          Обновить список моделей
-        </Button>
-        <label>
-          Модель сборщика
-          <select
-            value={model}
-            onChange={(event) => {
-              setModel(event.target.value);
-              setEffort(
-                view.models.find((m) => m.id === event.target.value)?.default_reasoning ?? "",
-              );
-            }}
-          >
-            <option value="">Выберите модель</option>
-            {model && !selected && <option value={model}>{model} (проверить доступность)</option>}
-            {view.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Reasoning effort
-          <select value={effort} onChange={(event) => setEffort(event.target.value)}>
-            <option value="">По умолчанию подключения</option>
-            {selected?.reasoning_efforts.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          disabled={busy || !selected}
-          onClick={() => void run("configure", { model, reasoning: effort })}
-        >
-          Сохранить модель сборщика
-        </Button>
-      </details>
     </section>
   );
 }

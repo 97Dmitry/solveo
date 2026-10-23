@@ -4,131 +4,361 @@
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
 }
+
+/* Header: target chat, dock toggle and the session lifecycle stay visible on every tab. */
 .audio-window-header {
-  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 8px 16px;
+  flex-shrink: 0;
+}
+.audio-window-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.audio-window-chat {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+.session-bar > .audio-note {
+  margin: 0;
+}
+.session-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.session-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.session-dot,
+.tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.session-indicator.ready .session-dot {
+  background: var(--accent);
+}
+.session-indicator.listening .session-dot,
+.tab-dot.listening {
+  background: var(--danger);
+  animation: audio-pulse 1.6s ease-in-out infinite;
+}
+.tab-dot.attention {
+  background: var(--accent);
+}
+@keyframes audio-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-indicator.listening .session-dot,
+  .tab-dot.listening {
+    animation: none;
+  }
+}
+.session-provider {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-state .audio-progress {
+  flex-basis: 100%;
+}
+.audio-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px 8px;
+  max-height: 20vh;
+  overflow: auto;
+  flex-shrink: 0;
+}
+
+/* Tabs */
+.audio-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.audio-tab-list {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-.audio-window-header p {
-  margin: 8px 0;
+.audio-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.audio-tab:hover {
+  color: var(--text);
+}
+.audio-tab[data-state="active"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.audio-tab:focus-visible {
+  outline-offset: -2px;
+}
+.audio-tab-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.audio-tab-panel[hidden] {
+  display: none;
+}
+.audio-tab-panel:focus-visible {
+  outline-offset: -2px;
+}
+.audio-tab-panel.settings {
+  overflow: auto;
+  padding: 4px 16px 16px;
+  gap: 4px;
+}
+
+/* Live tab: the question card on top, the transcript takes the remaining height. */
+.question-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  max-height: 48%;
+  overflow: auto;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+}
+.question-card.compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 6px 16px;
+}
+.question-card.compact .audio-note,
+.question-card p {
+  margin: 0;
+}
+.question-card.ready {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.question-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.question-status {
+  color: var(--muted);
+  font-size: 13px;
+  min-width: 0;
+}
+.question-card.ready .question-status,
+.question-card.draft .question-status {
+  color: var(--text);
+  font-weight: 600;
+}
+.question-card-tools {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.question-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.question-card-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--chat-size);
+  line-height: 1.45;
+  user-select: text;
+}
+.question-card-actions,
+.question-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.question-confirm p {
+  flex-basis: 100%;
+}
+.question-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.question-editor textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font-size: var(--chat-size);
+}
+.question-sources > summary,
+.history-metadata > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.question-sources {
+  font-size: 13px;
+}
+.question-sources p {
+  margin: 6px 0 0;
   overflow-wrap: anywhere;
 }
-.audio-window-header small {
+.question-sources small {
   color: var(--muted);
 }
-.audio-window > .audio-panel {
-  max-height: none;
+.live-transcript {
   flex: 1;
-  padding: 12px 16px;
-  border-top: 0;
-}
-.audio-window > .audio-error {
-  padding: 0 16px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .audio-window .transcript {
   flex: 1;
   max-height: none;
-  min-height: 120px;
+  min-height: 0;
+  padding: 8px 16px;
 }
-.audio-window > .audio-panel > :not(.transcript) {
-  flex-shrink: 0;
-}
-.audio-window-tools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.audio-window-mode {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.audio-window .transcript-archive .segment:disabled {
-  opacity: 1;
+.audio-window .transcript-empty {
+  flex: 1;
+  padding: 16px;
 }
 .audio-window .segment-text {
   font-size: var(--chat-size);
   line-height: 1.5;
 }
+.audio-window .transcript-actions {
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 8px 12px 8px 16px;
+  border-top: 1px solid var(--line);
+  gap: 6px;
+}
 
-.audio-window-chat {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.audio-window-info > summary,
-.audio-settings > summary,
-.audio-source-details > summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-}
-.audio-session-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-}
-.audio-session-state {
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.audio-settings-body {
+/* Settings tab */
+.settings-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 8px;
-  max-height: 35vh;
-  overflow: auto;
-}
-.audio-source-details > .audio-sources {
-  margin-top: 8px;
-}
-
-.question-card {
-  flex-shrink: 0;
-  max-height: 52vh;
-  overflow: auto;
-  padding: 12px 16px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
 }
-.question-card p {
-  margin: 8px 0;
+.settings-section:last-child {
+  border-bottom: 0;
 }
-.question-card small {
-  color: var(--muted);
+.settings-section h2 {
+  margin: 0;
+  font-size: 14px;
 }
-.question-card-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.settings-section .audio-note {
+  margin: 0;
+  font-size: 13px;
 }
-.question-card-actions {
+.settings-fields {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0;
+  flex-direction: column;
+  gap: 8px;
 }
-.question-card label {
+.settings-fields label {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 8px 0;
-}
-.question-card textarea {
-  width: 100%;
-  min-height: 80px;
-  resize: vertical;
-}
-.question-card summary {
-  cursor: pointer;
   color: var(--muted);
-  margin-top: 8px;
+  font-size: 12px;
 }
-.question-sources {
-  max-height: 20vh;
-  overflow: auto;
+.settings-fields select {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* Ghost buttons get a hairline so secondary commands read as buttons in this dense window. */
+.audio-window .button:not(.primary):not(.icon-button) {
+  border-color: var(--line);
+}
+.selection-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: auto;
+  font-size: 13px;
+}
+.selection-count .icon-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+}
+/* Own speech is indented like a chat reply, so the interviewer's phrases stand out. */
+.audio-window .transcript > li:has(.segment.mic),
+.history-row.mic {
+  margin-left: 24px;
+}
+/* Short windows keep room for the transcript under the question. */
+@media (max-height: 480px) {
+  .question-card {
+    max-height: 38%;
+    padding-block: 6px;
+  }
+  .question-card-text {
+    font-size: 15px;
+  }
 }

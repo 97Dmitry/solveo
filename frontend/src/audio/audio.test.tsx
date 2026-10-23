@@ -2,7 +2,11 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { AudioPanel, type AudioActions } from "./AudioPanel";
+import type { AudioActions } from "./actions";
+import { AudioAlerts } from "./AudioAlerts";
+import { LiveTranscript } from "./LiveTranscript";
+import { RecognitionSettings } from "./RecognitionSettings";
+import { SessionControls } from "./SessionControls";
 import { audioFixture } from "../bridge/test-fixture";
 import type { AudioState } from "../bridge/state";
 afterEach(cleanup);
@@ -35,8 +39,20 @@ function audio(patch: Partial<AudioState>): AudioState {
 function seg(id: string, text: string, final = true, track: "system" | "mic" = "system") {
   return { id, track, started_at: "2026-10-23T10:00:00Z", text, final };
 }
-function renderPanel(state: AudioState, a = actions(), canSend = true) {
-  render(<AudioPanel audio={state} disabled={false} canSend={canSend} actions={a} />);
+const header = () => within(screen.getByRole("banner"));
+const settings = () => within(screen.getByRole("region", { name: "Распознаватель" }));
+// The same composition as the window: header controls, alerts, live tab and settings tab.
+function renderPanel(state: AudioState, a = actions(), canSend = true, onSetup = vi.fn()) {
+  render(
+    <>
+      <header>
+        <SessionControls audio={state} disabled={false} actions={a} onSetup={onSetup} />
+      </header>
+      <AudioAlerts audio={state} window="" />
+      <LiveTranscript audio={state} disabled={false} canSend={canSend} actions={a} />
+      <RecognitionSettings audio={state} disabled={false} actions={a} />
+    </>,
+  );
   return a;
 }
 
@@ -44,6 +60,7 @@ it("checks readiness when opened without status and offers preparation for missi
   const a = renderPanel(audio({ checks: [] }));
   expect(a.refresh).toHaveBeenCalledTimes(1);
   cleanup();
+  const onSetup = vi.fn();
   const b = renderPanel(
     audio({
       checks: [
@@ -51,19 +68,23 @@ it("checks readiness when opened without status and offers preparation for missi
         { id: "image", label: "Образ", state: "missing" as const, message: "Образ не собран" },
       ],
     }),
+    actions(),
+    true,
+    onSetup,
   );
-  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.getByText("Образ не собран")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Подготовить" }));
+  await userEvent.click(header().getByRole("button", { name: "Настроить" }));
+  expect(onSetup).toHaveBeenCalled();
+  await userEvent.click(settings().getByRole("button", { name: "Подготовить" }));
   expect(b.prepare).toHaveBeenCalled();
 });
 
-it("starts the model only when all checks are ok", async () => {
+it("starts the model from the header only when all checks are ok", async () => {
   const a = renderPanel(audio({ checks: allOk }));
-  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.queryByRole("button", { name: "Подготовить" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Запустить модель" }));
+  expect(screen.getAllByRole("button", { name: "Запустить модель" })).toHaveLength(1);
+  await userEvent.click(header().getByRole("button", { name: "Запустить модель" }));
   expect(a.startModel).toHaveBeenCalled();
 });
 
@@ -76,21 +97,22 @@ it("shows progress while busy and hides commands", () => {
       progress: "Загрузка модели в видеопамять",
     }),
   );
-  expect(screen.getByText("Загрузка модели в видеопамять")).toBeTruthy();
+  expect(header().getByText("Загрузка модели в видеопамять")).toBeTruthy();
+  expect(header().getByText("Подключаю…")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
 });
 
 it("toggles listening and unloads the model only when not listening", async () => {
   const a = renderPanel(audio({ checks: allOk, model: "ready" }));
-  await userEvent.click(screen.getByRole("button", { name: "Слушать" }));
+  await userEvent.click(header().getByRole("button", { name: "Слушать" }));
   expect(a.startListening).toHaveBeenCalled();
-  await userEvent.click(screen.getByText("Настройки распознавания"));
-  await userEvent.click(screen.getByRole("button", { name: "Выгрузить модель" }));
+  await userEvent.click(settings().getByRole("button", { name: "Выгрузить модель" }));
   expect(a.stopModel).toHaveBeenCalled();
   cleanup();
   const b = renderPanel(audio({ checks: allOk, model: "ready", listening: true }));
   expect(screen.queryByRole("button", { name: "Выгрузить модель" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Остановить" }));
+  expect(header().getByText("Слушаю")).toBeTruthy();
+  await userEvent.click(header().getByRole("button", { name: "Остановить" }));
   expect(b.stopListening).toHaveBeenCalled();
 });
 
@@ -107,13 +129,16 @@ it("labels sources and lets only final phrases be selected", async () => {
     }),
   );
   expect(screen.getByText(/Наушники/)).toBeTruthy();
-  expect(screen.getByText(/устройство звука не найдено/)).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("устройство звука не найдено");
   const partial = screen.getByRole("button", { name: /Говорю сейчас/ });
   expect(partial.hasAttribute("disabled")).toBe(true);
   const final = screen.getByRole("button", { name: /Готовая фраза/ });
   await userEvent.click(final);
   expect(final.getAttribute("aria-pressed")).toBe("true");
   expect(within(final).getByText("Собеседник")).toBeTruthy();
+  expect(screen.getByText("Выбрано: 1")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Снять выбор" }));
+  expect(final.getAttribute("aria-pressed")).toBe("false");
 });
 
 it("sends selected ids in transcript order and clears the selection", async () => {
@@ -130,12 +155,14 @@ it("sends selected ids in transcript order and clears the selection", async () =
   expect(screen.getByRole("button", { name: /Первая/ }).getAttribute("aria-pressed")).toBe("false");
 });
 
-it("inserts selected text into the composer", async () => {
+it("inserts selected text into the composer and clears only the live list", async () => {
   const a = renderPanel(audio({ segments: [seg("a:1", "Первая"), seg("a:2", "Вторая")] }));
   await userEvent.click(screen.getByRole("button", { name: /Вторая/ }));
   await userEvent.click(screen.getByRole("button", { name: /Первая/ }));
   await userEvent.click(screen.getByRole("button", { name: "В поле ввода" }));
   expect(a.insert).toHaveBeenCalledWith("Первая\nВторая");
+  await userEvent.click(screen.getByRole("button", { name: "Очистить расшифровку" }));
+  expect(a.clear).toHaveBeenCalled();
 });
 
 it("disables sending while the chat cannot submit", async () => {
@@ -151,7 +178,7 @@ it("disables sending while the chat cannot submit", async () => {
 
 it("explains when recognition is unavailable", () => {
   renderPanel(audio({ available: false }));
-  expect(screen.getByText(/Распознавание речи недоступно/)).toBeTruthy();
+  expect(header().getByText(/Распознавание речи недоступно/)).toBeTruthy();
 });
 
 const grok = {
@@ -174,16 +201,18 @@ const providers = [
 
 it("switches the provider only while recognition is stopped", async () => {
   const a = renderPanel(audio({ providers }));
-  await userEvent.click(screen.getByText("Настройки распознавания"));
-  await userEvent.selectOptions(screen.getByLabelText("Распознаватель"), "grok");
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Распознаватель" }), "grok");
   expect(a.selectProvider).toHaveBeenCalledWith("grok");
   expect(screen.getByText(/Локально: звук не покидает компьютер/)).toBeTruthy();
   cleanup();
   renderPanel(audio({ providers, model: "ready", listening: true }));
-  expect(screen.getByLabelText("Распознаватель").hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("combobox", { name: "Распознаватель" }).hasAttribute("disabled")).toBe(
+    true,
+  );
+  expect(screen.getByText(/меняется только после отключения/)).toBeTruthy();
 });
 
-it("marks a cloud provider and takes button wording from it", async () => {
+it("marks a cloud provider and takes button wording from it", () => {
   renderPanel(
     audio({
       provider: grok,
@@ -192,17 +221,16 @@ it("marks a cloud provider and takes button wording from it", async () => {
       checks: [{ id: "key", label: "Ключ xAI", state: "ok", message: "Ключ задан" }],
     }),
   );
-  await userEvent.click(screen.getByText("Настройки распознавания"));
   expect(screen.getByText("Облако: звук отправляется в xAI")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Подключить" })).toBeTruthy();
+  expect(header().getByRole("button", { name: "Подключить" })).toBeTruthy();
+  expect(header().getByText("Grok STT (облако xAI)")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Запустить модель" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Подготовить" })).toBeNull();
 });
 
 it("stores the key without ever showing the saved one", async () => {
   const a = renderPanel(audio({ provider: grok, providers, key_configured: true }));
-  await userEvent.click(screen.getByText("Настройки распознавания"));
-  expect(screen.getByText("Ключ сохранён")).toBeTruthy();
+  expect(settings().getAllByText("Ключ сохранён").length).toBeGreaterThan(0);
   const field = screen.getByLabelText<HTMLInputElement>("API-ключ xAI");
   expect(field.value).toBe("");
   expect(field.type).toBe("password");
@@ -214,24 +242,22 @@ it("stores the key without ever showing the saved one", async () => {
   expect(a.deleteKey).toHaveBeenCalledWith("grok");
 });
 
-it("keeps setup collapsed while listening without hiding stop or source failures", async () => {
-  const a = renderPanel(
+it("keeps stop and current failures outside the settings section", () => {
+  renderPanel(
     audio({
       model: "ready",
       listening: true,
       checks: allOk,
+      error: "Сеанс потерян",
+      history_error: "Диск заполнен",
       sources: [{ track: "mic", device: "Микрофон", active: false, error: "Потерян микрофон" }],
     }),
   );
-  const setup = screen.getByText("Настройки распознавания").closest("details");
-  expect(setup?.hasAttribute("open")).toBe(false);
-  expect(screen.getByText(/Потерян микрофон/).closest("details")).toBeNull();
-  const stop = screen.getByRole("button", { name: "Остановить" });
-  expect(stop.closest("details")).toBeNull();
-  await userEvent.click(screen.getByText("Настройки распознавания"));
-  expect(setup?.hasAttribute("open")).toBe(true);
-  await userEvent.click(screen.getByText("Настройки распознавания"));
-  expect(setup?.hasAttribute("open")).toBe(false);
-  await userEvent.click(stop);
-  expect(a.stopListening).toHaveBeenCalled();
+  const section = screen.getByRole("region", { name: "Распознаватель" });
+  for (const text of [/Потерян микрофон/, /Сеанс потерян/, /История: Диск заполнен/]) {
+    const alert = screen.getByText(text);
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(section.contains(alert)).toBe(false);
+  }
+  expect(section.contains(header().getByRole("button", { name: "Остановить" }))).toBe(false);
 });

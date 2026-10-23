@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { questionFixture } from "../bridge/test-fixture";
 import { QuestionCard } from "./QuestionCard";
+import { QuestionSettings } from "./QuestionSettings";
 
 afterEach(cleanup);
 it("sends exactly the displayed card identity and revision", async () => {
@@ -20,9 +21,10 @@ it("sends exactly the displayed card identity and revision", async () => {
       busy={false}
       canSend={true}
       execute={execute}
+      onOpenSettings={vi.fn()}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: "Отправить собранный вопрос" }));
+  await userEvent.click(screen.getByRole("button", { name: "Отправить вопрос" }));
   expect(execute).toHaveBeenCalledWith(
     expect.objectContaining({ action: "send", id: "q", chat_id: "chat", revision: 1 }),
   );
@@ -31,7 +33,13 @@ it("keeps local edits when polling delivers a late automatic result", async () =
   const execute = vi.fn().mockResolvedValue(undefined);
   const view = { ...questionFixture(), id: "q", text: "original", enabled: true };
   const rendered = render(
-    <QuestionCard view={view} busy={false} canSend={true} execute={execute} />,
+    <QuestionCard
+      view={view}
+      busy={false}
+      canSend={true}
+      execute={execute}
+      onOpenSettings={vi.fn()}
+    />,
   );
   await userEvent.click(screen.getByRole("button", { name: "Редактировать" }));
   const input = screen.getByRole("textbox", { name: "Текст собранного вопроса" });
@@ -43,6 +51,7 @@ it("keeps local edits when polling delivers a late automatic result", async () =
       busy={false}
       canSend={true}
       execute={execute}
+      onOpenSettings={vi.fn()}
     />,
   );
   expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("my question");
@@ -59,6 +68,7 @@ it("requires confirmation before rebuilding a manual version", async () => {
       busy={false}
       canSend={true}
       execute={execute}
+      onOpenSettings={vi.fn()}
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: "Пересобрать" }));
@@ -73,7 +83,13 @@ it("does not apply an old local edit to the next card after an external skip", a
   const execute = vi.fn().mockResolvedValue(undefined);
   const view = { ...questionFixture(), id: "old", text: "old question", editing: true };
   const rendered = render(
-    <QuestionCard view={view} busy={false} canSend={true} execute={execute} />,
+    <QuestionCard
+      view={view}
+      busy={false}
+      canSend={true}
+      execute={execute}
+      onOpenSettings={vi.fn()}
+    />,
   );
   await userEvent.click(screen.getByRole("button", { name: "Редактировать" }));
   rendered.rerender(
@@ -82,6 +98,7 @@ it("does not apply an old local edit to the next card after an external skip", a
       busy={false}
       canSend={true}
       execute={execute}
+      onOpenSettings={vi.fn()}
     />,
   );
   const save = screen.getByRole<HTMLButtonElement>("button", { name: "Сохранить правки" });
@@ -90,41 +107,6 @@ it("does not apply an old local edit to the next card after an external skip", a
   expect(execute).toHaveBeenCalledTimes(1);
   await userEvent.click(screen.getByRole("button", { name: "Закрыть локальную правку" }));
   expect(screen.getByText("new question")).toBeTruthy();
-});
-
-it("uses only the selected model's advertised efforts and saves its default", async () => {
-  const execute = vi.fn().mockResolvedValue(undefined);
-  const model = {
-    id: "chosen",
-    label: "Chosen model",
-    description: "",
-    is_default: false,
-    default_reasoning: "low",
-    reasoning_efforts: [
-      { id: "low", description: "fast" },
-      { id: "high", description: "deep" },
-    ],
-  };
-  render(
-    <QuestionCard
-      view={{ ...questionFixture(), models: [model] }}
-      busy={false}
-      canSend={true}
-      execute={execute}
-    />,
-  );
-  await userEvent.click(screen.getByText("Модель сборщика", { selector: "summary" }));
-  await userEvent.selectOptions(
-    screen.getByRole("combobox", { name: "Модель сборщика" }),
-    "chosen",
-  );
-  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Reasoning effort" }).value).toBe(
-    "low",
-  );
-  await userEvent.click(screen.getByRole("button", { name: "Сохранить модель сборщика" }));
-  expect(execute).toHaveBeenLastCalledWith(
-    expect.objectContaining({ action: "configure", model: "chosen", reasoning: "low" }),
-  );
 });
 
 it("shows a completed model draft as awaiting review and confirms without sending", async () => {
@@ -141,13 +123,14 @@ it("shows a completed model draft as awaiting review and confirms without sendin
       busy={false}
       canSend={true}
       execute={execute}
+      onOpenSettings={vi.fn()}
     />,
   );
   expect(screen.getByRole("status").textContent).toContain("Черновик вопроса");
   expect(screen.getByText(/Анализ завершён/)).toBeTruthy();
-  expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "Отправить собранный вопрос" }).disabled,
-  ).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Отправить вопрос" }).disabled).toBe(
+    true,
+  );
   await userEvent.click(screen.getByRole("button", { name: "Подтвердить этот текст" }));
   expect(execute).toHaveBeenCalledTimes(1);
   expect(execute).toHaveBeenCalledWith(
@@ -168,8 +151,87 @@ it("does not offer confirmation while new system speech is unresolved", () => {
       busy={false}
       canSend={true}
       execute={vi.fn()}
+      onOpenSettings={vi.fn()}
     />,
   );
   expect(screen.queryByRole("button", { name: "Подтвердить этот текст" })).toBeNull();
   expect(screen.getByText(/Ожидаю окончательных системных реплик/)).toBeTruthy();
+});
+
+it("uses only the selected model's advertised efforts and saves its default", async () => {
+  const execute = vi.fn().mockResolvedValue(undefined);
+  const model = {
+    id: "chosen",
+    label: "Chosen model",
+    description: "",
+    is_default: false,
+    default_reasoning: "low",
+    reasoning_efforts: [
+      { id: "low", description: "fast" },
+      { id: "high", description: "deep" },
+    ],
+  };
+  render(
+    <QuestionSettings
+      view={{ ...questionFixture(), models: [model] }}
+      busy={false}
+      execute={execute}
+    />,
+  );
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Модель сборщика" }),
+    "chosen",
+  );
+  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Reasoning effort" }).value).toBe(
+    "low",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Сохранить модель сборщика" }));
+  expect(execute).toHaveBeenLastCalledWith(
+    expect.objectContaining({ action: "configure", model: "chosen", reasoning: "low" }),
+  );
+});
+it("collapses a disabled builder to one line and enables it only with a model", async () => {
+  const execute = vi.fn().mockResolvedValue(undefined);
+  const onOpenSettings = vi.fn();
+  const view = render(
+    <QuestionCard
+      view={questionFixture()}
+      busy={false}
+      canSend={true}
+      execute={execute}
+      onOpenSettings={onOpenSettings}
+    />,
+  );
+  expect(screen.getByRole("status").textContent).toBe("Сборщик вопросов выключен");
+  expect(screen.queryByRole("button", { name: "Пересобрать" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Выбрать модель" }));
+  expect(onOpenSettings).toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
+  view.rerender(
+    <QuestionCard
+      view={{ ...questionFixture(), model: "chosen" }}
+      busy={false}
+      canSend={true}
+      execute={execute}
+      onOpenSettings={onOpenSettings}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Включить сборщик" }));
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ action: "enable" }));
+});
+it("toggles the builder from settings", async () => {
+  const execute = vi.fn().mockResolvedValue(undefined);
+  render(
+    <QuestionSettings
+      view={{ ...questionFixture(), enabled: true, model: "chosen" }}
+      busy={false}
+      execute={execute}
+    />,
+  );
+  const toggle = screen.getByRole("button", { name: "Выключить сборщик" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  await userEvent.click(toggle);
+  expect(execute).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "disable", chat_id: "chat", revision: 1 }),
+  );
 });

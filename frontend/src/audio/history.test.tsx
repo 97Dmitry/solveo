@@ -4,8 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { AudioHistoryDocument } from "../bridge/wails";
 import { AudioHistory } from "./AudioHistory";
-import { AudioPanel, type AudioActions, type ArchivedTranscript } from "./AudioPanel";
-import { audioFixture } from "../bridge/test-fixture";
 const api = vi.hoisted(() => ({
   forChat: vi.fn(),
   deleteChat: vi.fn(),
@@ -37,41 +35,61 @@ function document(id = "session", count = 301): AudioHistoryDocument {
     })),
   };
 }
-const historyProps = { chatID: "chat-a", chatTitle: "Первый чат" };
-it("opens a merged current-chat timeline without a session chooser and paginates it", async () => {
+const rows = () => screen.queryAllByRole("listitem").filter((li) => li.matches(".history-row"));
+it("loads the merged current-chat timeline on open and pages it from the latest phrases", async () => {
   api.forChat.mockResolvedValue(document());
-  const onArchive = vi.fn<(archive: ArchivedTranscript | undefined) => void>();
-  render(<AudioHistory {...historyProps} onArchive={onArchive} />);
-  expect(api.forChat).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
-  await screen.findByText("Страница 1 из 2");
+  render(<AudioHistory chatID="chat-a" />);
+  await screen.findByText("Страница 2 из 2");
   expect(api.forChat).toHaveBeenCalledWith("chat-a");
-  const metadata = screen.getByText("Метаданные").closest("details");
+  expect(screen.getByText(/^301 фраза/)).toBeTruthy();
+  const metadata = screen.getByText(/^Подробности/).closest("details");
   expect(metadata?.hasAttribute("open")).toBe(false);
   expect(screen.getByText(/Фраз: 301/).closest("details")).toBe(metadata);
-  await userEvent.click(screen.getByText("Метаданные"));
-  expect(metadata?.hasAttribute("open")).toBe(true);
+  expect(screen.getByText("Подробности · ошибок: 1")).toBeTruthy();
   expect(screen.queryByRole("combobox")).toBeNull();
-  expect(screen.queryByText("Записи старой версии")).toBeNull();
-  expect(onArchive.mock.lastCall?.[0]?.title).toContain("Первый чат");
-  expect(onArchive.mock.lastCall?.[0]?.segments).toHaveLength(300);
-  await userEvent.click(screen.getByRole("button", { name: "Следующие фразы" }));
-  expect(onArchive.mock.lastCall?.[0]?.segments[0]?.text).toBe("Фраза 300");
-  expect(onArchive.mock.lastCall?.[0]?.segments[0]?.provider_label).toBe("Gemini");
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0]?.textContent).toContain("Фраза 300");
+  expect(rows()[0]?.textContent).toContain("Собеседник · Gemini");
+  // Archive rows are plain text, never selectable phrase buttons.
+  expect(screen.queryByRole("button", { name: /Фраза/ })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Предыдущие фразы" }));
-  expect(onArchive.mock.lastCall?.[0]?.segments).toHaveLength(300);
+  expect(rows()).toHaveLength(300);
+  expect(rows()[0]?.textContent).toContain("Фраза 0");
+  await userEvent.click(screen.getByRole("button", { name: "Следующие фразы" }));
+  expect(rows()).toHaveLength(1);
+});
+it("filters the whole timeline by text, highlights matches and marks sent phrases", async () => {
+  const doc = document("chat-a", 30);
+  doc.submissions = [
+    {
+      at: "2026-10-23T10:05:00Z",
+      chat_id: "chat-a",
+      operation_id: "op",
+      segment_ids: ["chat-a:12"],
+    },
+  ];
+  api.forChat.mockResolvedValue(doc);
+  render(<AudioHistory chatID="chat-a" />);
+  await screen.findByText(/^30 фраз /);
+  await userEvent.type(screen.getByRole("searchbox", { name: "Поиск по истории" }), "фраза 1");
+  await waitFor(() => expect(screen.getByText(/Найдено: 11 из 30/)).toBeTruthy());
+  expect(rows()).toHaveLength(11);
+  expect(rows()[0]?.querySelector("mark")?.textContent).toBe("Фраза 1");
+  expect(screen.getAllByText("отправлено в чат")).toHaveLength(1);
+  await userEvent.clear(screen.getByRole("searchbox"));
+  await userEvent.type(screen.getByRole("searchbox"), "нет такого");
+  expect(await screen.findByText("Ничего не найдено")).toBeTruthy();
 });
 it("shows empty current-chat history and read errors", async () => {
   api.forChat
     .mockResolvedValueOnce(document("empty", 0))
     .mockRejectedValueOnce(new Error("Не удалось прочитать"));
-  render(<AudioHistory {...historyProps} onArchive={vi.fn()} />);
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
+  render(<AudioHistory chatID="chat-a" />);
   expect(await screen.findByText("Голосовой истории в этом чате пока нет")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "Обновить историю чата" }));
   expect(await screen.findByText("Не удалось прочитать")).toBeTruthy();
 });
-it("reloads for a changed chat, ignores late old responses and cancels on returning to live", async () => {
+it("reloads for a changed chat and ignores late responses for old or closed chats", async () => {
   let resolveFirst: (value: AudioHistoryDocument) => void = () => {};
   let resolveThird: (value: AudioHistoryDocument) => void = () => {};
   api.forChat.mockImplementation((id: string) =>
@@ -83,34 +101,30 @@ it("reloads for a changed chat, ignores late old responses and cancels on return
         ? new Promise<AudioHistoryDocument>((resolve) => {
             resolveThird = resolve;
           })
-        : Promise.resolve(document("chat-b")),
+        : Promise.resolve(document("chat-b", 2)),
   );
-  const onArchive = vi.fn<(archive: ArchivedTranscript | undefined) => void>();
-  const view = render(<AudioHistory {...historyProps} onArchive={onArchive} />);
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
-  view.rerender(<AudioHistory chatID="chat-b" chatTitle="Второй чат" onArchive={onArchive} />);
-  await waitFor(() => expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b"));
-  await act(async () => resolveFirst(document("chat-a")));
-  expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b");
-  expect(onArchive.mock.lastCall?.[0]?.title).toContain("Второй чат");
-  view.rerender(<AudioHistory chatID="chat-c" chatTitle="Третий чат" onArchive={onArchive} />);
-  await userEvent.click(screen.getByRole("button", { name: "Эфир" }));
+  const view = render(<AudioHistory chatID="chat-a" />);
+  view.rerender(<AudioHistory chatID="chat-b" />);
+  await waitFor(() => expect(rows()[0]?.textContent).toContain("Фраза 0"));
+  await act(async () => resolveFirst(document("chat-a", 5)));
+  expect(rows()).toHaveLength(2);
+  view.rerender(<AudioHistory chatID="chat-c" />);
+  await waitFor(() => expect(api.forChat).toHaveBeenCalledWith("chat-c"));
+  view.unmount();
   await act(async () => resolveThird(document("chat-c")));
-  expect(onArchive.mock.lastCall?.[0]).toBeUndefined();
+  expect(rows()).toHaveLength(0);
 });
 it("requires confirmation for chat deletion and ignores completion after switching chats", async () => {
   let finishDelete: () => void = () => {};
-  api.forChat.mockImplementation((id: string) => Promise.resolve(document(id)));
+  api.forChat.mockImplementation((id: string) => Promise.resolve(document(id, 3)));
   api.deleteChat.mockImplementation(
     () =>
       new Promise<void>((resolve) => {
         finishDelete = resolve;
       }),
   );
-  const onArchive = vi.fn<(archive: ArchivedTranscript | undefined) => void>();
-  const view = render(<AudioHistory {...historyProps} onArchive={onArchive} />);
-  await userEvent.click(screen.getByRole("button", { name: "История чата" }));
-  await userEvent.click(await screen.findByText("Метаданные"));
+  const view = render(<AudioHistory chatID="chat-a" />);
+  await userEvent.click(await screen.findByText(/^Подробности/));
   await userEvent.click(
     screen.getByRole("button", { name: "Удалить голосовую историю этого чата" }),
   );
@@ -121,45 +135,10 @@ it("requires confirmation for chat deletion and ignores completion after switchi
   );
   await userEvent.click(screen.getByRole("button", { name: "Подтвердить удаление" }));
   expect(api.deleteChat).toHaveBeenCalledWith("chat-a");
-  view.rerender(<AudioHistory chatID="chat-b" chatTitle="Второй чат" onArchive={onArchive} />);
-  await waitFor(() => expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b"));
+  view.rerender(<AudioHistory chatID="chat-b" />);
+  await waitFor(() => expect(api.forChat).toHaveBeenCalledWith("chat-b"));
+  await waitFor(() => expect(rows()).toHaveLength(3));
   await act(async () => finishDelete());
-  expect(onArchive.mock.lastCall?.[0]?.id).toBe("chat-b");
-});
-it("keeps listening controls usable and makes archive rows readonly without send/insert/clear", async () => {
-  const actions: AudioActions = {
-    refresh: vi.fn(),
-    prepare: vi.fn(),
-    startModel: vi.fn(),
-    stopModel: vi.fn(),
-    startListening: vi.fn(),
-    stopListening: vi.fn(),
-    clear: vi.fn(),
-    send: vi.fn(),
-    insert: vi.fn(),
-    selectProvider: vi.fn(),
-    setKey: vi.fn(),
-    deleteKey: vi.fn(),
-  };
-  render(
-    <AudioPanel
-      audio={{ ...audioFixture(), model: "ready", segments: document("live", 1).segments }}
-      disabled={false}
-      canSend
-      actions={actions}
-      archive={{ id: "old", title: "Архивный сеанс", segments: document("old", 1).segments }}
-    />,
-  );
-  const phrase = screen.getByRole("button", { name: /Фраза 0/ });
-  expect(phrase.hasAttribute("disabled")).toBe(true);
-  expect(phrase.getAttribute("title")).toBe("Архив: только просмотр");
-  expect(screen.getByText("Собеседник · Qwen")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "В поле ввода" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Очистить" })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Слушать" }));
-  expect(actions.startListening).toHaveBeenCalled();
-  expect(actions.send).not.toHaveBeenCalled();
-  expect(actions.insert).not.toHaveBeenCalled();
-  expect(actions.clear).not.toHaveBeenCalled();
+  expect(rows()).toHaveLength(3);
+  expect(rows()[0]?.textContent).toContain("Фраза 0");
 });
