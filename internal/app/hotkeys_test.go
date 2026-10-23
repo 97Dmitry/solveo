@@ -86,7 +86,7 @@ func TestChangedAndDisabledHotkeysPersist(t *testing.T) {
 	if _, e := c.UpdateSettings(cfg); e != nil {
 		t.Fatal(e)
 	}
-	if got := registered(host); len(got) != 4 || got[hotkeys.QuickFull] {
+	if got := registered(host); len(got) != 5 || got[hotkeys.QuickFull] {
 		t.Fatal(got)
 	}
 	saved, _ := settings.Open(c.deps.Store.(*history.Store).Dir).Load()
@@ -94,7 +94,7 @@ func TestChangedAndDisabledHotkeysPersist(t *testing.T) {
 		t.Fatal(saved)
 	}
 	// Unrelated settings changes keep the registration as is.
-	if _, e := c.SetAlwaysOnTop(true); e != nil || len(registered(host)) != 4 {
+	if _, e := c.SetAlwaysOnTop(true); e != nil || len(registered(host)) != 5 {
 		t.Fatal(e)
 	}
 }

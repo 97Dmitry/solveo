@@ -103,7 +103,7 @@ type questionFake struct {
 	results chan questionbuilder.Result
 }
 
-func (f *questionFake) AnalyzeQuestion(ctx context.Context, in questionbuilder.Input, _ chat.Config) (questionbuilder.Result, error) {
+func (f *questionFake) AnalyzeQuestion(ctx context.Context, in questionbuilder.Input, _ chat.Config, _ func(llm.Event)) (questionbuilder.Result, error) {
 	f.inputs <- in
 	select {
 	case r := <-f.results:
@@ -253,4 +253,84 @@ func TestQuestionDraftCanBeConfirmedWithoutEditingOrSubmitting(t *testing.T) {
 		t.Fatal("confirmation sent a provider request")
 	default:
 	}
+}
+
+type preparingFake struct {
+	*questionFake
+	prepares, stopped chan chat.Config
+}
+
+func (f *preparingFake) PrepareQuestionAnalysis(ctx context.Context, cfg chat.Config) error {
+	f.prepares <- cfg
+	<-ctx.Done()
+	f.stopped <- cfg
+	return ctx.Err()
+}
+
+func receiveConfig(t *testing.T, ch <-chan chat.Config, what string) chat.Config {
+	t.Helper()
+	select {
+	case cfg := <-ch:
+		return cfg
+	case <-time.After(5 * time.Second):
+		t.Fatal(what)
+		return chat.Config{}
+	}
+}
+
+func TestQuestionAnalysisSessionIsPreparedWhileBuilderIsEnabled(t *testing.T) {
+	c, f, _ := setup(t)
+	q := &preparingFake{questionFake: &questionFake{fakeProvider: f, inputs: make(chan questionbuilder.Input, 4), results: make(chan questionbuilder.Result, 4)}, prepares: make(chan chat.Config, 4), stopped: make(chan chat.Config, 4)}
+	c.mu.Lock()
+	c.deps.Provider = q
+	c.settings.Audio.BuilderModel, c.settings.Audio.BuilderReasoning = "gpt-test", "low"
+	c.mu.Unlock()
+	command := func(action string) {
+		t.Helper()
+		v := c.QuestionSnapshot()
+		if err := c.QuestionCommand(QuestionCommand{Action: action, ChatID: v.ChatID, ID: v.ID, Revision: v.Revision, Version: v.Version}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-q.prepares:
+		t.Fatal("prepared before the builder was enabled")
+	default:
+	}
+	command("enable")
+	if cfg := receiveConfig(t, q.prepares, "enabled builder was not prepared"); cfg.Model != "gpt-test" || cfg.Reasoning != "low" {
+		t.Fatal(cfg)
+	}
+	command("disable")
+	receiveConfig(t, q.stopped, "disabled builder kept its session")
+	command("enable")
+	receiveConfig(t, q.prepares, "re-enabled builder was not prepared")
+	// Ordinary finals keep the single prepared session.
+	c.mu.Lock()
+	c.scheduleQuestionLocked()
+	c.mu.Unlock()
+	select {
+	case <-q.prepares:
+		t.Fatal("second concurrent preparation")
+	default:
+	}
+	c.audio.mu.Lock()
+	c.audio.tracks["stream"] = "system"
+	c.audio.mu.Unlock()
+	c.applyAudioUpdate(stt.Update{Kind: stt.KindFinal, StreamID: "stream", UtteranceID: "speech", Revision: 1, Text: "question"})
+	c.mu.Lock()
+	if c.question.timer != nil {
+		c.question.timer.Stop()
+	}
+	c.mu.Unlock()
+	c.analyzeQuestion()
+	<-q.inputs
+	q.results <- questionbuilder.Result{HasQuestion: true, Ready: true, Text: "question", SourceIDs: []string{"speech"}}
+	// The analysis releases the session it was given and the next one is prepared.
+	receiveConfig(t, q.stopped, "claimed session was not released after the analysis")
+	receiveConfig(t, q.prepares, "next session was not prepared after the analysis")
+	if err := c.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	receiveConfig(t, q.stopped, "Close kept the prepared session")
 }

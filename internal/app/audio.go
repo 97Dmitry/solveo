@@ -66,6 +66,8 @@ type TranscriptSegment struct {
 	StartedAt     string `json:"started_at"`
 	Text          string `json:"text"`
 	Final         bool   `json:"final"`
+	// Sent marks a phrase included in an accepted submission (selection, question card or «new phrases»).
+	Sent bool `json:"sent,omitempty"`
 }
 
 type AudioView struct {
@@ -85,6 +87,10 @@ type AudioView struct {
 	Error          string                `json:"error"`
 	// KeyConfigured tells whether the active provider's key is stored; the key itself never leaves Go.
 	KeyConfigured bool `json:"key_configured"`
+	// SendingUnsent: «send new phrases» waits for a phrase that was still being recognized;
+	// SendError is its last failure, cleared by the next attempt.
+	SendingUnsent bool   `json:"sending_unsent"`
+	SendError     string `json:"send_error"`
 }
 
 type SubmitTranscriptInput struct {
@@ -132,7 +138,11 @@ type audioState struct {
 	segments  []TranscriptSegment
 	revisions map[string]int
 	emitTimer *time.Timer
-	keys      map[string]bool // provider ID → key stored
+	// changed is closed by the next audioChangedLocked (see changeLocked).
+	changed       chan struct{}
+	sendingUnsent bool
+	sendError     string
+	keys          map[string]bool // provider ID → key stored
 	// providerID is the selected provider (settings.Audio.Provider), mirrored here so views never take c.mu.
 	providerID string
 }
@@ -164,6 +174,9 @@ func (c *Controller) audioViewLocked() AudioView {
 		Sources:   []AudioSourceView{},
 		Segments:  append([]TranscriptSegment{}, a.segments...),
 		Error:     a.err,
+
+		SendingUnsent: a.sendingUnsent,
+		SendError:     a.sendError,
 	}
 	for _, s := range a.sources {
 		v.Sources = append(v.Sources, s.view)
@@ -310,6 +323,10 @@ func (c *Controller) SetAudioProvider(id string) error {
 func (c *Controller) audioChangedLocked() {
 	a := &c.audio
 	a.revision++
+	if a.changed != nil {
+		close(a.changed)
+		a.changed = nil
+	}
 	if a.emitTimer != nil || c.deps.Emit == nil {
 		return
 	}
@@ -897,6 +914,11 @@ func (c *Controller) ClearTranscript() error {
 // SubmitTranscript sends the selected final phrases, in transcript order, as an ordinary question of the
 // active chat. The composer draft and queued screenshots are never read or changed.
 func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) {
+	return c.submitSegments(in, false)
+}
+
+// submitSegments sends final phrases; consume also removes them from the question builder's input.
+func (c *Controller) submitSegments(in SubmitTranscriptInput, consume bool) (string, error) {
 	if len(in.SegmentIDs) == 0 {
 		return "", ErrEmpty
 	}
@@ -905,7 +927,7 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 		wanted[id] = true
 	}
 	c.audio.mu.Lock()
-	var texts []string
+	var texts, ids []string
 	groups := map[string][]string{}
 	for _, s := range c.audio.segments {
 		if !wanted[s.ID] {
@@ -917,6 +939,7 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 			return "", errors.New("Фраза ещё распознаётся")
 		}
 		texts = append(texts, s.Text)
+		ids = append(ids, s.ID)
 		if id := c.audio.history.segments[s.ID]; id != "" {
 			groups[id] = append(groups[id], s.ID)
 		}
@@ -925,11 +948,31 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 	if len(wanted) != 0 {
 		return "", errors.New("Фраза больше недоступна")
 	}
-	operationID, err := c.submit(SubmitInput{ChatID: in.ChatID, RequestID: in.RequestID, Text: strings.Join(texts, "\n")}, submitOrigin{kind: originTranscript})
+	operationID, err := c.submit(SubmitInput{ChatID: in.ChatID, RequestID: in.RequestID, Text: strings.Join(texts, "\n")}, submitOrigin{kind: originTranscript, segments: ids, consume: consume})
 	if err == nil {
 		c.recordAudioSubmission(groups, in.ChatID, operationID)
 	}
 	return operationID, err
+}
+
+// markTranscriptSent flags live phrases included in an accepted submission. Called without c.mu.
+func (c *Controller) markTranscriptSent(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	a := &c.audio
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	changed := false
+	for i := range a.segments {
+		if !a.segments[i].Sent && slices.Contains(ids, a.segments[i].ID) {
+			a.segments[i].Sent = true
+			changed = true
+		}
+	}
+	if changed {
+		c.audioChangedLocked()
+	}
 }
 
 // shutdownAudio stops capture, the session and Solveo's container; called by Close.

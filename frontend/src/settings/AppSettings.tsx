@@ -32,6 +32,7 @@ const isTab = (value: string): value is Tab => tabs.some(([id]) => id === value)
 
 export function AppSettings({
   snapshot,
+  initialTab = "general",
   busy = false,
   hotkeyActions,
   connection,
@@ -43,6 +44,7 @@ export function AppSettings({
   onExit,
 }: {
   snapshot: Snapshot;
+  initialTab?: Tab;
   busy?: boolean;
   hotkeyActions: HotkeyBridge;
   connection: ConnectionActions;
@@ -53,7 +55,7 @@ export function AppSettings({
   onDiscard: () => void;
   onExit: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [fontSize, setFontSize] = useState(snapshot.settings.font_size);
   return (
     <div className="settings-body">

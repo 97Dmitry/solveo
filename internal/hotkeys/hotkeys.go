@@ -18,9 +18,13 @@ const (
 	QuickFull    = "quick-full"
 	SendQuestion = "send-question"
 	SkipQuestion = "skip-question"
+	// Added after the question builder; append new actions only at the end.
+	SendTranscript  = "send-transcript"
+	ToggleListening = "toggle-listening"
+	AudioWindow     = "audio-window"
 )
 
-var Actions = []string{QuickRegion, Toggle, QueueRegion, Submit, QuickFull, SendQuestion, SkipQuestion}
+var Actions = []string{QuickRegion, Toggle, QueueRegion, Submit, QuickFull, SendQuestion, SkipQuestion, SendTranscript, ToggleListening, AudioWindow}
 
 // labels match the settings form (frontend/src/settings/HotkeySettings.tsx).
 var labels = map[string]string{
@@ -31,6 +35,10 @@ var labels = map[string]string{
 	QuickFull:    "Снимок всего экрана и ответ",
 	SendQuestion: "Отправить собранный вопрос",
 	SkipQuestion: "Пропустить собранный вопрос",
+
+	SendTranscript:  "Отправить новые реплики собеседника",
+	ToggleListening: "Слушать / остановить",
+	AudioWindow:     "Показать окно распознавания",
 }
 
 const (
@@ -55,6 +63,10 @@ func Defaults() map[string]string {
 		QuickFull:    "Ctrl+Alt+F",
 		SendQuestion: "",
 		SkipQuestion: "",
+
+		SendTranscript:  "Ctrl+Alt+Space",
+		ToggleListening: "",
+		AudioWindow:     "",
 	}
 }
 

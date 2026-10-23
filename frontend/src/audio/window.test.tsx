@@ -49,6 +49,10 @@ it("shows the target chat and sends selected final IDs with that target", async 
   await waitFor(() =>
     expect(api.execute).toHaveBeenCalledWith({ name: "send", ids: ["seg"], chat_id: "chat" }),
   );
+  await userEvent.click(screen.getByRole("button", { name: "Новые реплики (1)" }));
+  await waitFor(() =>
+    expect(api.execute).toHaveBeenCalledWith({ name: "sendUnsent", chat_id: "chat" }),
+  );
   expect(api.ready).toHaveBeenCalled();
 });
 

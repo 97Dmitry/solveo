@@ -179,6 +179,9 @@ export const hotkeyActions = [
   "quick-full",
   "send-question",
   "skip-question",
+  "send-transcript",
+  "toggle-listening",
+  "audio-window",
 ] as const;
 export type HotkeyAction = (typeof hotkeyActions)[number];
 const hotkeyText = z.string().regex(/^$|^((Ctrl|Alt|Shift|Win)\+){1,4}[A-Za-z0-9]+$/);
@@ -190,6 +193,9 @@ export const hotkeysSchema = z.object({
   "quick-full": hotkeyText,
   "send-question": hotkeyText.default(""),
   "skip-question": hotkeyText.default(""),
+  "send-transcript": hotkeyText.default(""),
+  "toggle-listening": hotkeyText.default(""),
+  "audio-window": hotkeyText.default(""),
 });
 // Go normalizes and limits the dictionary; the renderer checks only the shape.
 export const audioSettingsSchema = z.object({
@@ -365,6 +371,7 @@ const transcriptSegmentSchema = z.object({
   started_at: z.iso.datetime(),
   text: z.string().max(65536),
   final: z.boolean(),
+  sent: z.boolean().optional(),
 } satisfies Shape<app.TranscriptSegment>);
 export const audioSchema = z.object({
   history_enabled: z.boolean(),
@@ -382,6 +389,8 @@ export const audioSchema = z.object({
   segments: z.array(transcriptSegmentSchema).max(300),
   error: z.string().max(8192),
   key_configured: z.boolean(),
+  sending_unsent: z.boolean().default(false),
+  send_error: z.string().max(8192).default(""),
 } satisfies Shape<app.AudioView>);
 export type AudioState = z.infer<typeof audioSchema>;
 export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
@@ -414,6 +423,8 @@ export const emptyAudio: AudioState = {
   segments: [],
   error: "",
   key_configured: false,
+  sending_unsent: false,
+  send_error: "",
 };
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type ChatConfig = z.infer<typeof configSchema>;

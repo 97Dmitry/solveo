@@ -28,6 +28,8 @@ export function audioFixture(): AudioState {
     segments: [],
     error: "",
     key_configured: false,
+    sending_unsent: false,
+    send_error: "",
   };
 }
 export function snapshotFixture(): Snapshot {
@@ -83,6 +85,9 @@ export function snapshotFixture(): Snapshot {
         "quick-full": "Ctrl+Alt+F",
         "send-question": "",
         "skip-question": "",
+        "send-transcript": "Ctrl+Alt+Space",
+        "toggle-listening": "",
+        "audio-window": "",
       },
       audio: { builder_model: "", builder_reasoning: "", provider: "", context_phrases: [] },
     },

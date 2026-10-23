@@ -23,6 +23,11 @@ type questionState struct {
 	runChatID string
 	lastStart time.Time
 	models    []llm.Model
+	// prepCancel stops the background analysis-session preparation for prepConfig;
+	// prepGen tells a finishing worker whether it is still the current one.
+	prepCancel context.CancelFunc
+	prepConfig chat.Config
+	prepGen    uint64
 }
 
 func (q *questionState) init() {
@@ -87,8 +92,46 @@ func (c *Controller) pauseQuestionLocked() {
 	if b := c.question.builders[c.active.ID]; b != nil {
 		b.Enable(false)
 	}
+	c.prepareQuestionLocked()
+}
+
+// prepareQuestionLocked keeps one empty analysis session ready while the active chat's builder is
+// enabled, so an analysis does not wait for thread/start. No I/O under c.mu: the worker blocks in the
+// provider until an analysis claims the session or it is cancelled (disable, model change, Close).
+func (c *Controller) prepareQuestionLocked() {
+	preparer, ok := c.deps.Provider.(llm.QuestionPreparer)
+	cfg := chat.Config{Model: c.settings.Audio.BuilderModel, Reasoning: c.settings.Audio.BuilderReasoning}
+	b := c.question.builders[c.active.ID]
+	want := ok && !c.closed && cfg.Model != "" && b != nil && b.View().Enabled
+	if c.question.prepCancel != nil && (!want || c.question.prepConfig != cfg) {
+		c.question.prepCancel()
+		c.question.prepCancel = nil
+	}
+	// A running analysis owns the session; the next one is prepared after it finishes.
+	if !want || c.question.prepCancel != nil || c.question.running {
+		return
+	}
+	ctx, cancel := context.WithCancel(c.ctx)
+	c.question.prepGen++
+	gen := c.question.prepGen
+	c.question.prepCancel, c.question.prepConfig = cancel, cfg
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		defer cancel()
+		err := preparer.PrepareQuestionAnalysis(ctx, cfg)
+		if err != nil && ctx.Err() == nil {
+			c.appendLog(fmt.Sprintf("Подготовка сборщика вопроса: %v\n", err))
+		}
+		c.mu.Lock()
+		if c.question.prepGen == gen {
+			c.question.prepCancel = nil
+		}
+		c.mu.Unlock()
+	}()
 }
 func (c *Controller) scheduleQuestionLocked() {
+	c.prepareQuestionLocked()
 	if c.closed || c.question.running {
 		return
 	}
@@ -96,7 +139,7 @@ func (c *Controller) scheduleQuestionLocked() {
 	if !v.Enabled || v.Manual || v.Editing || v.Error != "" {
 		return
 	}
-	delay := 800 * time.Millisecond
+	delay := 300 * time.Millisecond
 	if d := time.Until(c.question.lastStart.Add(2 * time.Second)); d > delay {
 		delay = d
 	}
@@ -154,15 +197,27 @@ func (c *Controller) analyzeQuestion() {
 	c.question.running = true
 	c.question.runChatID = in.ChatID
 	c.question.lastStart = time.Now()
+	// This analysis claims the prepared session (or releases a stale one); it is detached
+	// from the controller and cancelled after the analysis, then the next one is prepared.
+	claimed := c.question.prepCancel
+	c.question.prepCancel = nil
+	c.question.prepGen++
 	c.workers.Add(1)
 	c.mu.Unlock()
 	go func() {
 		defer c.workers.Done()
 		defer cancel()
-		result, err := analyzer.AnalyzeQuestion(ctx, in, cfg)
+		result, err := analyzer.AnalyzeQuestion(ctx, in, cfg, func(e llm.Event) {
+			if e.Kind == llm.EventProgress {
+				c.appendLog(e.Text)
+			}
+		})
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		_ = b.Apply(in, result, err)
+		if claimed != nil {
+			claimed()
+		}
 		c.question.running = false
 		c.question.cancel = nil
 		if !c.closed {

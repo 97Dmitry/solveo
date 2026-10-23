@@ -105,7 +105,13 @@ func TestHotkeysDefaultMigrateAndRejectInvalid(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got.Hotkeys, want) || got.Theme != "light" || got.FontSize != 19 || got.UIScale != 120 || !got.AlwaysOnTop {
 		t.Fatalf("%+v %v", got, err)
 	}
-	write(`{"schema_version":1,"theme":"dark","font_size":17,"ui_scale":100,"hotkeys":{"toggle":"Ctrl+Alt+S"}}`)
+	// A stored shortcut wins over the default of an action missing from the file (added later).
+	write(`{"schema_version":1,"theme":"dark","font_size":17,"ui_scale":100,"hotkeys":{"toggle":"Ctrl+Alt+Space","quick-region":"Ctrl+Alt+S"}}`)
+	got, err = s.Load()
+	if err != nil || got.Hotkeys[hotkeys.Toggle] != "Ctrl+Alt+Space" || got.Hotkeys[hotkeys.SendTranscript] != "" || got.Hotkeys[hotkeys.QuickFull] != "Ctrl+Alt+F" {
+		t.Fatalf("%+v %v", got.Hotkeys, err)
+	}
+	write(`{"schema_version":1,"theme":"dark","font_size":17,"ui_scale":100,"hotkeys":{"toggle":"Ctrl+Alt+S","quick-region":"Ctrl+Alt+S"}}`)
 	if _, err := s.Load(); err == nil {
 		t.Fatal("conflicting hotkeys accepted")
 	}

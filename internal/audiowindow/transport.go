@@ -45,6 +45,7 @@ type View struct {
 	UIScale     int               `json:"ui_scale"`
 	ShowVersion uint64            `json:"show_version"`
 	Dictionary  []string          `json:"dictionary"`
+	SendHotkey  string            `json:"send_hotkey"`
 }
 type Command struct {
 	Question *core.QuestionCommand `json:"question,omitempty"`
@@ -141,7 +142,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary":
+	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "sendUnsent", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary":
 		return true
 	}
 	return false

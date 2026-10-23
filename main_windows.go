@@ -245,6 +245,11 @@ func run() error {
 					}
 					continue
 				}
+				// The speech window belongs to the root application, not the controller.
+				if ev.Kind == "audio-window" {
+					controller.ReportError(app.ShowAudioWindow())
+					continue
+				}
 
 				controller.HandleNativeEvent(ev)
 			}
