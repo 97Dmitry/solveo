@@ -21,6 +21,8 @@ export function ClearQueue(arg1:string):Promise<void>;
 
 export function ClearTranscript():Promise<void>;
 
+export function CompleteAudioInsert(arg1:string,arg2:string):Promise<void>;
+
 export function DefaultHotkeys():Promise<Record<string, string>>;
 
 export function DeleteChats(arg1:Array<string>):Promise<app.DeleteResult>;
@@ -84,6 +86,8 @@ export function SetChatPinned(arg1:string,arg2:boolean):Promise<void>;
 export function SetDraft(arg1:app.DraftInput):Promise<void>;
 
 export function SetSTTKey(arg1:string,arg2:string):Promise<void>;
+
+export function ShowAudioWindow():Promise<void>;
 
 export function ShowLog():Promise<void>;
 

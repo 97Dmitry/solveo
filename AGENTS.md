@@ -16,3 +16,7 @@
 - Codex is the only implemented LLM adapter. Do not add placeholder provider/audio controls. Preserve the provider boundary when adding real adapters.
 - `make check` regenerates bindings, checks frontend formatting/lint/types/tests, runs Go tests, golangci-lint (host and Windows, config in `.golangci.yml`, pinned binary in `.tools/<lint>-<go>/`, rebuilt per host Go version because the linter needs Go ≥ the analyzed stdlib) and Windows vet, and builds `build/bin/Solveo.exe`. Apply Go import grouping with `golangci-lint fmt` from that directory; intentionally ignored errors are explicit `_ =`. It does not verify Windows UI or recorder behavior; use `docs/windows-acceptance.md` for native runtime acceptance.
 - Tests must not issue real provider requests; use fake CLI scripts. User-facing documentation should describe actual setup, use, data storage and limitations.
+
+- Detached audio renderer: same EXE `--audio-window`, isolated from singleton/stores/providers; parent-owned IPC is documented in [internal/audiowindow](internal/audiowindow/AGENTS.md). Frontend has main/audio HTML entries. Under wails dev the child uses embedded assets; rebuild frontend and restart the app to update that window (no child HMR).
+
+- Text ASR archives are technical parts grouped by ChatID in solveo-data/audio-history, owned by [internal/audiohistory](internal/audiohistory/AGENTS.md) and internal/app/audio_history.go. No audio recording, keys or provider state are persisted there.

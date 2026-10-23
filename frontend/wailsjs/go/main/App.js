@@ -34,6 +34,10 @@ export function ClearTranscript() {
   return window['go']['main']['App']['ClearTranscript']();
 }
 
+export function CompleteAudioInsert(arg1, arg2) {
+  return window['go']['main']['App']['CompleteAudioInsert'](arg1, arg2);
+}
+
 export function DefaultHotkeys() {
   return window['go']['main']['App']['DefaultHotkeys']();
 }
@@ -160,6 +164,10 @@ export function SetDraft(arg1) {
 
 export function SetSTTKey(arg1, arg2) {
   return window['go']['main']['App']['SetSTTKey'](arg1, arg2);
+}
+
+export function ShowAudioWindow() {
+  return window['go']['main']['App']['ShowAudioWindow']();
 }
 
 export function ShowLog() {

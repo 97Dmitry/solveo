@@ -13,3 +13,7 @@
 - The main window is tray-only: `TrayOnly` (called in `OnDomReady`, before the first show and after capture affinity) sets `WS_EX_TOOLWINDOW`, clears `WS_EX_APPWINDOW` and removes the minimize box, then verifies the style. Wails sets `WS_EX_APPWINDOW` itself and has no option for this. Do not use a cross-thread owner window instead: it couples the Wails and host message queues.
 
 - Hotkeys are registered only through `SetHotkeys` (host thread, unregister all, then register), never in `create`; the IDs are `hotkeyBase + index in hotkeys.Actions`, so never reorder Actions. Registration failures are returned per action, not fatal. `OpenFolder` runs ShellExecuteW on its own COM-initialized thread; Explorer windows are not capture-excluded.
+
+- The detached audio UI is a second Wails renderer process coordinated by root audio_window_windows.go, not a Host helper. PlaceAudioWindow only clamps its startup geometry; capture affinity and TrayOnly must be applied before its renderer handshake shows it. Actual multi-monitor/DPI placement needs Windows acceptance.
+
+- Audio docking reads parent HWND/PID metadata only. MoveAudioDock uses SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOZORDER to deliver placement to the Wails owner thread; never SetParent or establish a cross-process owner. All coordinates are physical pixels, including negative monitor coordinates.

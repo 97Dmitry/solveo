@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	if err := wails.Run(&options.App{Bind: []interface{}{&App{}}}); err != nil {
+	if err := wails.Run(&options.App{Bind: []interface{}{&App{}, &AudioWindowApp{}}}); err != nil {
 		log.Fatal(err)
 	}
 }

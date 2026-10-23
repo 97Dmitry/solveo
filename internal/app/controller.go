@@ -122,6 +122,7 @@ func New(d Dependencies) (*Controller, error) {
 	}
 	c.active = doc
 	c.rememberLocked(doc)
+	c.initAudioHistory()
 	c.statePersist.resume()
 	c.streamPersist.resume()
 	c.prepareConnection()
@@ -158,6 +159,7 @@ func (c *Controller) availableLocked() error {
 }
 func (c *Controller) changedLocked() { c.revision++ }
 func (c *Controller) publish() {
+	c.syncAudioHistoryChat()
 	if c.deps.Emit != nil {
 		c.deps.Emit("solveo:state", c.Snapshot())
 	}
@@ -485,7 +487,7 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	// Unfinished work stays on disk for the next start; write its final state.
-	if err := errors.Join(c.statePersist.flush(), c.streamPersist.flush()); err != nil {
+	if err := errors.Join(c.statePersist.flush(), c.streamPersist.flush(), c.flushAudioHistory()); err != nil {
 		// Keep persisters and the provider usable so disk recovery and another
 		// explicit exit can save the data instead of silently discarding it.
 		c.mu.Lock()
@@ -499,6 +501,13 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.statePersist.stop()
 	c.streamPersist.stop()
+	c.audio.history.persist.stop()
+	c.audio.mu.Lock()
+	if c.audio.emitTimer != nil {
+		c.audio.emitTimer.Stop()
+		c.audio.emitTimer = nil
+	}
+	c.audio.mu.Unlock()
 	// Workers are drained, so no request uses the streaming connection any more.
 	if conn, ok := c.deps.Provider.(llm.Connection); ok {
 		if err := conn.Close(ctx); err != nil {

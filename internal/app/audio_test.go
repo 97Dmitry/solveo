@@ -87,15 +87,16 @@ type openCall struct {
 }
 
 type fakeSession struct {
-	mu       sync.Mutex
-	opens    []openCall
-	pushes   map[string]int
-	pushErr  error
-	flushErr error
-	flushed  []string
-	closedSt []string
-	closed   bool
-	events   chan any
+	mu        sync.Mutex
+	opens     []openCall
+	pushes    map[string]int
+	pushErr   error
+	flushErr  error
+	flushHook func(string)
+	flushed   []string
+	closedSt  []string
+	closed    bool
+	events    chan any
 }
 
 func newFakeSession() *fakeSession {
@@ -123,6 +124,9 @@ func (s *fakeSession) Flush(_ context.Context, streamID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.flushed = append(s.flushed, streamID)
+	if s.flushHook != nil {
+		s.flushHook(streamID)
+	}
 	return s.flushErr
 }
 
@@ -198,7 +202,8 @@ type audioHarness struct {
 	capturer *fakeCapturer
 }
 
-func setupAudio(t *testing.T) *audioHarness {
+func setupAudio(t *testing.T) *audioHarness { return setupAudioHistory(t, nil) }
+func setupAudioHistory(t *testing.T, archive AudioHistoryStore) *audioHarness {
 	t.Helper()
 	s, e := history.Open(t.TempDir())
 	if e != nil {
@@ -212,6 +217,7 @@ func setupAudio(t *testing.T) *audioHarness {
 	}
 	h.runtime = &fakeRuntime{checks: readyChecks(), session: h.session}
 	c, e := New(Dependencies{Store: s, SettingsStore: settings.Open(s.Dir), Provider: h.provider, Work: openWork(t, s), Audio: AudioDeps{
+		History:   archive,
 		Providers: []stt.Provider{h.runtime},
 		Capturer:  h.capturer,
 	}})

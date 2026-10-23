@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, CircleDashed, CircleHelp, CircleX, Mic, Square } from "lucide-react";
-import type { AudioState } from "../bridge/state";
+import type { AudioState, TranscriptSegment } from "../bridge/state";
 import { Button } from "../ui/Button";
 import { TranscriptList } from "./TranscriptList";
+export type ArchivedTranscript = { id: string; title: string; segments: TranscriptSegment[] };
 export type AudioActions = {
   refresh: () => void;
   prepare: () => void;
@@ -32,11 +33,13 @@ export function AudioPanel({
   disabled,
   canSend,
   actions,
+  archive,
 }: {
   audio: AudioState;
   disabled: boolean;
   canSend: boolean;
   actions: AudioActions;
+  archive?: ArchivedTranscript | undefined;
 }) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const needsCheck = audio.available && audio.checks.length === 0 && audio.busy === "";
@@ -197,31 +200,49 @@ export function AudioPanel({
           ))}
         </ul>
       )}
-      <TranscriptList segments={audio.segments} selected={selected} onToggle={toggle} />
-      <div className="transcript-actions">
-        <Button
-          className="primary"
-          disabled={chosen.length === 0 || !canSend}
-          onClick={() => {
-            actions.send(chosen.map((s) => s.id));
-            setPicked(new Set());
-          }}
-        >
-          Отправить
-        </Button>
-        <Button
-          disabled={chosen.length === 0 || disabled}
-          onClick={() => {
-            actions.insert(chosen.map((s) => s.text).join("\n"));
-            setPicked(new Set());
-          }}
-        >
-          В поле ввода
-        </Button>
-        <Button disabled={audio.segments.length === 0 || disabled} onClick={actions.clear}>
-          Очистить
-        </Button>
-      </div>
+      {audio.history_enabled && (
+        <p className="audio-note">
+          Окончательные фразы автоматически сохраняются в историю. Звук не записывается.
+        </p>
+      )}
+      {audio.history_error && (
+        <p className="audio-error" role="alert">
+          История: {audio.history_error}
+        </p>
+      )}
+      {archive && <h2 className="archive-title">{archive.title}</h2>}
+      <TranscriptList
+        segments={archive?.segments ?? audio.segments}
+        selected={archive ? new Set() : selected}
+        onToggle={toggle}
+        readOnly={archive !== undefined}
+      />
+      {!archive && (
+        <div className="transcript-actions">
+          <Button
+            className="primary"
+            disabled={chosen.length === 0 || !canSend}
+            onClick={() => {
+              actions.send(chosen.map((s) => s.id));
+              setPicked(new Set());
+            }}
+          >
+            Отправить
+          </Button>
+          <Button
+            disabled={chosen.length === 0 || disabled}
+            onClick={() => {
+              actions.insert(chosen.map((s) => s.text).join("\n"));
+              setPicked(new Set());
+            }}
+          >
+            В поле ввода
+          </Button>
+          <Button disabled={audio.segments.length === 0 || disabled} onClick={actions.clear}>
+            Очистить
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

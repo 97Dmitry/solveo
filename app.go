@@ -12,9 +12,11 @@ import (
 
 // App is the generated Wails boundary. All behavior lives in the Go controller.
 type App struct {
-	controller *core.Controller
-	ready      func() error
-	exit       func() error
+	controller        *core.Controller
+	showAudio         func() error
+	audioInsertResult func(string, string)
+	ready             func() error
+	exit              func() error
 }
 
 func (a *App) Snapshot() core.Snapshot      { return a.controller.Snapshot() }

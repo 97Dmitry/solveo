@@ -24,6 +24,7 @@ import (
 
 	core "github.com/97Dmitry/solveo/internal/app"
 	"github.com/97Dmitry/solveo/internal/audio"
+	"github.com/97Dmitry/solveo/internal/audiohistory"
 	"github.com/97Dmitry/solveo/internal/capture"
 	"github.com/97Dmitry/solveo/internal/config"
 	"github.com/97Dmitry/solveo/internal/history"
@@ -104,6 +105,9 @@ func startupError(err error) {
 	syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
 }
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "--audio-window" {
+		return runAudioWindow()
+	}
 	flags, e := config.Parse(os.Args[1:])
 	if e != nil {
 		return e
@@ -154,6 +158,7 @@ func run() error {
 	// Speech providers share capture and transcript state; cloud keys live in Credential Manager.
 	keys := secrets.NewCredentialManager()
 	speech := core.AudioDeps{
+		History: audiohistory.New(filepath.Join(dir, "audio-history")),
 		Providers: []stt.Provider{
 			qwen.New(filepath.Join(dir, "models"), os.Getenv),
 			grok.New(func() (string, bool, error) { return keys.Get(stt.KeyName("grok")) }),
@@ -185,6 +190,11 @@ func run() error {
 		return e
 	}
 	app := &App{controller: controller}
+	audioUI, err := configureAudioWindow(controller, window, app)
+	if err != nil {
+		return err
+	}
+	defer audioUI.Close()
 	app.exit = func() error {
 		window.mu.Lock()
 		runtimeCtx := window.ctx
@@ -299,6 +309,7 @@ func run() error {
 			return false
 		},
 		OnShutdown: func(context.Context) {
+			audioUI.Close()
 			cancel()
 			shutdownCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)
 			defer stop()

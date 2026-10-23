@@ -2,6 +2,8 @@ import type { AudioState, Snapshot } from "./state";
 export function audioFixture(): AudioState {
   return {
     available: true,
+    history_enabled: false,
+    history_error: "",
     provider: {
       id: "qwen",
       label: "Qwen3-ASR (локально)",

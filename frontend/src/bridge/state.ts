@@ -309,6 +309,7 @@ const audioSourceSchema = z.object({
   error: z.string().max(8192),
 } satisfies Shape<app.AudioSourceView>);
 const transcriptSegmentSchema = z.object({
+  provider_label: z.string().max(1024).optional(),
   id: z.string().min(1).max(256),
   track: audioTrack,
   started_at: z.iso.datetime(),
@@ -316,6 +317,8 @@ const transcriptSegmentSchema = z.object({
   final: z.boolean(),
 } satisfies Shape<app.TranscriptSegment>);
 export const audioSchema = z.object({
+  history_enabled: z.boolean(),
+  history_error: z.string().max(8192),
   available: z.boolean(),
   provider: audioProviderSchema,
   providers: z.array(audioProviderOptionSchema).max(8),
@@ -334,6 +337,8 @@ export type AudioState = z.infer<typeof audioSchema>;
 export type TranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 // Before the first AudioSnapshot: revision -1 accepts any real state.
 export const emptyAudio: AudioState = {
+  history_enabled: false,
+  history_error: "",
   available: false,
   provider: {
     id: "",

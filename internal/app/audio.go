@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/audio"
+	"github.com/97Dmitry/solveo/internal/audiohistory"
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/secrets"
 	"github.com/97Dmitry/solveo/internal/stt"
@@ -33,6 +34,7 @@ const (
 // AudioDeps is optional: without providers speech recognition is unavailable. Every provider is reached
 // only through stt.Provider; the first one is the default.
 type AudioDeps struct {
+	History   AudioHistoryStore
 	Providers []stt.Provider
 	Capturer  audio.Capturer
 	// Secrets keeps provider API keys; required when a provider NeedsKey.
@@ -57,26 +59,29 @@ type AudioSourceView struct {
 
 // TranscriptSegment is one utterance; its ID is the worker's utterance ID.
 type TranscriptSegment struct {
-	ID        string `json:"id"`
-	Track     string `json:"track"`
-	StartedAt string `json:"started_at"`
-	Text      string `json:"text"`
-	Final     bool   `json:"final"`
+	ProviderLabel string `json:"provider_label,omitempty"`
+	ID            string `json:"id"`
+	Track         string `json:"track"`
+	StartedAt     string `json:"started_at"`
+	Text          string `json:"text"`
+	Final         bool   `json:"final"`
 }
 
 type AudioView struct {
-	Available bool                  `json:"available"`
-	Provider  stt.Description       `json:"provider"`
-	Providers []AudioProviderOption `json:"providers"`
-	Revision  uint64                `json:"revision"`
-	Checks    []stt.Check           `json:"checks"`
-	Busy      string                `json:"busy"`
-	Progress  string                `json:"progress"`
-	Model     string                `json:"model"`
-	Listening bool                  `json:"listening"`
-	Sources   []AudioSourceView     `json:"sources"`
-	Segments  []TranscriptSegment   `json:"segments"`
-	Error     string                `json:"error"`
+	HistoryEnabled bool                  `json:"history_enabled"`
+	HistoryError   string                `json:"history_error"`
+	Available      bool                  `json:"available"`
+	Provider       stt.Description       `json:"provider"`
+	Providers      []AudioProviderOption `json:"providers"`
+	Revision       uint64                `json:"revision"`
+	Checks         []stt.Check           `json:"checks"`
+	Busy           string                `json:"busy"`
+	Progress       string                `json:"progress"`
+	Model          string                `json:"model"`
+	Listening      bool                  `json:"listening"`
+	Sources        []AudioSourceView     `json:"sources"`
+	Segments       []TranscriptSegment   `json:"segments"`
+	Error          string                `json:"error"`
 	// KeyConfigured tells whether the active provider's key is stored; the key itself never leaves Go.
 	KeyConfigured bool `json:"key_configured"`
 }
@@ -108,6 +113,7 @@ type audioSource struct {
 }
 
 type audioState struct {
+	history  audioHistoryState
 	mu       sync.Mutex
 	revision uint64
 	checks   []stt.Check
@@ -145,7 +151,8 @@ func (c *Controller) AudioSnapshot() AudioView {
 func (c *Controller) audioViewLocked() AudioView {
 	a := &c.audio
 	v := AudioView{
-		Available: len(c.deps.Audio.Providers) > 0,
+		Available:      len(c.deps.Audio.Providers) > 0,
+		HistoryEnabled: c.deps.Audio.History != nil, HistoryError: strings.TrimSpace(a.history.err + "\n" + a.history.limit),
 		Providers: []AudioProviderOption{},
 		Revision:  a.revision,
 		Checks:    append([]stt.Check{}, a.checks...),
@@ -513,6 +520,8 @@ func (c *Controller) audioSessionEnded(session stt.SessionAPI, lost error) {
 		lost = errors.New("распознаватель закрыл соединение")
 	}
 	provider := a.provider
+	c.recordAudioErrorLocked("", lost.Error())
+	c.endAudioHistoryLocked()
 	a.session, a.provider, a.model, a.err, a.listening = nil, nil, audioModelFailed, uiText(lost.Error()), false
 	stops := a.stopSourcesLocked()
 	c.audioChangedLocked()
@@ -540,8 +549,12 @@ func (a *audioState) stopSourcesLocked() []func() {
 }
 
 func (c *Controller) audioStreamFailed(e stt.StreamError) {
+	if release := c.pinAudioHistoryStream(e.StreamID); release != nil {
+		defer release()
+	}
 	a := &c.audio
 	a.mu.Lock()
+	c.recordAudioErrorLocked(e.StreamID, e.Message)
 	var stop func()
 	active := false
 	for _, s := range a.sources {
@@ -553,6 +566,9 @@ func (c *Controller) audioStreamFailed(e stt.StreamError) {
 	}
 	if !active {
 		a.listening = false
+		if a.history.streams[e.StreamID] == a.history.current {
+			c.endAudioHistoryLocked()
+		}
 	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
@@ -598,6 +614,7 @@ func (c *Controller) StopAudioModel() error {
 // StartListening opens one stream per source with the saved dictionary and starts capture.
 // A source that cannot start is shown with its error; listening needs at least one source.
 func (c *Controller) StartListening() error {
+	c.syncAudioHistoryChat()
 	a := &c.audio
 	a.mu.Lock()
 	if len(c.deps.Audio.Providers) > 0 && (a.model != audioModelReady || a.session == nil) {
@@ -623,11 +640,25 @@ func (c *Controller) StartListening() error {
 	c.mu.Unlock()
 	var sources []*audioSource
 	var firstErr error
+	a.mu.Lock()
+	historyProvider := a.provider
+	if historyProvider == nil {
+		historyProvider = c.audioProvider()
+	}
+	description := historyProvider.Describe()
+	a.history.runID = chat.ID()
+	historyID := c.beginAudioHistoryLocked(description.ID, description.Label, phrases)
+	a.mu.Unlock()
 	for _, src := range []audio.Source{audio.System, audio.Mic} {
 		s := &audioSource{view: AudioSourceView{Track: string(src)}, stream: chat.ID()}
 		sources = append(sources, s)
 		a.mu.Lock()
 		a.tracks[s.stream] = string(src)
+		if historyID != "" {
+			a.history.streams[s.stream] = a.history.current
+			a.history.streamRuns[s.stream] = a.history.runID
+			a.history.streamChats[s.stream] = a.history.chatID
+		}
 		a.mu.Unlock()
 		err := session.Open(ctx, s.stream, string(src), phrases)
 		if err == nil {
@@ -651,6 +682,24 @@ func (c *Controller) StartListening() error {
 		a.listening = a.listening || s.view.Active
 	}
 	listening := a.listening
+	for _, doc := range a.history.docs {
+		if doc.runID == a.history.runID {
+			doc.session.Sources = nil
+			for _, source := range sources {
+				doc.session.Sources = append(doc.session.Sources, audiohistory.Source{StreamID: source.stream, Track: source.view.Track, Device: source.view.Device})
+			}
+			doc.revision++
+			a.history.persist.mark()
+		}
+	}
+	for _, source := range sources {
+		if source.view.Error != "" {
+			c.recordAudioErrorLocked(source.stream, source.view.Error)
+		}
+	}
+	if !listening {
+		c.endAudioHistoryLocked()
+	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	if !listening {
@@ -684,6 +733,7 @@ func (c *Controller) audioCaptureFailed(stream string) func(error) {
 		a := &c.audio
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		c.recordAudioErrorLocked(stream, err.Error())
 		active := false
 		for _, s := range a.sources {
 			if s.stream == stream {
@@ -693,6 +743,9 @@ func (c *Controller) audioCaptureFailed(stream string) func(error) {
 		}
 		if !active {
 			a.listening = false
+			if a.history.streams[stream] == a.history.current {
+				c.endAudioHistoryLocked()
+			}
 		}
 		c.audioChangedLocked()
 	}
@@ -710,6 +763,7 @@ func (c *Controller) StopListening() error {
 	stops := a.stopSourcesLocked()
 	wasListening := a.listening
 	a.listening = false
+	c.endAudioHistoryLocked()
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	for _, stop := range stops {
@@ -742,6 +796,13 @@ func (c *Controller) StopListening() error {
 }
 
 func (c *Controller) applyAudioUpdate(u stt.Update) {
+	c.syncAudioHistoryChat()
+	c.bindAudioHistoryUtterance(u.StreamID, u.UtteranceID)
+	if u.Kind == stt.KindFinal {
+		if release := c.pinAudioHistoryUtterance(u.StreamID, u.UtteranceID); release != nil {
+			defer release()
+		}
+	}
 	a := &c.audio
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -749,6 +810,14 @@ func (c *Controller) applyAudioUpdate(u stt.Update) {
 	if !ok {
 		return
 	}
+	if owner := a.history.utteranceChats[u.UtteranceID]; owner != "" && owner != a.history.chatID {
+		if u.Kind == stt.KindFinal {
+			c.recordAudioFinalLocked(u.StreamID, TranscriptSegment{ID: u.UtteranceID, Track: track, StartedAt: a.history.started[u.UtteranceID], Text: strings.TrimSpace(u.Text), Final: true})
+			delete(a.history.started, u.UtteranceID)
+		}
+		return
+	}
+
 	i := slices.IndexFunc(a.segments, func(s TranscriptSegment) bool { return s.ID == u.UtteranceID })
 	if i >= 0 && (a.segments[i].Final || u.Revision <= a.revisions[u.UtteranceID]) && u.Kind != stt.KindStarted {
 		return
@@ -762,13 +831,21 @@ func (c *Controller) applyAudioUpdate(u stt.Update) {
 		return
 	}
 	if i < 0 {
-		a.segments = append(a.segments, TranscriptSegment{ID: u.UtteranceID, Track: track, StartedAt: c.deps.Now().UTC().Format(time.RFC3339)})
+		started := a.history.started[u.UtteranceID]
+		if started == "" {
+			started = c.deps.Now().UTC().Format(time.RFC3339)
+		}
+		a.segments = append(a.segments, TranscriptSegment{ID: u.UtteranceID, Track: track, StartedAt: started})
 		i = len(a.segments) - 1
 	}
 	if u.Kind != stt.KindStarted {
 		a.segments[i].Text = strings.TrimSpace(u.Text)
 		a.segments[i].Final = u.Kind == stt.KindFinal
 		a.revisions[u.UtteranceID] = u.Revision
+	}
+	if u.Kind == stt.KindFinal {
+		c.recordAudioFinalLocked(u.StreamID, a.segments[i])
+		delete(a.history.started, u.UtteranceID)
 	}
 	if u.Kind == stt.KindFinal && a.gap {
 		a.gap = false
@@ -778,6 +855,7 @@ func (c *Controller) applyAudioUpdate(u stt.Update) {
 	}
 	for len(a.segments) > maxTranscriptSegments {
 		delete(a.revisions, a.segments[0].ID)
+		delete(a.history.segments, a.segments[0].ID)
 		a.segments = slices.Delete(a.segments, 0, 1)
 	}
 	c.audioChangedLocked()
@@ -788,6 +866,7 @@ func (c *Controller) ClearTranscript() error {
 	c.audio.mu.Lock()
 	defer c.audio.mu.Unlock()
 	c.audio.segments, c.audio.revisions = nil, map[string]int{}
+	c.audio.history.segments = map[string]string{}
 	c.audioChangedLocked()
 	return nil
 }
@@ -804,6 +883,7 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 	}
 	c.audio.mu.Lock()
 	var texts []string
+	groups := map[string][]string{}
 	for _, s := range c.audio.segments {
 		if !wanted[s.ID] {
 			continue
@@ -814,12 +894,19 @@ func (c *Controller) SubmitTranscript(in SubmitTranscriptInput) (string, error) 
 			return "", errors.New("Фраза ещё распознаётся")
 		}
 		texts = append(texts, s.Text)
+		if id := c.audio.history.segments[s.ID]; id != "" {
+			groups[id] = append(groups[id], s.ID)
+		}
 	}
 	c.audio.mu.Unlock()
 	if len(wanted) != 0 {
 		return "", errors.New("Фраза больше недоступна")
 	}
-	return c.submit(SubmitInput{ChatID: in.ChatID, RequestID: in.RequestID, Text: strings.Join(texts, "\n")}, submitOrigin{kind: originTranscript})
+	operationID, err := c.submit(SubmitInput{ChatID: in.ChatID, RequestID: in.RequestID, Text: strings.Join(texts, "\n")}, submitOrigin{kind: originTranscript})
+	if err == nil {
+		c.recordAudioSubmission(groups, in.ChatID, operationID)
+	}
+	return operationID, err
 }
 
 // shutdownAudio stops capture, the session and Solveo's container; called by Close.
@@ -827,7 +914,14 @@ func (c *Controller) shutdownAudio(ctx context.Context) {
 	a := &c.audio
 	a.mu.Lock()
 	session, provider := a.session, a.provider
+	streams := make([]string, 0, len(a.sources))
+	for _, source := range a.sources {
+		if source.stop != nil || source.view.Active {
+			streams = append(streams, source.stream)
+		}
+	}
 	stops := a.stopSourcesLocked()
+	c.endAudioHistoryLocked()
 	a.session, a.provider, a.listening, a.model = nil, nil, false, audioModelStopped
 	if a.emitTimer != nil {
 		a.emitTimer.Stop()
@@ -840,9 +934,16 @@ func (c *Controller) shutdownAudio(ctx context.Context) {
 	if session == nil {
 		return
 	}
-	_ = session.Close()
 	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), audioStopTimeout)
 	defer cancel()
+	for _, stream := range streams {
+		if err := session.Flush(stopCtx, stream); err != nil {
+			c.audio.mu.Lock()
+			c.recordAudioErrorLocked(stream, err.Error())
+			c.audio.mu.Unlock()
+		}
+	}
+	_ = session.Close()
 	if err := provider.Stop(stopCtx); err != nil {
 		c.appendLog("solveo-stt: " + err.Error() + "\n")
 	}

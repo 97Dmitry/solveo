@@ -16,6 +16,170 @@ export namespace app {
 	        this.url = source["url"];
 	    }
 	}
+	export class AudioHistoryFailure {
+	    at: string;
+	    track: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioHistoryFailure(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.at = source["at"];
+	        this.track = source["track"];
+	        this.message = source["message"];
+	    }
+	}
+	export class AudioHistoryItem {
+	    chat_id: string;
+	    id: string;
+	    provider_id: string;
+	    provider_label: string;
+	    started_at: string;
+	    ended_at: string;
+	    segment_count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioHistoryItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chat_id = source["chat_id"];
+	        this.id = source["id"];
+	        this.provider_id = source["provider_id"];
+	        this.provider_label = source["provider_label"];
+	        this.started_at = source["started_at"];
+	        this.ended_at = source["ended_at"];
+	        this.segment_count = source["segment_count"];
+	    }
+	}
+	export class AudioHistoryList {
+	    sessions: AudioHistoryItem[];
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioHistoryList(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessions = this.convertValues(source["sessions"], AudioHistoryItem);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AudioHistorySubmission {
+	    at: string;
+	    chat_id: string;
+	    operation_id: string;
+	    segment_ids: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioHistorySubmission(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.at = source["at"];
+	        this.chat_id = source["chat_id"];
+	        this.operation_id = source["operation_id"];
+	        this.segment_ids = source["segment_ids"];
+	    }
+	}
+	export class TranscriptSegment {
+	    provider_label?: string;
+	    id: string;
+	    track: string;
+	    started_at: string;
+	    text: string;
+	    final: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TranscriptSegment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider_label = source["provider_label"];
+	        this.id = source["id"];
+	        this.track = source["track"];
+	        this.started_at = source["started_at"];
+	        this.text = source["text"];
+	        this.final = source["final"];
+	    }
+	}
+	export class AudioHistoryView {
+	    notice?: string;
+	    chat_id: string;
+	    id: string;
+	    provider_id: string;
+	    provider_label: string;
+	    started_at: string;
+	    ended_at: string;
+	    dictionary: string[];
+	    sources: audiohistory.Source[];
+	    segments: TranscriptSegment[];
+	    errors: AudioHistoryFailure[];
+	    submissions: AudioHistorySubmission[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AudioHistoryView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.notice = source["notice"];
+	        this.chat_id = source["chat_id"];
+	        this.id = source["id"];
+	        this.provider_id = source["provider_id"];
+	        this.provider_label = source["provider_label"];
+	        this.started_at = source["started_at"];
+	        this.ended_at = source["ended_at"];
+	        this.dictionary = source["dictionary"];
+	        this.sources = this.convertValues(source["sources"], audiohistory.Source);
+	        this.segments = this.convertValues(source["segments"], TranscriptSegment);
+	        this.errors = this.convertValues(source["errors"], AudioHistoryFailure);
+	        this.submissions = this.convertValues(source["submissions"], AudioHistorySubmission);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AudioProviderOption {
 	    id: string;
 	    label: string;
@@ -50,27 +214,9 @@ export namespace app {
 	        this.error = source["error"];
 	    }
 	}
-	export class TranscriptSegment {
-	    id: string;
-	    track: string;
-	    started_at: string;
-	    text: string;
-	    final: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new TranscriptSegment(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.track = source["track"];
-	        this.started_at = source["started_at"];
-	        this.text = source["text"];
-	        this.final = source["final"];
-	    }
-	}
 	export class AudioView {
+	    history_enabled: boolean;
+	    history_error: string;
 	    available: boolean;
 	    provider: stt.Description;
 	    providers: AudioProviderOption[];
@@ -91,6 +237,8 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.history_enabled = source["history_enabled"];
+	        this.history_error = source["history_error"];
 	        this.available = source["available"];
 	        this.provider = this.convertValues(source["provider"], stt.Description);
 	        this.providers = this.convertValues(source["providers"], AudioProviderOption);
@@ -618,6 +766,106 @@ export namespace app {
 	        this.request_id = source["request_id"];
 	        this.segment_ids = source["segment_ids"];
 	    }
+	}
+
+}
+
+export namespace audiohistory {
+	
+	export class Source {
+	    stream_id: string;
+	    track: string;
+	    device: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Source(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stream_id = source["stream_id"];
+	        this.track = source["track"];
+	        this.device = source["device"];
+	    }
+	}
+
+}
+
+export namespace audiowindow {
+	
+	export class Command {
+	    history_id?: string;
+	    name: string;
+	    provider?: string;
+	    key?: string;
+	    ids?: string[];
+	    text?: string;
+	    chat_id?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Command(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.history_id = source["history_id"];
+	        this.name = source["name"];
+	        this.provider = source["provider"];
+	        this.key = source["key"];
+	        this.ids = source["ids"];
+	        this.text = source["text"];
+	        this.chat_id = source["chat_id"];
+	    }
+	}
+	export class View {
+	    docked: boolean;
+	    window_error: string;
+	    pinned: boolean;
+	    audio: app.AudioView;
+	    chat_id: string;
+	    chat_title: string;
+	    can_send: boolean;
+	    disabled: boolean;
+	    theme: string;
+	    ui_scale: number;
+	    show_version: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new View(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.docked = source["docked"];
+	        this.window_error = source["window_error"];
+	        this.pinned = source["pinned"];
+	        this.audio = this.convertValues(source["audio"], app.AudioView);
+	        this.chat_id = source["chat_id"];
+	        this.chat_title = source["chat_title"];
+	        this.can_send = source["can_send"];
+	        this.disabled = source["disabled"];
+	        this.theme = source["theme"];
+	        this.ui_scale = source["ui_scale"];
+	        this.show_version = source["show_version"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

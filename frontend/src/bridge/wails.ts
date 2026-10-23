@@ -1,9 +1,13 @@
 import * as api from "../../wailsjs/go/main/App";
+import * as audioWindowAPI from "../../wailsjs/go/main/AudioWindowApp";
+import { audiowindow } from "../../wailsjs/go/models";
+import { z } from "zod";
 import { app, settings } from "../../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from "../../wailsjs/runtime/runtime";
 import { SolveoClient } from "./client";
 import { imageBase64 } from "./attachments";
 import {
+  audioSchema,
   accountSchema,
   configSchema,
   deleteResultSchema,
@@ -29,6 +33,7 @@ export const client = new SolveoClient({
   submitTranscript: (input) => api.SubmitTranscript(new app.SubmitTranscriptInput(input)),
 });
 export const actions = {
+  showAudioWindow: () => client.run(api.ShowAudioWindow),
   exit: () => client.run(api.Exit),
   newChat: () => client.run(api.NewChat, true, true),
   openChat: (id: string) => client.run(() => api.OpenChat(id), true, true),
@@ -122,3 +127,115 @@ export function suspendHotkeys(suspend: boolean) {
 export async function defaultHotkeys() {
   return hotkeysSchema.parse(await api.DefaultHotkeys());
 }
+
+const audioWindowSchema = z.object({
+  docked: z.boolean(),
+  window_error: z.string().max(8192),
+  pinned: z.boolean(),
+  audio: audioSchema,
+  chat_id: z.string().max(256),
+  chat_title: z.string().max(4096),
+  can_send: z.boolean(),
+  disabled: z.boolean(),
+  theme: z.string().max(32),
+  ui_scale: z.number().min(50).max(300),
+  show_version: z.number().int().nonnegative(),
+}) satisfies z.ZodType<Wire<audiowindow.View>>;
+export type AudioWindowView = z.infer<typeof audioWindowSchema>;
+export const audioWindow = {
+  state: async () => audioWindowSchema.parse(await audioWindowAPI.State()),
+  ready: audioWindowAPI.Ready,
+  execute: (command: Wire<audiowindow.Command>) =>
+    audioWindowAPI.Execute(new audiowindow.Command(command)),
+};
+const audioInsertSchema = z.object({
+  expires_at: z.number().int().positive(),
+  id: z.string().min(1).max(64),
+  chat_id: z.string().min(1).max(256),
+  text: z.string().max(1048576),
+});
+export function onAudioInsert(insert: (chatID: string, text: string) => boolean) {
+  return EventsOn("solveo:audio-insert", (raw: unknown) => {
+    const parsed = audioInsertSchema.safeParse(raw);
+    if (!parsed.success) return;
+    const { id, chat_id: chatID, text } = parsed.data;
+    const ok = Date.now() <= parsed.data.expires_at && insert(chatID, text);
+    void api.CompleteAudioInsert(
+      id,
+      ok ? "" : "Не удалось вставить текст: чат изменился или редактор занят",
+    );
+  });
+}
+
+const audioHistoryItemSchema = z.object({
+  chat_id: z.string().max(32),
+  id: z.string().regex(/^[0-9a-f]{32}$/),
+  provider_id: z.string().max(128),
+  provider_label: z.string().max(1024),
+  started_at: z.iso.datetime(),
+  ended_at: z.union([z.literal(""), z.iso.datetime()]),
+  segment_count: z.number().int().min(0).max(10000),
+}) satisfies z.ZodType<Wire<app.AudioHistoryItem>>;
+const audioHistoryListSchema = z.object({
+  sessions: z.array(audioHistoryItemSchema).max(200),
+  error: z.string().max(8192),
+}) satisfies z.ZodType<Wire<app.AudioHistoryList>>;
+const audioHistoryDocumentSchema = z.object({
+  notice: z.string().max(8192).optional(),
+  chat_id: z.string().max(32),
+  id: z.string().regex(/^[0-9a-f]{32}$/),
+  provider_id: z.string().max(128),
+  provider_label: z.string().max(1024),
+  started_at: z.union([z.literal(""), z.iso.datetime()]),
+  ended_at: z.union([z.literal(""), z.iso.datetime()]),
+  dictionary: z.array(z.string().max(256)).max(4096),
+  sources: z
+    .array(
+      z.object({
+        stream_id: z.string().max(1024),
+        provider_label: z.string().max(1024).optional(),
+        track: z.string().max(16),
+        device: z.string().max(1024),
+      }),
+    )
+    .max(128),
+  segments: z
+    .array(
+      z.object({
+        id: z.string().max(1024),
+        provider_label: z.string().max(1024).optional(),
+        track: z.enum(["system", "mic"]),
+        started_at: z.iso.datetime(),
+        text: z.string().max(65536),
+        final: z.boolean(),
+      }),
+    )
+    .max(100000),
+  errors: z
+    .array(
+      z.object({ at: z.iso.datetime(), track: z.string().max(16), message: z.string().max(8192) }),
+    )
+    .max(10000),
+  submissions: z
+    .array(
+      z.object({
+        at: z.iso.datetime(),
+        chat_id: z.string().max(256),
+        operation_id: z.string().max(256),
+        segment_ids: z.array(z.string().max(1024)).max(300),
+      }),
+    )
+    .max(10000),
+}) satisfies z.ZodType<Wire<app.AudioHistoryView>>;
+export type AudioHistoryDocument = z.infer<typeof audioHistoryDocumentSchema>;
+export type AudioHistoryList = z.infer<typeof audioHistoryListSchema>;
+export const audioHistory = {
+  list: async () => audioHistoryListSchema.parse(await audioWindowAPI.HistoryList()),
+  load: async (id: string) =>
+    audioHistoryDocumentSchema.parse(await audioWindowAPI.HistorySession(id)),
+  delete: audioWindowAPI.DeleteHistory,
+  forChat: async (chatID: string) =>
+    audioHistoryDocumentSchema.parse(await audioWindowAPI.HistoryForChat(chatID)),
+  deleteChat: audioWindowAPI.DeleteChatHistory,
+  attach: audioWindowAPI.AttachHistory,
+};
