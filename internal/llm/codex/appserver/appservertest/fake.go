@@ -369,6 +369,21 @@ func (s *server) turn(id json.RawMessage, p map[string]any) {
 			return
 		}
 		answer := "Ответ: " + strings.TrimSpace(text)
+
+		if p["outputSchema"] != nil {
+			var input struct {
+				Segments []struct{ ID, Track, Text string }
+			}
+			_ = json.Unmarshal([]byte(text), &input)
+			answer = `{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false}`
+			for _, seg := range input.Segments {
+				if seg.Track == "system" {
+					data, _ := json.Marshal(map[string]any{"has_question": true, "ready": true, "text": seg.Text, "source_ids": []string{seg.ID}, "follow_up": false})
+					answer = string(data)
+					break
+				}
+			}
+		}
 		if has("show-instructions") {
 			answer = effective
 		}

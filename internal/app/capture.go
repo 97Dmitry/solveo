@@ -73,6 +73,13 @@ func (c *Controller) HandleNativeEvent(e platform.Event) {
 		c.finishSelection(e)
 	case "quick-region", "queue-region", "quick-full":
 		c.ReportError(c.BeginCapture(e.Kind))
+	case "send-question", "skip-question":
+		v := c.QuestionSnapshot()
+		action := "send"
+		if e.Kind == "skip-question" {
+			action = "skip"
+		}
+		c.ReportError(c.QuestionCommand(QuestionCommand{Action: action, ChatID: v.ChatID, ID: v.ID, Revision: v.Revision, Version: v.Version}))
 	case "submit":
 		_, err := c.RequestSubmit()
 		c.ReportError(err)

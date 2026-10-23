@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { audioFixture } from "../bridge/test-fixture";
+import { audioFixture, questionFixture } from "../bridge/test-fixture";
 import { AudioWindow } from "./AudioWindow";
 const api = vi.hoisted(() => ({ state: vi.fn(), ready: vi.fn(), execute: vi.fn() }));
 vi.mock("../bridge/wails", () => ({ audioWindow: api }));
@@ -12,6 +12,7 @@ afterEach(() => {
 });
 it("shows the target chat and sends selected final IDs with that target", async () => {
   api.state.mockResolvedValue({
+    question: questionFixture(),
     audio: {
       ...audioFixture(),
       model: "ready",
@@ -47,6 +48,7 @@ it("shows the target chat and sends selected final IDs with that target", async 
 
 it("switches between floating and left-attached modes", async () => {
   const base = {
+    question: questionFixture(),
     audio: audioFixture(),
     chat_id: "chat",
     chat_title: "Интервью",

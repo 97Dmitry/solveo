@@ -8,6 +8,7 @@ import { SolveoClient } from "./client";
 import { imageBase64 } from "./attachments";
 import {
   audioSchema,
+  questionSchema,
   accountSchema,
   configSchema,
   deleteResultSchema,
@@ -129,6 +130,7 @@ export async function defaultHotkeys() {
 }
 
 const audioWindowSchema = z.object({
+  question: questionSchema,
   docked: z.boolean(),
   window_error: z.string().max(8192),
   pinned: z.boolean(),

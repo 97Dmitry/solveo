@@ -100,10 +100,15 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 	var server *audiowindow.Server
 	view := func() audiowindow.View {
 		s := controller.AudioWindowTarget()
-		return audiowindow.View{Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale}
+		return audiowindow.View{Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale}
 	}
 	execute := func(ctx context.Context, cmd audiowindow.Command) error {
 		switch cmd.Name {
+		case "question":
+			if cmd.Question == nil {
+				return errors.New("Не задана команда сборщика")
+			}
+			return controller.QuestionCommand(*cmd.Question)
 		case "refresh":
 			return controller.RefreshAudio()
 		case "prepare":

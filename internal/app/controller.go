@@ -65,7 +65,8 @@ type Controller struct {
 	streamErr     string
 
 	// Speech recognition (audio.go), guarded by audio.mu.
-	audio audioState
+	audio    audioState
+	question questionState
 }
 
 var errNoConnection = errors.New("подключение LLM не поддерживает вход")
@@ -103,6 +104,7 @@ func New(d Dependencies) (*Controller, error) {
 		submitted:   map[string]workstate.Submitted{},
 		checkpoints: map[streamKey]workstate.Block{},
 	}
+	c.question.init()
 	c.audio.init()
 	c.audio.providerID = cfg.Audio.Provider
 	c.loadAudioKeys()
@@ -341,6 +343,7 @@ func (c *Controller) switchChat(id, profileID string, profileRevision uint64) (S
 	if c.preparationCancel != nil {
 		c.preparationCancel()
 	}
+	c.pauseQuestionLocked()
 	c.op = operation{Operation: Operation{ID: chat.ID(), Kind: kindOpen, Phase: phaseSaving}}
 	c.intent = nil
 	globalInstructions := c.settings.GlobalInstructions
@@ -393,6 +396,8 @@ func (c *Controller) updateSettingsLocked(cfg settings.Config) (Snapshot, error)
 	// The recognizer changes only through SetAudioProvider, which checks that nothing runs.
 	c.mu.Lock()
 	cfg.Audio.Provider = c.settings.Audio.Provider
+	cfg.Audio.BuilderModel = c.settings.Audio.BuilderModel
+	cfg.Audio.BuilderReasoning = c.settings.Audio.BuilderReasoning
 	c.mu.Unlock()
 	return c.saveSettingsLocked(cfg)
 }
@@ -457,6 +462,7 @@ func (c *Controller) Close(ctx context.Context) error {
 		return ErrSavePending
 	}
 	c.closed = true
+	c.pauseQuestionLocked()
 	c.cancel()
 	c.intent = nil
 	if c.resumeTimer != nil {

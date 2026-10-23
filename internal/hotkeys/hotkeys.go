@@ -11,22 +11,26 @@ import (
 
 // Actions in registration order; the native host derives hotkey IDs from it.
 const (
-	QuickRegion = "quick-region"
-	Toggle      = "toggle"
-	QueueRegion = "queue-region"
-	Submit      = "submit"
-	QuickFull   = "quick-full"
+	QuickRegion  = "quick-region"
+	Toggle       = "toggle"
+	QueueRegion  = "queue-region"
+	Submit       = "submit"
+	QuickFull    = "quick-full"
+	SendQuestion = "send-question"
+	SkipQuestion = "skip-question"
 )
 
-var Actions = []string{QuickRegion, Toggle, QueueRegion, Submit, QuickFull}
+var Actions = []string{QuickRegion, Toggle, QueueRegion, Submit, QuickFull, SendQuestion, SkipQuestion}
 
 // labels match the settings form (frontend/src/settings/HotkeySettings.tsx).
 var labels = map[string]string{
-	QuickRegion: "Снимок области и ответ",
-	Toggle:      "Показать / скрыть окно",
-	QueueRegion: "Добавить область в очередь",
-	Submit:      "Отправить вопрос и очередь",
-	QuickFull:   "Снимок всего экрана и ответ",
+	QuickRegion:  "Снимок области и ответ",
+	Toggle:       "Показать / скрыть окно",
+	QueueRegion:  "Добавить область в очередь",
+	Submit:       "Отправить вопрос и очередь",
+	QuickFull:    "Снимок всего экрана и ответ",
+	SendQuestion: "Отправить собранный вопрос",
+	SkipQuestion: "Пропустить собранный вопрос",
 }
 
 const (
@@ -44,11 +48,13 @@ type Binding struct {
 
 func Defaults() map[string]string {
 	return map[string]string{
-		QuickRegion: "Ctrl+Alt+S",
-		Toggle:      "Ctrl+Alt+O",
-		QueueRegion: "Ctrl+Alt+A",
-		Submit:      "Ctrl+Alt+Enter",
-		QuickFull:   "Ctrl+Alt+F",
+		QuickRegion:  "Ctrl+Alt+S",
+		Toggle:       "Ctrl+Alt+O",
+		QueueRegion:  "Ctrl+Alt+A",
+		Submit:       "Ctrl+Alt+Enter",
+		QuickFull:    "Ctrl+Alt+F",
+		SendQuestion: "",
+		SkipQuestion: "",
 	}
 }
 

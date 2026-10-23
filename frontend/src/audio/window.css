@@ -88,3 +88,47 @@
 .audio-source-details > .audio-sources {
   margin-top: 8px;
 }
+
+.question-card {
+  flex-shrink: 0;
+  max-height: 52vh;
+  overflow: auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.question-card p {
+  margin: 8px 0;
+}
+.question-card small {
+  color: var(--muted);
+}
+.question-card-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.question-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.question-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.question-card textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+}
+.question-card summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.question-sources {
+  max-height: 20vh;
+  overflow: auto;
+}

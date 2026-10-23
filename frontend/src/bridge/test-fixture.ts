@@ -81,8 +81,10 @@ export function snapshotFixture(): Snapshot {
         "queue-region": "Ctrl+Alt+A",
         submit: "Ctrl+Alt+Enter",
         "quick-full": "Ctrl+Alt+F",
+        "send-question": "",
+        "skip-question": "",
       },
-      audio: { provider: "", context_phrases: [] },
+      audio: { builder_model: "", builder_reasoning: "", provider: "", context_phrases: [] },
     },
     provider: {
       id: "codex",
@@ -96,5 +98,29 @@ export function snapshotFixture(): Snapshot {
     work_error: "",
     recovered: [],
     hotkey_errors: {},
+  };
+}
+
+export function questionFixture(): import("./state").QuestionState {
+  return {
+    id: "",
+    version: 0,
+    text: "",
+    sources: [],
+    previous_question_id: "",
+    chat_id: "chat",
+    enabled: false,
+    status: "waiting",
+    error: "",
+    can_send: false,
+    can_confirm: false,
+    manual: false,
+    editing: false,
+    unincluded: false,
+    revision: 1,
+    available: true,
+    model: "",
+    reasoning: "",
+    models: [],
   };
 }

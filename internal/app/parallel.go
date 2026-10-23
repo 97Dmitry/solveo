@@ -141,6 +141,15 @@ func (c *Controller) runParallel(ctx context.Context, opID string, doc chat.Chat
 			if turn.ReplyToID != "" && len(contextHistory) > 0 {
 				req.History = contextHistory[len(contextHistory)-1:]
 			}
+
+			if turn.Question != nil && turn.Question.PreviousQuestionID != "" {
+				for _, m := range isolated.Messages[:last] {
+					if m.ID == turn.Question.PreviousQuestionID {
+						req.History = append(req.History, m)
+						break
+					}
+				}
+			}
 			req.Config.Model = cfg.FastModel
 			req.Config.Reasoning = cfg.FastReasoning
 			req.Config.Detail = "brief"

@@ -45,7 +45,7 @@ func TestTakenHotkeyDoesNotBlockStartup(t *testing.T) {
 	if len(errs) != 1 || !strings.Contains(errs[hotkeys.QuickRegion], "Ctrl+Alt+S") {
 		t.Fatal(errs)
 	}
-	if len(registered(host)) != len(hotkeys.Actions) {
+	if len(registered(host)) != len(hotkeys.Bindings(hotkeys.Defaults())) {
 		t.Fatal("other hotkeys must still be registered")
 	}
 }
@@ -65,7 +65,7 @@ func TestConflictingHotkeysAreNotSavedAndOldOnesRestored(t *testing.T) {
 	host.mu.Lock()
 	restored := host.hotkeys
 	host.mu.Unlock()
-	if len(restored) != len(hotkeys.Actions) || restored[1].Key != 'O' {
+	if len(restored) != len(hotkeys.Bindings(hotkeys.Defaults())) || restored[1].Key != 'O' {
 		t.Fatal("previous hotkeys not restored", restored)
 	}
 	saved, _ := settings.Open(c.deps.Store.(*history.Store).Dir).Load()
@@ -103,12 +103,12 @@ func TestRecordingPauseEndsOnRequestAndRendererReload(t *testing.T) {
 	if e := c.SuspendHotkeys(true); e != nil || len(registered(host)) != 0 {
 		t.Fatal("hotkeys still registered while recording", e)
 	}
-	if e := c.SuspendHotkeys(false); e != nil || len(registered(host)) != len(hotkeys.Actions) {
+	if e := c.SuspendHotkeys(false); e != nil || len(registered(host)) != len(hotkeys.Bindings(hotkeys.Defaults())) {
 		t.Fatal("hotkeys not restored", e)
 	}
 	_ = c.SuspendHotkeys(true)
 	c.RendererReady()
-	if len(registered(host)) != len(hotkeys.Actions) {
+	if len(registered(host)) != len(hotkeys.Bindings(hotkeys.Defaults())) {
 		t.Fatal("reload left hotkeys suspended")
 	}
 	c.mu.Lock()

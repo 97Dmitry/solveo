@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"time"
 	"unicode/utf8"
+
+	"github.com/97Dmitry/solveo/internal/questionbuilder"
 )
 
 // MaxGlobalInstructions is measured in Unicode code points, including newlines.
@@ -77,18 +79,19 @@ type Answer struct {
 }
 
 type Message struct {
-	FromTranscript bool      `json:"from_transcript,omitempty"`
-	ReplyToID      string    `json:"reply_to_id,omitempty"`
-	ReplyToKind    string    `json:"reply_to_kind,omitempty"`
-	Answers        []Answer  `json:"answers,omitempty"`
-	RequestConfig  *Config   `json:"request_config,omitempty"`
-	ID             string    `json:"id"`
-	Role           string    `json:"role"`
-	Text           string    `json:"text"`
-	Status         string    `json:"status"`
-	AttachmentIDs  []string  `json:"attachment_ids"`
-	ConfigRevision uint64    `json:"config_revision"`
-	Attempts       []Attempt `json:"attempts"`
+	Question       *questionbuilder.Card `json:"question,omitempty"`
+	FromTranscript bool                  `json:"from_transcript,omitempty"`
+	ReplyToID      string                `json:"reply_to_id,omitempty"`
+	ReplyToKind    string                `json:"reply_to_kind,omitempty"`
+	Answers        []Answer              `json:"answers,omitempty"`
+	RequestConfig  *Config               `json:"request_config,omitempty"`
+	ID             string                `json:"id"`
+	Role           string                `json:"role"`
+	Text           string                `json:"text"`
+	Status         string                `json:"status"`
+	AttachmentIDs  []string              `json:"attachment_ids"`
+	ConfigRevision uint64                `json:"config_revision"`
+	Attempts       []Attempt             `json:"attempts"`
 }
 type Attachment struct {
 	ID   string `json:"id"`
