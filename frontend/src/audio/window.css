@@ -362,3 +362,27 @@
     font-size: 15px;
   }
 }
+
+/* Dictionary tab: the term list takes the remaining height. */
+.settings-section.dictionary {
+  flex: 1;
+  min-height: 0;
+}
+.settings-section.dictionary textarea {
+  flex: 1 1 auto;
+  min-height: 120px;
+  width: 100%;
+  resize: none;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.settings-section.dictionary [role="alert"] {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}

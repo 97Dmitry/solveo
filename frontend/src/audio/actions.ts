@@ -12,5 +12,6 @@ export type AudioActions = {
   selectProvider: (id: string) => void;
   setKey: (provider: string, key: string) => void;
   deleteKey: (provider: string) => void;
+  setDictionary: (phrases: string[]) => void;
 };
 export const sourceLabel = { system: "Собеседник", mic: "Микрофон" } as const;

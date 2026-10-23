@@ -7,6 +7,7 @@ import { IconButton } from "../ui/Button";
 import type { AudioActions } from "./actions";
 import { AudioAlerts } from "./AudioAlerts";
 import { AudioHistory } from "./AudioHistory";
+import { DictionarySettings } from "./DictionarySettings";
 import { LiveTranscript } from "./LiveTranscript";
 import { questionCommand } from "./question";
 import { QuestionCard } from "./QuestionCard";
@@ -15,9 +16,9 @@ import { RecognitionSettings } from "./RecognitionSettings";
 import { needsSetup } from "./readiness";
 import { SessionControls } from "./SessionControls";
 
-type Tab = "live" | "history" | "settings";
+type Tab = "live" | "history" | "dictionary" | "settings";
 const isTab = (value: string): value is Tab =>
-  value === "live" || value === "history" || value === "settings";
+  value === "live" || value === "history" || value === "dictionary" || value === "settings";
 
 export function AudioWindow() {
   const [tab, setTab] = useState<Tab>("live");
@@ -64,6 +65,7 @@ export function AudioWindow() {
         ids?: string[];
         text?: string;
         chat_id?: string;
+        phrases?: string[];
       } = {},
     ) => {
       setPending(true);
@@ -108,6 +110,7 @@ export function AudioWindow() {
     selectProvider: (provider) => void execute("selectProvider", { provider }),
     setKey: (provider, key) => void execute("setKey", { provider, key }),
     deleteKey: (provider) => void execute("deleteKey", { provider }),
+    setDictionary: (phrases) => void execute("setDictionary", { phrases }),
   };
   const disabled = pending || view.disabled;
   const history = view.audio.history_enabled;
@@ -162,6 +165,9 @@ export function AudioWindow() {
               История
             </Tabs.Trigger>
           )}
+          <Tabs.Trigger className="audio-tab" value="dictionary">
+            Словарь
+          </Tabs.Trigger>
           <Tabs.Trigger className="audio-tab" value="settings">
             Настройки
             {needsSetup(view.audio) && (
@@ -169,7 +175,7 @@ export function AudioWindow() {
             )}
           </Tabs.Trigger>
         </Tabs.List>
-        {/* Live and settings stay mounted so local selection, edits and form input survive tab
+        {/* Live, dictionary and settings stay mounted so local selection, edits and form input survive tab
             switches; history loads only while its tab is open. */}
         <Tabs.Content
           className="audio-tab-panel live"
@@ -197,6 +203,19 @@ export function AudioWindow() {
             <AudioHistory chatID={chatID} />
           </Tabs.Content>
         )}
+        <Tabs.Content
+          className="audio-tab-panel settings"
+          value="dictionary"
+          forceMount
+          hidden={active !== "dictionary"}
+        >
+          <DictionarySettings
+            dictionary={view.dictionary}
+            audio={view.audio}
+            disabled={pending}
+            onSave={actions.setDictionary}
+          />
+        </Tabs.Content>
         <Tabs.Content
           className="audio-tab-panel settings"
           value="settings"

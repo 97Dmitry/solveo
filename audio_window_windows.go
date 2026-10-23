@@ -100,7 +100,7 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 	var server *audiowindow.Server
 	view := func() audiowindow.View {
 		s := controller.AudioWindowTarget()
-		return audiowindow.View{Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale}
+		return audiowindow.View{Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary}
 	}
 	execute := func(ctx context.Context, cmd audiowindow.Command) error {
 		switch cmd.Name {
@@ -131,6 +131,8 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 			return controller.SetSTTKey(cmd.Provider, cmd.Key)
 		case "deleteKey":
 			return controller.DeleteSTTKey(cmd.Provider)
+		case "setDictionary":
+			return controller.SetContextPhrases(cmd.Phrases)
 		case "send":
 			_, err := controller.SubmitTranscript(core.SubmitTranscriptInput{ChatID: cmd.ChatID, RequestID: chat.ID(), SegmentIDs: cmd.IDs})
 			if err == nil {

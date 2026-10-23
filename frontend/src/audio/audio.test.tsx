@@ -24,6 +24,7 @@ function actions(): AudioActions {
     selectProvider: vi.fn(),
     setKey: vi.fn(),
     deleteKey: vi.fn(),
+    setDictionary: vi.fn(),
   };
 }
 const ok = (id: string) => ({

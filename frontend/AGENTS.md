@@ -7,6 +7,7 @@
 - Preserve monotonic snapshot revisions, subscription cleanup and renderer reload handling. Submit carries current text/revision; native intents are short-lived and single-use. Respect IME composition and retain text typed during requests.
 - Preconfiguration saves locally without an LLM request. Ordinary text submission and quick capture are separate actions; quick capture preserves the existing draft and queued images.
 - Markdown must not render raw HTML or remote images. Open validated external links through the desktop bridge. Preserve compact layouts at 520×400, scrolling, themes and font settings.
+- Shared UI primitives live in `src/ui` (Button, Drawer with a scrolling body, Menu over `@radix-ui/react-dropdown-menu`). Panels use outlined secondary buttons; reuse these instead of hand-rolled popovers.
 - Validate with `vp check`, `vp run typecheck`, `vp test run`, `vp run build`. Production uses the build script including `tsc -b`; `vp build` alone skips that script. Browser checks do not verify native Wails/Windows behavior.
 
 <!--VITE PLUS START-->

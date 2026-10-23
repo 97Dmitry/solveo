@@ -73,6 +73,14 @@ export function AnswerBlocks({
                   {copied === copyID ? <Check size={13} /> : <Copy size={13} />}
                 </IconButton>
               )}
+              {answer.status === "complete" && answer.text.trim() && messageID && onFollowup && (
+                <FollowupActions
+                  messageID={messageID}
+                  kind={answer.kind}
+                  disabled={!canPrepareFollowup}
+                  onFollowup={onFollowup}
+                />
+              )}
             </div>
             {approach && answer.status === "complete" && (
               <p className="answer-note">Предварительный ответ — может отличаться от решения.</p>
@@ -81,14 +89,6 @@ export function AnswerBlocks({
               <div className="message-body">
                 <Markdown text={answer.text} onCopy={onCopy} onOpenLink={onOpenLink} />
               </div>
-            )}
-            {answer.status === "complete" && answer.text.trim() && messageID && onFollowup && (
-              <FollowupActions
-                messageID={messageID}
-                kind={answer.kind}
-                disabled={!canPrepareFollowup}
-                onFollowup={onFollowup}
-              />
             )}
             {answer.status === "requesting" && previews[answer.kind] && (
               <div className="message-body streaming" aria-busy="true">

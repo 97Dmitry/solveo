@@ -86,6 +86,8 @@ describe("attachments", () => {
     fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { files: [file] } });
     expect(add).not.toHaveBeenCalled();
     expect(fail).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "Из файла" }).hasAttribute("disabled")).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Изображение из файла" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

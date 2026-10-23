@@ -841,6 +841,7 @@ export namespace audiowindow {
 	    ids?: string[];
 	    text?: string;
 	    chat_id?: string;
+	    phrases?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Command(source);
@@ -855,6 +856,7 @@ export namespace audiowindow {
 	        this.ids = source["ids"];
 	        this.text = source["text"];
 	        this.chat_id = source["chat_id"];
+	        this.phrases = source["phrases"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -888,6 +890,7 @@ export namespace audiowindow {
 	    theme: string;
 	    ui_scale: number;
 	    show_version: number;
+	    dictionary: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new View(source);
@@ -907,6 +910,7 @@ export namespace audiowindow {
 	        this.theme = source["theme"];
 	        this.ui_scale = source["ui_scale"];
 	        this.show_version = source["show_version"];
+	        this.dictionary = source["dictionary"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

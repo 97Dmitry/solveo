@@ -86,6 +86,9 @@ func TestCommandDispatchAndShowVersion(t *testing.T) {
 		if c.Name == "send" && c.ChatID == "chat" && len(c.IDs) == 1 {
 			calls++
 		}
+		if c.Name == "setDictionary" && len(c.Phrases) == 2 {
+			calls++
+		}
 		return nil
 	})
 	if err != nil {
@@ -112,11 +115,17 @@ func TestCommandDispatchAndShowVersion(t *testing.T) {
 	if err := c.Execute(Command{Name: "send", ChatID: "chat", IDs: []string{"segment"}}); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 {
+	if err := c.Execute(Command{Name: "setDictionary", Phrases: []string{"Kafka", "gRPC"}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
 		t.Fatal("command not delivered")
 	}
 	if err := c.Execute(Command{Name: "send", IDs: make([]string, 301)}); err == nil {
 		t.Fatal("oversized selection accepted")
+	}
+	if err := c.Execute(Command{Name: "setDictionary", Phrases: make([]string, 1025)}); err == nil {
+		t.Fatal("oversized dictionary accepted")
 	}
 }
 
