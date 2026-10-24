@@ -15,3 +15,5 @@
 - QuestionView shares the target chat snapshot under c.mu; the child uses only the allowlisted question command with card identity/revision. Model catalog discovery is explicit, never a background model request. Cards and model preferences are parent-owned; child-local text must survive 200 ms polling until explicit save/rebuild/skip.
 
 - View.dictionary carries the saved recognition dictionary (never null); the allowlisted `setDictionary` command carries `phrases` (bounded at the transport, validated by settings) and calls Controller.SetContextPhrases.
+
+- `sendUnsent` (allowlisted, carries the displayed ChatID) returns once the parent accepts it; the parent waits for pending finals asynchronously, so the 4 s client timeout is never spent waiting for speech. View.send_hotkey is only a hint for the button title.

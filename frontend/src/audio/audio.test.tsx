@@ -20,6 +20,7 @@ function actions(): AudioActions {
     stopListening: vi.fn(),
     clear: vi.fn(),
     send: vi.fn(),
+    sendUnsent: vi.fn(),
     insert: vi.fn(),
     selectProvider: vi.fn(),
     setKey: vi.fn(),
@@ -50,7 +51,13 @@ function renderPanel(state: AudioState, a = actions(), canSend = true, onSetup =
         <SessionControls audio={state} disabled={false} actions={a} onSetup={onSetup} />
       </header>
       <AudioAlerts audio={state} window="" />
-      <LiveTranscript audio={state} disabled={false} canSend={canSend} actions={a} />
+      <LiveTranscript
+        audio={state}
+        disabled={false}
+        canSend={canSend}
+        sendHotkey="Ctrl+Alt+Space"
+        actions={a}
+      />
       <RecognitionSettings audio={state} disabled={false} actions={a} />
     </>,
   );
@@ -175,6 +182,56 @@ it("disables sending while the chat cannot submit", async () => {
   expect((screen.getByRole("button", { name: "В поле ввода" }) as HTMLButtonElement).disabled).toBe(
     false,
   );
+});
+
+it("sends every interviewer phrase after the last sent one", async () => {
+  const a = renderPanel(
+    audio({
+      segments: [
+        { ...seg("a:1", "Старый вопрос"), sent: true },
+        seg("b:1", "кандидат", true, "mic"),
+        seg("a:2", "Новый вопрос"),
+        seg("a:3", "договаривает", false),
+      ],
+    }),
+  );
+  const button = screen.getByRole("button", { name: "Новые реплики (2)" });
+  expect(button.getAttribute("title")).toContain("Ctrl+Alt+Space");
+  await userEvent.click(button);
+  expect(a.sendUnsent).toHaveBeenCalledTimes(1);
+  expect(
+    within(screen.getByRole("button", { name: /Старый вопрос/ })).getByText(/отправлено/),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole("button", { name: /Новый вопрос/ })).queryByText(/отправлено/),
+  ).toBeNull();
+});
+
+it("shows a pending send, nothing new to send and send failures", () => {
+  renderPanel(
+    audio({ segments: [seg("a:1", "вопрос", false)], sending_unsent: true, send_error: "" }),
+  );
+  expect(
+    (screen.getByRole("button", { name: "Жду конец фразы…" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  cleanup();
+  renderPanel(
+    audio({
+      segments: [{ ...seg("a:1", "вопрос"), sent: true }],
+      send_error: "Реплика собеседника ещё распознаётся",
+    }),
+  );
+  expect(
+    (screen.getByRole("button", { name: "Новые реплики" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Отправка новых реплик: Реплика собеседника ещё распознаётся",
+  );
+  cleanup();
+  renderPanel(audio({ segments: [seg("a:1", "вопрос")] }), actions(), false);
+  expect(
+    (screen.getByRole("button", { name: "Новые реплики (1)" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
 });
 
 it("explains when recognition is unavailable", () => {

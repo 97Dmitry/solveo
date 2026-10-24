@@ -1574,6 +1574,12 @@ input[type="range"] {
 .segment.mic {
   background: var(--raised);
 }
+.segment.sent .segment-text {
+  color: var(--muted);
+}
+.segment-sent {
+  color: var(--accent);
+}
 .segment-meta {
   display: flex;
   gap: 8px;
@@ -1630,4 +1636,87 @@ input[type="range"] {
 .privacy.local,
 .key-state {
   color: var(--muted);
+}
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.help-panel h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.help-group h4 {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.help-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.help-key {
+  display: grid;
+  grid-template-columns: minmax(7.5em, max-content) 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.help-key dt {
+  margin: 0;
+}
+.help-key dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.help-key dd strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.help-panel kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--text);
+  font:
+    12px/1.5 ui-monospace,
+    "Cascadia Mono",
+    Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.help-unassigned {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+.help-faq {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+.help-faq summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.help-faq p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 560px) {
+  .help-key {
+    grid-template-columns: 1fr;
+  }
 }

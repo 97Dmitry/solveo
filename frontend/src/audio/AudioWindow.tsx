@@ -106,6 +106,7 @@ export function AudioWindow() {
     stopListening: () => void execute("stopListening"),
     clear: () => void execute("clear"),
     send: (ids) => void execute("send", { ids, chat_id: chatID }),
+    sendUnsent: () => void execute("sendUnsent", { chat_id: chatID }),
     insert: (text) => void execute("insert", { text, chat_id: chatID }),
     selectProvider: (provider) => void execute("selectProvider", { provider }),
     setKey: (provider, key) => void execute("setKey", { provider, key }),
@@ -195,6 +196,7 @@ export function AudioWindow() {
             audio={view.audio}
             disabled={disabled}
             canSend={!disabled && view.can_send}
+            sendHotkey={view.send_hotkey}
             actions={actions}
           />
         </Tabs.Content>

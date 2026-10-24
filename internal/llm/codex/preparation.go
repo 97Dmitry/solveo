@@ -35,38 +35,47 @@ func (c *Client) PrepareChat(parent context.Context, in llm.ChatPreparation) err
 	if in.ChatID == "" {
 		return errors.New("не задан чат для подготовки")
 	}
+	instructions := c.instructions(llm.Request{Config: in.Config, GlobalInstructions: in.GlobalInstructions})
+	key := preparationKey{chatID: in.ChatID, instructions: fmt.Sprintf("%x", sha256.Sum256([]byte(instructions))), model: in.Config.Model, reasoning: in.Config.Reasoning}
+	params := threadParams(c.app.work, in.Config)
+	params["ephemeral"] = false
+	params["developerInstructions"] = instructions
+	return c.app.prepare(parent, key, params)
+}
+
+// prepare owns one thread/start until a matching run claims it or ctx ends.
+func (a *appServer) prepare(parent context.Context, key preparationKey, params map[string]any) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	select {
-	case c.app.preparationGate <- struct{}{}:
+	case a.preparationGate <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	defer func() { <-c.app.preparationGate }()
+	defer func() { <-a.preparationGate }()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	instructions := c.instructions(llm.Request{Config: in.Config, GlobalInstructions: in.GlobalInstructions})
-	p := &preparedThread{key: preparationKey{chatID: in.ChatID, instructions: fmt.Sprintf("%x", sha256.Sum256([]byte(instructions))), model: in.Config.Model, reasoning: in.Config.Reasoning}, ctx: ctx, cancel: cancel, ready: make(chan struct{}), claimed: make(chan struct{}), finished: make(chan struct{})}
-	c.app.mu.Lock()
-	if c.app.closed {
-		c.app.mu.Unlock()
+	p := &preparedThread{key: key, ctx: ctx, cancel: cancel, ready: make(chan struct{}), claimed: make(chan struct{}), finished: make(chan struct{})}
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
 		return errors.New("приложение завершается")
 	}
-	if c.app.lastSubmittedChat == in.ChatID || c.app.foreground > 0 {
-		c.app.mu.Unlock()
+	if a.lastSubmittedChat == key.chatID || a.foreground > 0 {
+		a.mu.Unlock()
 		return nil
 	}
-	c.app.prepared = p
-	c.app.mu.Unlock()
+	a.prepared = p
+	a.mu.Unlock()
 	ready := false
 	defer func() {
-		c.app.mu.Lock()
+		a.mu.Lock()
 		if !ready {
 			close(p.ready)
 		}
 		consumed := p.consumed
-		c.app.mu.Unlock()
+		a.mu.Unlock()
 		if p.id != "" && !consumed {
 			releaseCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			err := p.conn.Call(releaseCtx, "thread/unsubscribe", map[string]any{"threadId": p.id}, nil)
@@ -75,20 +84,20 @@ func (c *Client) PrepareChat(parent context.Context, in llm.ChatPreparation) err
 				p.conn.Kill()
 			} // preserve the resource bound if release is unconfirmed
 		}
-		c.app.mu.Lock()
-		if c.app.prepared == p {
-			c.app.prepared = nil
+		a.mu.Lock()
+		if a.prepared == p {
+			a.prepared = nil
 		}
 		close(p.finished)
-		c.app.mu.Unlock()
+		a.mu.Unlock()
 	}()
-	conn, err := c.app.connection(ctx)
+	conn, err := a.connection(ctx)
 	if err != nil {
 		return err
 	}
-	c.app.mu.Lock()
+	a.mu.Lock()
 	p.conn = conn
-	c.app.mu.Unlock()
+	a.mu.Unlock()
 	var account struct {
 		Account *struct {
 			Type string `json:"type"`
@@ -98,14 +107,11 @@ func (c *Client) PrepareChat(parent context.Context, in llm.ChatPreparation) err
 		return err
 	}
 	if account.Account == nil {
-		return errors.New("для подготовки чата требуется вход в Codex")
+		return errors.New("для подготовки требуется вход в Codex")
 	}
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	params := threadParams(c.app.work, in.Config)
-	params["ephemeral"] = false
-	params["developerInstructions"] = instructions
 	var result struct {
 		Thread struct {
 			ID string `json:"id"`
@@ -127,11 +133,11 @@ func (c *Client) PrepareChat(parent context.Context, in llm.ChatPreparation) err
 		conn.Kill()
 		return errors.New("Codex вернул некорректный ID заготовки")
 	}
-	c.app.mu.Lock()
+	a.mu.Lock()
 	p.id = result.Thread.ID
 	ready = true
 	close(p.ready)
-	c.app.mu.Unlock()
+	a.mu.Unlock()
 	select {
 	case <-p.claimed:
 		return nil
@@ -144,17 +150,17 @@ func (c *Client) PrepareChat(parent context.Context, in llm.ChatPreparation) err
 
 // takePrepared waits for a matching in-flight start, then claims it atomically.
 // Cancellation/staleness/process loss can only fall back before turn/start.
-func (c *Client) takePrepared(ctx context.Context, conn *appserver.Conn, key preparationKey) (string, error) {
+func (a *appServer) takePrepared(ctx context.Context, conn *appserver.Conn, key preparationKey) (string, error) {
 	for {
-		c.app.mu.Lock()
-		p := c.app.prepared
+		a.mu.Lock()
+		p := a.prepared
 		if p == nil {
-			c.app.mu.Unlock()
+			a.mu.Unlock()
 			return "", nil
 		}
 		if p.key != key || p.ctx.Err() != nil || (p.conn != nil && p.conn != conn) {
 			p.cancel()
-			c.app.mu.Unlock()
+			a.mu.Unlock()
 			// Keep the connection free of foreground turns until cleanup can no longer retire it.
 			select {
 			case <-p.finished:
@@ -166,17 +172,17 @@ func (c *Client) takePrepared(ctx context.Context, conn *appserver.Conn, key pre
 		select {
 		case <-p.ready:
 			if p.id == "" {
-				c.app.mu.Unlock()
+				a.mu.Unlock()
 				return "", nil
 			}
 			p.consumed = true
-			c.app.prepared = nil
+			a.prepared = nil
 			close(p.claimed)
 			id := p.id
-			c.app.mu.Unlock()
+			a.mu.Unlock()
 			return id, nil
 		default:
-			c.app.mu.Unlock()
+			a.mu.Unlock()
 			select {
 			case <-p.ready:
 			case <-p.ctx.Done():

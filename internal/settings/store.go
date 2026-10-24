@@ -157,11 +157,23 @@ func (s *Store) Load() (Config, error) {
 		return c, errors.New("неподдерживаемая версия файла настроек")
 	}
 	// Files without hotkeys get the defaults; actions of a newer version are ignored.
+	// A missing action gets its default only while no stored action already uses that shortcut.
 	stored := disk.Hotkeys
 	disk.Hotkeys = hotkeys.Defaults()
+	used := map[string]bool{}
 	for action := range disk.Hotkeys {
 		if v, ok := stored[action]; ok {
 			disk.Hotkeys[action] = v
+			if _, canonical, err := hotkeys.Parse(v); err == nil && canonical != "" {
+				used[canonical] = true
+			}
+		}
+	}
+	for action, v := range disk.Hotkeys {
+		if _, ok := stored[action]; !ok && stored != nil {
+			if _, canonical, err := hotkeys.Parse(v); err == nil && used[canonical] {
+				disk.Hotkeys[action] = ""
+			}
 		}
 	}
 	c, e = Normalize(disk.Config)

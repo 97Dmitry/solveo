@@ -40,10 +40,16 @@ export function TranscriptList({
         <li key={s.id}>
           <button
             type="button"
-            className={`segment ${s.track} ${s.final ? "" : "partial"}`}
+            className={`segment ${s.track} ${s.final ? "" : "partial"} ${s.sent === true ? "sent" : ""}`}
             aria-pressed={selected.has(s.id)}
             disabled={!s.final}
-            title={s.final ? "Выбрать фразу" : "Фраза ещё распознаётся"}
+            title={
+              s.final
+                ? s.sent === true
+                  ? "Уже отправлена в чат"
+                  : "Выбрать фразу"
+                : "Фраза ещё распознаётся"
+            }
             onClick={() => onToggle(s.id)}
           >
             <span className="segment-meta">
@@ -51,7 +57,10 @@ export function TranscriptList({
                 {sourceLabel[s.track]}
                 {s.provider_label ? ` · ${s.provider_label}` : ""}
               </span>
-              <time dateTime={s.started_at}>{time.format(new Date(s.started_at))}</time>
+              <span>
+                {s.sent === true && <span className="segment-sent">отправлено · </span>}
+                <time dateTime={s.started_at}>{time.format(new Date(s.started_at))}</time>
+              </span>
             </span>
             <span className="segment-text">{s.text || "…"}</span>
           </button>

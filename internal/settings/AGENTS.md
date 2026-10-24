@@ -9,7 +9,7 @@
 
 - `global_instructions` is additive in schema v1, default empty, at most 16384 Unicode code points (valid UTF-8). Saving it never calls the provider; existing chat snapshots never change. Go and Zod count code points, not bytes/UTF-16 units.
 
-- `hotkeys` is additive in schema v1: a missing field means `hotkeys.Defaults()`, missing actions get defaults, unknown (newer) actions are ignored on load. Values are canonical `Ctrl+Alt+Shift+Win+Key` text or "" (disabled); Load/Save reject invalid or duplicate shortcuts. `Normalize` canonicalizes user input before `Validate`.
+- `hotkeys` is additive in schema v1: a missing field means `hotkeys.Defaults()`, missing actions get defaults unless a stored action already uses that shortcut (then ""), unknown (newer) actions are ignored on load. Values are canonical `Ctrl+Alt+Shift+Win+Key` text or "" (disabled); Load/Save reject invalid or duplicate shortcuts. `Normalize` canonicalizes user input before `Validate`.
 
 - `audio.context_phrases` is additive in schema v1 (missing → empty, never null on the wire): the speech recognition dictionary. `Normalize` trims and drops empty/duplicate phrases; `Validate` allows ≤ 256 phrases, ≤ 128 code points each, no NUL/invalid UTF-8, ≤ 3800 bytes joined (the worker caps the full context, template included, at 4 KiB). Saving it never calls STT or the LLM; it applies at the next listening start.
 

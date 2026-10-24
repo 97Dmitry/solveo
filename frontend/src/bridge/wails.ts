@@ -143,6 +143,7 @@ const audioWindowSchema = z.object({
   ui_scale: z.number().min(50).max(300),
   show_version: z.number().int().nonnegative(),
   dictionary: z.array(z.string().max(512)).max(256),
+  send_hotkey: z.string().max(64).default(""),
 }) satisfies z.ZodType<Wire<audiowindow.View>>;
 export type AudioWindowView = z.infer<typeof audioWindowSchema>;
 export const audioWindow = {

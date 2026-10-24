@@ -21,4 +21,6 @@
 
 - Text ASR archives are technical parts grouped by ChatID in solveo-data/audio-history, owned by [internal/audiohistory](internal/audiohistory/AGENTS.md) and internal/app/audio_history.go. No audio recording, keys or provider state are persisted there.
 
+- Fast interviewer questions ([plan](docs/superpowers/plans/2026-10-23-fast-transcript-questions.md)): «send new phrases» (hotkey send-transcript) sends every system phrase after the last sent one without the builder; the builder keeps a prepared Codex analysis session while enabled. The main window has a help panel listing all hotkeys.
+
 - Interview question cards: [internal/questionbuilder](internal/questionbuilder/AGENTS.md) owns the bounded state machine; internal/app/question_builder.go owns scheduling, model preferences and explicit submission. Cards live above the detached audio transcript; only accepted versions persist in chat messages. Analysis is independent of the main generation slot and uses a separate lazy Codex transport.

@@ -10,3 +10,4 @@
 - Optional ChatPreparer owns an empty-chat preparation until Generate consumes it or its context is canceled; cleanup finishes before it returns. ChatPreparation carries only local ChatID and immutable config/global-instruction snapshots, never a question. Request.ChatID is a local correlation key, not provider state. Preparation cannot generate answers or start model turns; provider-native generate=false transport warmup is allowed.
 
 - Optional QuestionAnalyzer is an auxiliary transcription analysis operation with typed bounded snapshots/results. It never receives conversational state, global answer instructions or images, and does not own the main generation slot.
+- AnalyzeQuestion's emit receives only content-free progress (timing). Optional QuestionPreparer keeps one empty analysis session for a model/effort until AnalyzeQuestion claims it or ctx ends; it never sends a transcript or starts a model turn.

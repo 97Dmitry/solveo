@@ -57,6 +57,7 @@ export namespace app {
 	    started_at: string;
 	    text: string;
 	    final: boolean;
+	    sent?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TranscriptSegment(source);
@@ -70,6 +71,7 @@ export namespace app {
 	        this.started_at = source["started_at"];
 	        this.text = source["text"];
 	        this.final = source["final"];
+	        this.sent = source["sent"];
 	    }
 	}
 	export class AudioHistoryView {
@@ -174,6 +176,8 @@ export namespace app {
 	    segments: TranscriptSegment[];
 	    error: string;
 	    key_configured: boolean;
+	    sending_unsent: boolean;
+	    send_error: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AudioView(source);
@@ -196,6 +200,8 @@ export namespace app {
 	        this.segments = this.convertValues(source["segments"], TranscriptSegment);
 	        this.error = source["error"];
 	        this.key_configured = source["key_configured"];
+	        this.sending_unsent = source["sending_unsent"];
+	        this.send_error = source["send_error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -891,6 +897,7 @@ export namespace audiowindow {
 	    ui_scale: number;
 	    show_version: number;
 	    dictionary: string[];
+	    send_hotkey: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new View(source);
@@ -911,6 +918,7 @@ export namespace audiowindow {
 	        this.ui_scale = source["ui_scale"];
 	        this.show_version = source["show_version"];
 	        this.dictionary = source["dictionary"];
+	        this.send_hotkey = source["send_hotkey"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

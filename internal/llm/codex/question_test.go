@@ -3,11 +3,13 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/questionbuilder"
 )
 
@@ -15,7 +17,7 @@ func TestQuestionAnalysisIsolatedFromMainConversation(t *testing.T) {
 	env := fakeEnv{}
 	c := fakeClient(t, &env)
 	in := questionbuilder.Input{ChatID: "local-chat", Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "Explain channels", Final: true}}}
-	result, err := c.AnalyzeQuestion(context.Background(), in, chat.Config{Model: "gpt-test", Reasoning: "low"})
+	result, err := c.AnalyzeQuestion(context.Background(), in, chat.Config{Model: "gpt-test", Reasoning: "low"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func TestQuestionCancellationKeepsMainTransport(t *testing.T) {
 	c.app.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	_, err = c.AnalyzeQuestion(ctx, questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "[slow]", Final: true}}}, chat.Config{Model: "gpt-test"})
+	_, err = c.AnalyzeQuestion(ctx, questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "[slow]", Final: true}}}, chat.Config{Model: "gpt-test"}, nil)
 	if err == nil {
 		t.Fatal("not cancelled")
 	}
@@ -96,7 +98,7 @@ func TestQuestionFollowupQuotesPreviousUserQuestion(t *testing.T) {
 func TestQuestionIsolationUsesProcessFlagsWithoutThreadTableReplacement(t *testing.T) {
 	env := fakeEnv{}
 	c := fakeClient(t, &env)
-	_, err := c.AnalyzeQuestion(context.Background(), questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "question", Final: true}}}, chat.Config{Model: "gpt-test", Reasoning: "low"})
+	_, err := c.AnalyzeQuestion(context.Background(), questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "question", Final: true}}}, chat.Config{Model: "gpt-test", Reasoning: "low"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,5 +253,124 @@ func TestQuestionSourcesKeepUtteranceOrderForCorrections(t *testing.T) {
 	}
 	if len(wire.Sources) != 2 || wire.Sources[0].ID != "old" || wire.Sources[0].Seq != 1 || wire.Sources[1].Seq != 2 {
 		t.Fatal("correction order lost", wire)
+	}
+}
+
+func prepareAnalysis(t *testing.T, c *Client, cfg chat.Config) <-chan error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() { done <- c.PrepareQuestionAnalysis(ctx, cfg) }()
+	deadline := time.After(5 * time.Second)
+	for {
+		c.analysis.mu.Lock()
+		p := c.analysis.prepared
+		c.analysis.mu.Unlock()
+		if p != nil {
+			select {
+			case <-p.ready:
+				return done
+			default:
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatal("analysis preparation did not become ready")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+type threadUse struct {
+	starts          int
+	turns, released []string
+}
+
+// analysisThreads counts analysis thread starts and lists turns and releases by thread ID.
+func analysisThreads(t *testing.T, env fakeEnv) threadUse {
+	t.Helper()
+	var u threadUse
+	for _, l := range readLog(t, env.log) {
+		var p map[string]any
+		_ = json.Unmarshal(l.Params, &p)
+		thread, _ := p["threadId"].(string)
+		switch {
+		case l.Method == "thread/start" && p["baseInstructions"] == questionInstructions:
+			u.starts++
+		case l.Method == "turn/start" && p["outputSchema"] != nil:
+			u.turns = append(u.turns, thread)
+		case l.Method == "thread/unsubscribe":
+			u.released = append(u.released, thread)
+		}
+	}
+	return u
+}
+
+func TestPreparedQuestionAnalysisSkipsThreadStartAndIsUsedOnce(t *testing.T) {
+	env := fakeEnv{}
+	c := fakeClient(t, &env)
+	cfg := chat.Config{Model: "gpt-test", Reasoning: "low"}
+	done := prepareAnalysis(t, c, cfg)
+	c.analysis.mu.Lock()
+	prepared := c.analysis.prepared.id
+	c.analysis.mu.Unlock()
+	if u := analysisThreads(t, env); u.starts != 1 || len(u.turns) != 0 {
+		t.Fatalf("preparation must start one thread and no turn: %+v", u)
+	}
+	in := questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "Explain channels", Final: true}}}
+	var timing []string
+	if _, err := c.AnalyzeQuestion(context.Background(), in, cfg, func(e llm.Event) { timing = append(timing, e.Text) }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("claimed preparation did not return")
+	}
+	u := analysisThreads(t, env)
+	if u.starts != 1 || len(u.turns) != 1 || u.turns[0] != prepared {
+		t.Fatalf("analysis did not use the prepared thread %s: %+v", prepared, u)
+	}
+	if !slices.Contains(u.released, prepared) {
+		t.Fatal("ephemeral prepared thread was not released", u.released)
+	}
+	if len(timing) != 1 || !strings.Contains(timing[0], "purpose=question-analysis") || !strings.Contains(timing[0], "prepared_thread=true") {
+		t.Fatal(timing)
+	}
+	// Without a new preparation the next analysis starts its own thread, never reusing the claimed one.
+	if _, err := c.AnalyzeQuestion(context.Background(), in, cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	if u = analysisThreads(t, env); u.starts != 2 || len(u.turns) != 2 || u.turns[1] == prepared {
+		t.Fatalf("%+v", u)
+	}
+}
+
+func TestStaleQuestionPreparationIsReleasedBeforeAnalysis(t *testing.T) {
+	env := fakeEnv{}
+	c := fakeClient(t, &env)
+	done := prepareAnalysis(t, c, chat.Config{Model: "gpt-old"})
+	c.analysis.mu.Lock()
+	prepared := c.analysis.prepared.id
+	c.analysis.mu.Unlock()
+	in := questionbuilder.Input{Segments: []questionbuilder.Segment{{ID: "s", Track: "system", Text: "Explain channels", Final: true}}}
+	if _, err := c.AnalyzeQuestion(context.Background(), in, chat.Config{Model: "gpt-test"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("stale preparation reported a claim")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale preparation did not stop")
+	}
+	u := analysisThreads(t, env)
+	if u.starts != 2 || len(u.turns) != 1 || u.turns[0] == prepared || !slices.Contains(u.released, prepared) {
+		t.Fatalf("%+v", u)
 	}
 }

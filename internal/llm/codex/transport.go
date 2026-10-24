@@ -496,7 +496,10 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	if newThread && !ephemeral && spec.chatID != "" {
 		key = preparationKey{chatID: spec.chatID, instructions: spec.instructionsHash, model: spec.config.Model, reasoning: spec.config.Reasoning}
 	}
-	preparedID, err = c.takePrepared(ctx, conn, key)
+	if spec.analysis {
+		key = analysisKey(spec.config)
+	}
+	preparedID, err = c.app.takePrepared(ctx, conn, key)
 	if err != nil {
 		return keep(), err
 	}
@@ -510,7 +513,8 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	}
 	// Ownership transfers at claim, including early cancellation/account errors.
 	// The already archived question can retain this exact thread and pending hash.
-	if preparedID != "" {
+	// An ephemeral (analysis) claim is released after its single turn below.
+	if preparedID != "" && !ephemeral {
 		threadID = preparedID
 		pending = spec.instructionsHash
 		c.app.markLoaded(conn, threadID)
@@ -539,9 +543,7 @@ func (c *Client) run(ctx context.Context, spec turnSpec, emit func(llm.Event)) (
 	preparedThreadUsed := preparedID != ""
 	params := threadParams(c.app.work, spec.config)
 	if spec.analysis {
-		params["baseInstructions"] = questionInstructions
-		params["developerInstructions"] = questionInstructions
-
+		params = c.app.analysisThreadParams(spec.config)
 	}
 
 	var thread struct {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import {
   Camera,
   ChevronDown,
+  CircleHelp,
   Code2,
   History,
   Image,
@@ -31,16 +32,19 @@ import { AttachmentStrip } from "../chat/AttachmentStrip";
 import { lastAnswerText, latestCode } from "../chat/code";
 import { ChatSettings } from "../settings/ChatSettings";
 import { AppSettings } from "../settings/AppSettings";
+import { HelpPanel } from "../help/HelpPanel";
 import { HistoryDrawer } from "../history/HistoryDrawer";
 import { Button, IconButton } from "../ui/Button";
 import { Drawer } from "../ui/Drawer";
 import { Menu } from "../ui/Menu";
 import "./theme.css";
-type Panel = "closed" | "configuration" | "settings" | "history" | "images";
+type Panel = "closed" | "configuration" | "settings" | "history" | "images" | "help";
 export default function App() {
   const state = useSyncExternalStore(client.subscribe, client.getState);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [panel, setPanel] = useState<Panel>("closed");
+  // The help panel opens settings directly on the shortcuts tab.
+  const [settingsTab, setSettingsTab] = useState<"general" | "hotkeys">("general");
   const [notice, setNotice] = useState("");
   // 0 hides conversation search; every Ctrl+F increments it to refocus the field.
   const [chatSearch, setChatSearch] = useState(0);
@@ -165,6 +169,7 @@ export default function App() {
     settings: "Настройки Solveo",
     history: "История чатов",
     images: "Снимки чата",
+    help: "Справка и горячие клавиши",
     closed: "",
   } satisfies Record<Panel, string>;
   return (
@@ -233,7 +238,16 @@ export default function App() {
           >
             <Plus size={20} />
           </IconButton>
-          <IconButton label="Настройки Solveo" onClick={() => setPanel("settings")}>
+          <IconButton label="Справка и горячие клавиши" onClick={() => setPanel("help")}>
+            <CircleHelp size={18} />
+          </IconButton>
+          <IconButton
+            label="Настройки Solveo"
+            onClick={() => {
+              setSettingsTab("general");
+              setPanel("settings");
+            }}
+          >
             <Settings size={18} />
           </IconButton>
         </nav>
@@ -269,7 +283,14 @@ export default function App() {
         <div className="error-banner" role="alert">
           <span>{error}</span>
           {s.controls.can_discard && (
-            <Button onClick={() => setPanel("settings")}>Восстановление</Button>
+            <Button
+              onClick={() => {
+                setSettingsTab("general");
+                setPanel("settings");
+              }}
+            >
+              Восстановление
+            </Button>
           )}
         </div>
       )}
@@ -439,8 +460,19 @@ export default function App() {
               }
             />
           )}
+          {panel === "help" && (
+            <HelpPanel
+              hotkeys={s.settings.hotkeys}
+              errors={s.hotkey_errors}
+              onEditHotkeys={() => {
+                setSettingsTab("hotkeys");
+                setPanel("settings");
+              }}
+            />
+          )}
           {panel === "settings" && (
             <AppSettings
+              initialTab={settingsTab}
               busy={busy}
               hotkeyActions={{ loadDefaults: defaultHotkeys, suspend: suspendHotkeys }}
               connection={{

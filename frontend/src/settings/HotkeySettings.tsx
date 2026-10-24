@@ -2,17 +2,8 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { errorText, hotkeyActions, type HotkeyAction, type Hotkeys } from "../bridge/state";
 import { Button, IconButton } from "../ui/Button";
+import { hotkeyLabels as labels } from "./hotkeyLabels";
 
-// Labels match internal/hotkeys, which names actions in conflict errors.
-const labels: Record<HotkeyAction, string> = {
-  "send-question": "Отправить собранный вопрос",
-  "skip-question": "Пропустить собранный вопрос",
-  "quick-region": "Снимок области и ответ",
-  "queue-region": "Добавить область в очередь",
-  "quick-full": "Снимок всего экрана и ответ",
-  submit: "Отправить вопрос и очередь",
-  toggle: "Показать / скрыть окно",
-};
 const named: Record<string, string> = {
   Enter: "Enter",
   NumpadEnter: "Enter",

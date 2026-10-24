@@ -19,3 +19,4 @@
 - HotkeySettings records physical keys (`KeyboardEvent.code`) so shortcuts are layout-independent; it pauses global hotkeys for the whole recording (one suspend/resume pair) and resumes on blur/unmount. Local duplicate detection mirrors Go; Go remains authoritative for conflicts with other applications (`hotkey_errors`). Defaults come from Go `DefaultHotkeys`, labels match `internal/hotkeys`.
 
 - ChatSettings shows chat fields first; Cancel/Save sit in a sticky `.form-footer`; «Обновить модели» belongs to the model heading. ProfileControls keeps selection and «Новый чат из профиля» in one row; name/save/update/delete/reload are under collapsed «Сохранить или изменить профиль», while confirmations and status stay outside it.
+- Hotkey labels/descriptions live in `hotkeyLabels.ts`, shared by HotkeySettings and the help panel. AppSettings takes `initialTab` (help opens «Клавиши»); it is read once on mount.
