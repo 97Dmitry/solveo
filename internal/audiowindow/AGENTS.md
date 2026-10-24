@@ -15,3 +15,6 @@
 - QuestionView shares the target chat snapshot under c.mu; the child uses only the allowlisted question command with card identity/revision. Model catalog discovery is explicit, never a background model request. Cards and model preferences are parent-owned; child-local text must survive 200 ms polling until explicit save/rebuild/skip.
 
 - View.dictionary carries the saved recognition dictionary (never null); the allowlisted `setDictionary` command carries `phrases` (bounded at the transport, validated by settings) and calls Controller.SetContextPhrases.
+
+- The allowlisted `diagnostic` command carries an uncaught audio-renderer error (kind/message/stack ≤ 16 KiB at the transport); the parent forces source `audio` and passes it to Controller.ReportRendererError. The child process writes no log files: its stderr tail and exit code are logged by the parent.
+

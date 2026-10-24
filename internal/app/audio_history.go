@@ -178,6 +178,9 @@ func (c *Controller) historyBudgetLocked(doc *audioHistoryDoc, value any) bool {
 	return true
 }
 func (c *Controller) recordAudioFinalLocked(stream string, segment TranscriptSegment) {
+	if c.logContent.Load() {
+		c.logger.Info("transcript final", "track", segment.Track, "utterance", segment.ID, c.content("text", segment.Text))
+	}
 	h := &c.audio.history
 	id := h.utterances[segment.ID]
 	if id == "" {
@@ -216,6 +219,7 @@ func (c *Controller) recordAudioFinalLocked(stream string, segment TranscriptSeg
 	h.persist.mark()
 }
 func (c *Controller) recordAudioErrorLocked(stream, message string) {
+	c.logger.Warn("speech error", "track", c.audio.tracks[stream], "error", message)
 	h := &c.audio.history
 	id := h.streams[stream]
 	if id == "" {

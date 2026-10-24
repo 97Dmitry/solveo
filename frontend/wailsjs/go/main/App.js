@@ -38,6 +38,10 @@ export function CompleteAudioInsert(arg1, arg2) {
   return window['go']['main']['App']['CompleteAudioInsert'](arg1, arg2);
 }
 
+export function CreateDiagnosticsArchive() {
+  return window['go']['main']['App']['CreateDiagnosticsArchive']();
+}
+
 export function DefaultHotkeys() {
   return window['go']['main']['App']['DefaultHotkeys']();
 }
@@ -56,6 +60,10 @@ export function DeleteSTTKey(arg1) {
 
 export function DiscardUnsaved() {
   return window['go']['main']['App']['DiscardUnsaved']();
+}
+
+export function DismissCrashNotice() {
+  return window['go']['main']['App']['DismissCrashNotice']();
 }
 
 export function Exit() {
@@ -90,6 +98,10 @@ export function OpenImage(arg1, arg2) {
   return window['go']['main']['App']['OpenImage'](arg1, arg2);
 }
 
+export function OpenLogsFolder() {
+  return window['go']['main']['App']['OpenLogsFolder']();
+}
+
 export function PrepareAudio() {
   return window['go']['main']['App']['PrepareAudio']();
 }
@@ -116,6 +128,10 @@ export function RendererReady() {
 
 export function ReorderAttachments(arg1, arg2) {
   return window['go']['main']['App']['ReorderAttachments'](arg1, arg2);
+}
+
+export function ReportRendererError(arg1) {
+  return window['go']['main']['App']['ReportRendererError'](arg1);
 }
 
 export function RequestSubmit() {

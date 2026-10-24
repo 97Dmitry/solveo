@@ -23,6 +23,8 @@ export function ClearTranscript():Promise<void>;
 
 export function CompleteAudioInsert(arg1:string,arg2:string):Promise<void>;
 
+export function CreateDiagnosticsArchive():Promise<string>;
+
 export function DefaultHotkeys():Promise<Record<string, string>>;
 
 export function DeleteChats(arg1:Array<string>):Promise<app.DeleteResult>;
@@ -32,6 +34,8 @@ export function DeleteProfile(arg1:string,arg2:number):Promise<app.Snapshot>;
 export function DeleteSTTKey(arg1:string):Promise<void>;
 
 export function DiscardUnsaved():Promise<app.Snapshot>;
+
+export function DismissCrashNotice():Promise<void>;
 
 export function Exit():Promise<void>;
 
@@ -49,6 +53,8 @@ export function OpenChat(arg1:string):Promise<app.Snapshot>;
 
 export function OpenImage(arg1:string,arg2:string):Promise<void>;
 
+export function OpenLogsFolder():Promise<void>;
+
 export function PrepareAudio():Promise<void>;
 
 export function Ready():Promise<void>;
@@ -62,6 +68,8 @@ export function RemoveAttachment(arg1:string,arg2:string):Promise<void>;
 export function RendererReady():Promise<app.Snapshot>;
 
 export function ReorderAttachments(arg1:string,arg2:Array<string>):Promise<void>;
+
+export function ReportRendererError(arg1:app.RendererError):Promise<void>;
 
 export function RequestSubmit():Promise<app.SubmitIntent>;
 

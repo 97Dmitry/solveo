@@ -85,6 +85,7 @@ export function snapshotFixture(): Snapshot {
         "skip-question": "",
       },
       audio: { builder_model: "", builder_reasoning: "", provider: "", context_phrases: [] },
+      diagnostics: { include_content: false },
     },
     provider: {
       id: "codex",
@@ -98,6 +99,7 @@ export function snapshotFixture(): Snapshot {
     work_error: "",
     recovered: [],
     hotkey_errors: {},
+    diagnostics: { available: true, crash_notice: false },
   };
 }
 

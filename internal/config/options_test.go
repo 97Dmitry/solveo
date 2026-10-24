@@ -43,3 +43,13 @@ func TestParseRejectsEmptyPrompt(t *testing.T) {
 		t.Fatal("empty prompt accepted")
 	}
 }
+
+func TestDiagnosticsTestPanicFlag(t *testing.T) {
+	o, err := Parse([]string{"-diagnostics-test-panic"})
+	if err != nil || !o.TestPanic {
+		t.Fatalf("%+v %v", o, err)
+	}
+	if o, _ := Parse(nil); o.TestPanic {
+		t.Fatal("panic enabled by default")
+	}
+}

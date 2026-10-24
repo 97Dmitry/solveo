@@ -15,6 +15,8 @@ type Options struct {
 	Binary  string
 	Timeout time.Duration
 	Prompt  string
+	// TestPanic crashes the process after startup to verify crash logging on Windows.
+	TestPanic bool
 }
 
 func Parse(args []string) (Options, error) {
@@ -25,6 +27,7 @@ func Parse(args []string) (Options, error) {
 	f.DurationVar(&out.Timeout, "timeout", 10*time.Minute, "LLM request timeout")
 	promptFile := f.String("prompt-file", "", "UTF-8 instruction file")
 	f.Bool("keep", false, "deprecated; sent messages and screenshots are archived")
+	f.BoolVar(&out.TestPanic, "diagnostics-test-panic", false, "crash after startup to verify the crash file")
 	if err := f.Parse(args); err != nil {
 		return out, err
 	}

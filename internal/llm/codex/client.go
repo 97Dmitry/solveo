@@ -3,6 +3,7 @@
 package codex
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/llm/codex/appserver"
@@ -27,6 +28,13 @@ func New(binary, prompt string, timeout time.Duration, home, work string) *Clien
 	c.app = &appServer{binary: c.binary(), home: home, work: work, start: appserver.Start, preparationGate: make(chan struct{}, 1)}
 	c.analysis = &appServer{analysis: true, binary: c.binary(), home: home, work: work, start: appserver.Start, preparationGate: make(chan struct{}, 1)}
 	return c
+}
+
+// SetLogger sends app-server process records to the session log. Call it
+// before the first request.
+func (c *Client) SetLogger(l *slog.Logger) {
+	c.app.log = l
+	c.analysis.log = l
 }
 
 func (c Client) binary() string {

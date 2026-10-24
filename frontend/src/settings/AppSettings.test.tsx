@@ -27,6 +27,7 @@ it("changes interface scale independently of text size and restores the saved va
       onSettings={save}
       onCheck={vi.fn()}
       onLog={vi.fn()}
+      diagnostics={{ onOpenLogs: vi.fn(), onArchive: vi.fn() }}
       onRetrySave={vi.fn()}
       onDiscard={vi.fn()}
       onExit={vi.fn()}
@@ -48,6 +49,7 @@ it("shows the device-code login from Go state and refreshes the account", async 
       onSettings={vi.fn()}
       onCheck={vi.fn()}
       onLog={vi.fn()}
+      diagnostics={{ onOpenLogs: vi.fn(), onArchive: vi.fn() }}
       onRetrySave={vi.fn()}
       onDiscard={vi.fn()}
       onExit={vi.fn()}
@@ -90,6 +92,7 @@ it("saves global instructions explicitly without checking the model connection",
       onSettings={save}
       onCheck={check}
       onLog={vi.fn()}
+      diagnostics={{ onOpenLogs: vi.fn(), onArchive: vi.fn() }}
       onRetrySave={vi.fn()}
       onDiscard={vi.fn()}
       onExit={vi.fn()}
@@ -119,6 +122,7 @@ it("keeps newer edits while a settings save completes", async () => {
       onSettings={save}
       onCheck={vi.fn()}
       onLog={vi.fn()}
+      diagnostics={{ onOpenLogs: vi.fn(), onArchive: vi.fn() }}
       onRetrySave={vi.fn()}
       onDiscard={vi.fn()}
       onExit={vi.fn()}
@@ -150,6 +154,7 @@ it("shows save recovery above the tabs and keeps exit in general settings", asyn
       onSettings={vi.fn()}
       onCheck={vi.fn()}
       onLog={vi.fn()}
+      diagnostics={{ onOpenLogs: vi.fn(), onArchive: vi.fn() }}
       onRetrySave={retry}
       onDiscard={vi.fn()}
       onExit={exit}
@@ -167,4 +172,43 @@ it("shows save recovery above the tabs and keeps exit in general settings", asyn
   await userEvent.click(screen.getByRole("tab", { name: "Подключение" }));
   expect(screen.queryByRole("button", { name: "Выйти из Solveo" })).toBeNull();
   expect(screen.getByRole("alert")).toBe(recovery);
+});
+
+it("toggles content logging and opens logs or builds an archive", async () => {
+  const snapshot = snapshotFixture();
+  const save = vi.fn();
+  const diagnostics = { onOpenLogs: vi.fn(), onArchive: vi.fn() };
+  const view = (s: typeof snapshot) => (
+    <AppSettings
+      snapshot={s}
+      hotkeyActions={hotkeyBridge}
+      connection={connection()}
+      onSettings={save}
+      onCheck={vi.fn()}
+      onLog={vi.fn()}
+      diagnostics={diagnostics}
+      onRetrySave={vi.fn()}
+      onDiscard={vi.fn()}
+      onExit={vi.fn()}
+    />
+  );
+  const { rerender } = render(view(snapshot));
+  await userEvent.click(screen.getByRole("tab", { name: "Подключение" }));
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: "Записывать тексты вопросов, ответов и расшифровок" }),
+  );
+  expect(save).toHaveBeenCalledWith({
+    ...snapshot.settings,
+    diagnostics: { include_content: true },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Открыть папку журналов" }));
+  await userEvent.click(screen.getByRole("button", { name: "Собрать архив диагностики" }));
+  expect(diagnostics.onOpenLogs).toHaveBeenCalledOnce();
+  expect(diagnostics.onArchive).toHaveBeenCalledOnce();
+
+  rerender(view({ ...snapshot, diagnostics: { available: false, crash_notice: false } }));
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Собрать архив диагностики" }).disabled,
+  ).toBe(true);
+  expect(screen.getByText(/записи не сохраняются/)).toBeTruthy();
 });

@@ -117,3 +117,15 @@ func (a *App) SubmitTranscript(in core.SubmitTranscriptInput) (string, error) {
 func (a *App) SetSTTKey(provider, key string) error { return a.controller.SetSTTKey(provider, key) }
 func (a *App) DeleteSTTKey(provider string) error   { return a.controller.DeleteSTTKey(provider) }
 func (a *App) SetAudioProvider(id string) error     { return a.controller.SetAudioProvider(id) }
+
+func (a *App) OpenLogsFolder() error { return a.controller.OpenLogsFolder() }
+func (a *App) CreateDiagnosticsArchive() (string, error) {
+	return a.controller.CreateDiagnosticsArchive()
+}
+func (a *App) DismissCrashNotice() { a.controller.DismissCrashNotice() }
+
+// ReportRendererError records an uncaught error of the main renderer.
+func (a *App) ReportRendererError(in core.RendererError) error {
+	in.Source = "main"
+	return a.controller.ReportRendererError(in)
+}

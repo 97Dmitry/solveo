@@ -53,3 +53,6 @@
 - Question action confirm only accepts the displayed identity/revision and calls Builder.Confirm under c.mu. It neither sends a turn nor edits the text; Card.Origin stays automatic for an unedited model draft. A subsequent Send is a separate explicit action. Never infer ready from elapsed time or ASR final alone.
 
 - SetContextPhrases (audio_target.go) is the only writer of Audio.ContextPhrases, under settingsMu like other settings saves; UpdateSettings from the main renderer keeps the current dictionary, provider and builder model so a stale snapshot cannot overwrite them.
+
+- `diagnostics.go`: `Dependencies.Log` (nil → discard) receives content-free records: request start/finish (`logTurn` from finishSave/setPending), each newly shown `c.err` (checked in `publish`), work-state and hotkey failures, speech lifecycle/errors, question analysis outcomes and `Codex/Solveo timing` lines from the CLI log. Question/answer/transcript/card text goes only through `c.content`, gated by `logContent` (settings `diagnostics.include_content`). Logging never blocks, so it may happen under c.mu or audio.mu. `CreateDiagnosticsArchive`/`OpenLogsFolder` need no operation slot; `ReportRendererError` validates source/kind and rate-limits (20 per 10 s, 500 per session). `Snapshot.Diagnostics.CrashNotice` comes from `Diagnostics.PreviousCrash` and clears on archive or dismiss.
+

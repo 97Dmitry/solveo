@@ -1076,6 +1076,26 @@ input[type="range"] {
   background: var(--field);
   font-size: 13px;
 }
+.render-failure {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text);
+  background: var(--canvas);
+  font-size: 15px;
+}
+.render-failure h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.render-failure p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
 .boot-state {
   height: 100%;
   display: flex;

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -52,6 +53,8 @@ type appServer struct {
 	binary, home, work string
 	analysis           bool
 	start              func(context.Context, appserver.Options) (*appserver.Conn, error)
+	// log receives content-free process lifecycle records; nil discards them.
+	log *slog.Logger
 
 	mu                sync.Mutex
 	conn              *appserver.Conn
@@ -145,6 +148,30 @@ func (a *appServer) connection(ctx context.Context) (*appserver.Conn, error) {
 
 func (a *appServer) launch(ctx context.Context) (*appserver.Conn, startInfo, error) {
 	began := time.Now()
+	conn, info, err := a.launchProcess(ctx, began)
+	if err != nil {
+		a.logger().Error("codex app-server failed to start", "purpose", a.purpose(), "error", err, "duration", time.Since(began).Round(time.Millisecond).String())
+	} else {
+		a.logger().Info("codex app-server started", "purpose", a.purpose(), "launch", info.launched.Round(time.Millisecond).String(), "ready", info.rdy.Round(time.Millisecond).String())
+	}
+	return conn, info, err
+}
+
+func (a *appServer) purpose() string {
+	if a.analysis {
+		return "analysis"
+	}
+	return "main"
+}
+
+func (a *appServer) logger() *slog.Logger {
+	if a.log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return a.log
+}
+
+func (a *appServer) launchProcess(ctx context.Context, began time.Time) (*appserver.Conn, startInfo, error) {
 	// Codex keeps SQLite state in its home and cannot open it on a network path.
 	if err := localDisk(a.home); err != nil {
 		return nil, startInfo{}, err
@@ -242,6 +269,12 @@ func (a *appServer) isolate(ctx context.Context, conn *appserver.Conn) error {
 // watch forgets a lost connection and fails a pending login bound to it.
 func (a *appServer) watch(conn *appserver.Conn) {
 	<-conn.Done()
+	// Close and Kill fail the connection with ErrClosed itself; an exit adds its reason.
+	if err := conn.Err(); err == appserver.ErrClosed { //nolint:errorlint // identity marks an intentional close
+		a.logger().Info("codex app-server closed", "purpose", a.purpose())
+	} else {
+		a.logger().Error("codex app-server stopped", "purpose", a.purpose(), "error", err)
+	}
 	a.mu.Lock()
 	login := a.login
 	if a.conn == conn {

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/url"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
@@ -68,6 +70,11 @@ type Controller struct {
 	// Speech recognition (audio.go), guarded by audio.mu.
 	audio    audioState
 	question questionState
+
+	// Session log (diagnostics.go); logContent mirrors settings.Diagnostics.IncludeContent.
+	logger     *slog.Logger
+	logContent atomic.Bool
+	diag       diagnosticsState
 }
 
 var errNoConnection = errors.New("подключение LLM не поддерживает вход")
@@ -105,6 +112,12 @@ func New(d Dependencies) (*Controller, error) {
 		submitted:   map[string]workstate.Submitted{},
 		checkpoints: map[streamKey]workstate.Block{},
 	}
+	c.logger = d.Log
+	if c.logger == nil {
+		c.logger = slog.New(slog.DiscardHandler)
+	}
+	c.logContent.Store(cfg.Diagnostics.IncludeContent)
+	c.diag.crashNotice = d.Diagnostics != nil && d.Diagnostics.PreviousCrash() != ""
 	c.question.init()
 	c.audio.init()
 	c.audio.providerID = cfg.Audio.Provider
@@ -132,6 +145,9 @@ func New(d Dependencies) (*Controller, error) {
 	// A shortcut taken by another application must not prevent startup;
 	// Snapshot.HotkeyErrors shows it in the settings instead.
 	c.hotkeyErrors, _ = c.registerHotkeys(cfg.Hotkeys)
+	for action, err := range c.hotkeyErrors {
+		c.logger.Warn("hotkey not registered", "action", action, "error", err)
+	}
 	c.mu.Lock()
 	c.prepareChatLocked()
 	c.mu.Unlock()
@@ -162,6 +178,7 @@ func (c *Controller) availableLocked() error {
 }
 func (c *Controller) changedLocked() { c.revision++ }
 func (c *Controller) publish() {
+	c.logErrorChange()
 	c.syncAudioHistoryChat()
 	if c.deps.Emit != nil {
 		c.deps.Emit("solveo:state", c.Snapshot())
@@ -245,6 +262,7 @@ func (c *Controller) Snapshot() Snapshot {
 		Settings: c.settings,
 
 		HotkeyErrors: c.hotkeyErrorsLocked(),
+		Diagnostics:  c.diagnosticsViewLocked(),
 		Provider:     c.deps.Provider.Describe(),
 		History:      summaries,
 		Error:        c.err,
@@ -435,6 +453,9 @@ func (c *Controller) saveSettingsLocked(cfg settings.Config) (Snapshot, error) {
 	c.settings = cfg
 	c.changedLocked()
 	c.mu.Unlock()
+	if c.logContent.Swap(cfg.Diagnostics.IncludeContent) != cfg.Diagnostics.IncludeContent {
+		c.logger.Info("log content setting changed", "include_content", cfg.Diagnostics.IncludeContent)
+	}
 	if c.deps.Window != nil {
 		c.deps.Window.SetAlwaysOnTop(cfg.AlwaysOnTop)
 	}

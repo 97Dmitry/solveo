@@ -26,6 +26,7 @@ import (
 	core "github.com/97Dmitry/solveo/internal/app"
 	"github.com/97Dmitry/solveo/internal/audiowindow"
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/diagnostics"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 )
 
@@ -64,14 +65,23 @@ func (p *audioProcess) Show(x, y int, parent uintptr) error {
 	cmd.Stdin = bytes.NewReader(data)
 	cmd.Env = audiowindow.ChildEnvironment(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	// A Go panic of the child ends up on its stderr; keep the end for the session log.
+	stderr := &diagnostics.Tail{Limit: 16 << 10}
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		diagLog.Error("audio window failed to start", "error", err)
 		return errors.New("Не удалось открыть окно аудио")
 	}
+	diagLog.Info("audio window started", "pid", cmd.Process.Pid)
 	p.cmd = cmd
 	p.done = make(chan struct{})
 	done := p.done
 	go func() {
-		_ = cmd.Wait()
+		if err := cmd.Wait(); err != nil {
+			diagLog.Error("audio window exited", "pid", cmd.Process.Pid, "error", err, "stderr", stderr.String())
+		} else {
+			diagLog.Info("audio window exited", "pid", cmd.Process.Pid)
+		}
 		p.mu.Lock()
 		if p.cmd == cmd {
 			p.cmd = nil
@@ -133,6 +143,13 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 			return controller.DeleteSTTKey(cmd.Provider)
 		case "setDictionary":
 			return controller.SetContextPhrases(cmd.Phrases)
+		case "diagnostic":
+			if cmd.Diagnostic == nil {
+				return errors.New("Не задана диагностика")
+			}
+			d := *cmd.Diagnostic
+			d.Source = "audio"
+			return controller.ReportRendererError(d)
 		case "send":
 			_, err := controller.SubmitTranscript(core.SubmitTranscriptInput{ChatID: cmd.ChatID, RequestID: chat.ID(), SegmentIDs: cmd.IDs})
 			if err == nil {

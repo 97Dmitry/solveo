@@ -149,6 +149,11 @@ func (c *Controller) reportWork(field *string, prefix string, err error) {
 	}
 	c.mu.Unlock()
 	if changed {
+		if text != "" {
+			c.logger.Error("work state write failed", "error", text)
+		} else {
+			c.logger.Info("work state write recovered", "context", prefix)
+		}
 		c.publish()
 	}
 }
