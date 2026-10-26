@@ -6,6 +6,7 @@ import { app, settings } from "../../wailsjs/go/models";
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from "../../wailsjs/runtime/runtime";
 import { SolveoClient } from "./client";
 import { imageBase64 } from "./attachments";
+import { createReporter } from "../diagnostics/report";
 import {
   audioSchema,
   questionSchema,
@@ -83,6 +84,9 @@ export const actions = {
   check: () => client.run(api.CheckConnection),
   image: (chatID: string, id: string) => client.run(() => api.OpenImage(chatID, id)),
   log: () => client.run(api.ShowLog),
+  openLogs: () => client.run(api.OpenLogsFolder),
+  diagnosticsArchive: () => client.run(api.CreateDiagnosticsArchive),
+  dismissCrashNotice: () => client.run(api.DismissCrashNotice),
   refreshAudio: () => client.run(api.RefreshAudio),
   prepareAudio: () => client.run(api.PrepareAudio),
   startAudioModel: () => client.run(api.StartAudioModel),
@@ -106,6 +110,16 @@ export const actions = {
     if (/^https?:\/\//i.test(url)) BrowserOpenURL(url);
   },
 };
+
+// Renderer errors bypass client.run: reporting must neither lock actions nor show errors.
+export const reportMainError = createReporter((report) =>
+  api.ReportRendererError(new app.RendererError({ source: "main", ...report })),
+);
+export const reportAudioError = createReporter((report) =>
+  audioWindowAPI.Execute(
+    new audiowindow.Command({ name: "diagnostic", diagnostic: { source: "audio", ...report } }),
+  ),
+);
 
 export async function loadAccount() {
   return accountSchema.parse(await api.Account());

@@ -20,3 +20,5 @@
 
 - ChatSettings shows chat fields first; Cancel/Save sit in a sticky `.form-footer`; «Обновить модели» belongs to the model heading. ProfileControls keeps selection and «Новый чат из профиля» in one row; name/save/update/delete/reload are under collapsed «Сохранить или изменить профиль», while confirmations and status stay outside it.
 - Hotkey labels/descriptions live in `hotkeyLabels.ts`, shared by HotkeySettings and the help panel. AppSettings takes `initialTab` (help opens «Клавиши»); it is read once on mount.
+
+- «Подключение» also holds «Диагностика»: the content-logging switch saves `settings.diagnostics.include_content` through onSettings; «Открыть папку журналов»/«Собрать архив диагностики» are injected actions, disabled when `snapshot.diagnostics.available` is false.

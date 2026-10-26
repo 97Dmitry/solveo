@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/97Dmitry/solveo/internal/chat"
 	"github.com/97Dmitry/solveo/internal/history"
@@ -32,6 +33,8 @@ const (
 	originTranscript
 	originQuestion
 )
+
+var originNames = map[int]string{originComposer: "composer", originCapture: "capture", originTranscript: "transcript", originQuestion: "question"}
 
 func (c *Controller) Submit(in SubmitInput) (string, error) {
 	return c.submit(in, submitOrigin{kind: originComposer})
@@ -173,7 +176,7 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	}
 	opID := chat.ID()
 	ctx, cancel := context.WithCancel(c.ctx)
-	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel}
+	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel, started: time.Now()}
 	var sentSegments []string
 	switch origin.kind {
 	case originQuestion:
@@ -213,6 +216,10 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	clearDraft := origin.kind == originComposer && in.RetryMessageID == "" && draft.Text == in.Text && draft.Revision == in.DraftRevision && draft.ReplyToID == in.ReplyToID && draft.ReplyToKind == in.ReplyToKind
 	c.workers.Add(1)
 	c.mu.Unlock()
+	cfg := *turn.RequestConfig
+	c.logger.Info("request started", "op", opID, "chat", doc.ID, "message", turn.ID, "origin", originNames[origin.kind], "retry", in.RetryMessageID != "",
+		"model", cfg.Model, "reasoning", cfg.Reasoning, "parallel", cfg.ParallelAnswers, "images", len(ids), "chars", utf8.RuneCountInString(turn.Text),
+		"reply_to", turn.ReplyToKind, c.content("question", turn.Text))
 	c.markTranscriptSent(sentSegments)
 	c.publish()
 	go c.runSubmit(ctx, opID, doc, turn, sources, ids, draft, clearDraft)
@@ -349,6 +356,7 @@ func (c *Controller) setPending(opID string, p pendingSave, e error) {
 	}
 	c.active = chat.Clone(p.doc)
 	c.pending = &p
+	started := c.op.started
 	c.op.Phase = phaseSavePending
 	c.op.Message = "Результат пока не сохранён"
 	c.err = e.Error()
@@ -358,6 +366,7 @@ func (c *Controller) setPending(opID string, p pendingSave, e error) {
 	}
 	c.changedLocked()
 	c.mu.Unlock()
+	c.logTurn(opID, started, p.doc, e)
 	c.publish()
 }
 func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
@@ -369,6 +378,7 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	c.active = chat.Clone(saved)
 	c.rememberLocked(saved)
 	c.pending = nil
+	started := c.op.started
 	paths := []string{}
 	queued := map[string]string{}
 	if p.cleanupIDs != nil {
@@ -397,6 +407,7 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
+	c.logTurn(opID, started, saved, nil)
 	if len(paths) > 0 && c.deps.NativeHost != nil {
 		archived := map[string]chat.Attachment{}
 		for _, a := range saved.Attachments {
@@ -591,6 +602,7 @@ func (c *Controller) appendLog(text string) {
 	if text == "" {
 		return
 	}
+	c.logTimingLines(text)
 	c.mu.Lock()
 	c.logs += text
 	if len(c.logs) > 64<<10 {

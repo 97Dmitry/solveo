@@ -207,14 +207,21 @@ func (c *Controller) analyzeQuestion() {
 	go func() {
 		defer c.workers.Done()
 		defer cancel()
+		started := time.Now()
 		result, err := analyzer.AnalyzeQuestion(ctx, in, cfg, func(e llm.Event) {
 			if e.Kind == llm.EventProgress {
 				c.appendLog(e.Text)
 			}
 		})
+		attrs := []any{"chat", in.ChatID, "model", cfg.Model, "reasoning", cfg.Reasoning, "segments", len(in.Segments), "duration", time.Since(started).Round(time.Millisecond).String()}
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		_ = b.Apply(in, result, err)
+		applyErr := b.Apply(in, result, err)
+		if err != nil || applyErr != nil {
+			c.logger.Warn("question analysis failed", append(attrs, "error", err, "apply_error", applyErr)...)
+		} else {
+			c.logger.Info("question analysis finished", append(attrs, "has_question", result.HasQuestion, "ready", result.Ready, "follow_up", result.FollowUp, "sources", len(result.SourceIDs), c.content("question", result.Text))...)
+		}
 		if claimed != nil {
 			claimed()
 		}

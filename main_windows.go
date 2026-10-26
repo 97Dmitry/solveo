@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +17,7 @@ import (
 	"unsafe"
 
 	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
@@ -27,6 +28,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/audiohistory"
 	"github.com/97Dmitry/solveo/internal/capture"
 	"github.com/97Dmitry/solveo/internal/config"
+	"github.com/97Dmitry/solveo/internal/diagnostics"
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/instance"
 	"github.com/97Dmitry/solveo/internal/llm/codex"
@@ -98,8 +100,12 @@ func main() {
 		startupError(err)
 	}
 }
+
+// diagLog is the session log; it discards records until the log is open.
+var diagLog = slog.New(slog.DiscardHandler)
+
 func startupError(err error) {
-	log.Print(err)
+	diagLog.Error("startup error", "error", err)
 	text, _ := syscall.UTF16PtrFromString(err.Error())
 	title, _ := syscall.UTF16PtrFromString("Solveo")
 	syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
@@ -124,11 +130,25 @@ func run() error {
 	if e != nil {
 		return e
 	}
+	session, sessionLog := openDiagnostics(dir)
+	if session != nil {
+		diagLog = sessionLog
+		defer func() { _ = session.Close() }()
+	}
+	if e = runSession(flags, dir, session); e != nil {
+		diagLog.Error("session failed", "error", e)
+	}
+	return e
+}
+
+func runSession(flags config.Options, dir string, session *diagnostics.Session) error {
+	steps := &startupStep{log: diagLog, last: time.Now()}
 	release, e := instance.Acquire(dir)
 	if e != nil {
 		return e
 	}
 	defer release()
+	steps.done("instance lock")
 	store, e := history.Open(dir)
 	if e != nil {
 		return e
@@ -138,6 +158,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
+	steps.done("history and work state")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	host := &native.Host{}
@@ -147,14 +168,16 @@ func run() error {
 		select {
 		case events <- ev:
 		default:
-			log.Printf("native event queue full: %s", ev.Kind)
+			diagLog.Warn("native event queue full", "kind", ev.Kind)
 		}
 	}); e != nil {
 		return e
 	}
 	defer func() { _ = host.Close() }()
+	steps.done("native host")
 	// Codex keeps Solveo's own state, login and sessions beside the archive.
 	provider := codex.New(flags.Binary, flags.Prompt, flags.Timeout, filepath.Join(dir, "codex-home"), filepath.Join(dir, "codex-work"))
+	provider.SetLogger(diagLog)
 	// Speech providers share capture and transcript state; cloud keys live in Credential Manager.
 	keys := secrets.NewCredentialManager()
 	speech := core.AudioDeps{
@@ -177,6 +200,8 @@ func run() error {
 		Window:        window,
 		Work:          work,
 		Audio:         speech,
+		Log:           diagLog,
+		Diagnostics:   diagnosticsDeps(session, dir),
 		Emit: func(name string, data interface{}) {
 			window.mu.Lock()
 			runtimeCtx := window.ctx
@@ -190,6 +215,14 @@ func run() error {
 		return e
 	}
 	app := &App{controller: controller}
+	steps.done("controller")
+	if flags.TestPanic {
+		// Acceptance check of the crash file: a panic outside the main goroutine cannot be recovered.
+		go func() {
+			time.Sleep(5 * time.Second)
+			panic("diagnostics test panic")
+		}()
+	}
 	audioUI, err := configureAudioWindow(controller, window, app)
 	if err != nil {
 		return err
@@ -223,6 +256,7 @@ func run() error {
 		}
 		if domReady && rendererReady && !shown {
 			shown = true
+			steps.done("first show")
 			window.mu.Lock()
 			window.ready = true
 			window.mu.Unlock()
@@ -313,7 +347,11 @@ func run() error {
 			}
 			return false
 		},
+		Logger:             wailsLogger{log: diagLog, session: session},
+		LogLevel:           logger.WARNING,
+		LogLevelProduction: logger.WARNING,
 		OnShutdown: func(context.Context) {
+			diagLog.Info("shutdown")
 			audioUI.Close()
 			cancel()
 			shutdownCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)

@@ -23,6 +23,14 @@ type Config struct {
 	// Hotkeys maps every hotkeys.Actions entry to canonical text; "" disables it.
 	Hotkeys map[string]string `json:"hotkeys"`
 	Audio   Audio             `json:"audio"`
+	// Diagnostics is additive in schema v1; older files load with content logging off.
+	Diagnostics Diagnostics `json:"diagnostics"`
+}
+
+// Diagnostics controls the local session log. IncludeContent adds question,
+// answer and transcript text; secrets are never written either way.
+type Diagnostics struct {
+	IncludeContent bool `json:"include_content"`
 }
 
 // Audio holds speech recognition preferences; ContextPhrases is the term dictionary sent at listening start.

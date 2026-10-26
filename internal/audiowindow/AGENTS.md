@@ -17,3 +17,5 @@
 - View.dictionary carries the saved recognition dictionary (never null); the allowlisted `setDictionary` command carries `phrases` (bounded at the transport, validated by settings) and calls Controller.SetContextPhrases.
 
 - `sendUnsent` (allowlisted, carries the displayed ChatID) returns once the parent accepts it; the parent waits for pending finals asynchronously, so the 4 s client timeout is never spent waiting for speech. View.send_hotkey is only a hint for the button title.
+
+- The allowlisted `diagnostic` command carries an uncaught audio-renderer error (kind/message/stack ≤ 16 KiB at the transport); the parent forces source `audio` and passes it to Controller.ReportRendererError. The child process writes no log files: its stderr tail and exit code are logged by the parent.
