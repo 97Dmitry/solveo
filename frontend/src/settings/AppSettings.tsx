@@ -17,6 +17,10 @@ export type ConnectionActions = {
   onCancelLogin: () => void;
   onOpenLink: (url: string) => void;
 };
+export type DiagnosticsActions = {
+  onOpenLogs: () => void;
+  onArchive: () => void;
+};
 export type HotkeyBridge = {
   loadDefaults: () => Promise<Hotkeys>;
   suspend: (on: boolean) => Promise<void>;
@@ -39,6 +43,7 @@ export function AppSettings({
   onSettings,
   onCheck,
   onLog,
+  diagnostics,
   onRetrySave,
   onDiscard,
   onExit,
@@ -51,6 +56,7 @@ export function AppSettings({
   onSettings: (config: Config) => void;
   onCheck: () => void;
   onLog: () => void;
+  diagnostics: DiagnosticsActions;
   onRetrySave: () => void;
   onDiscard: () => void;
   onExit: () => void;
@@ -204,6 +210,8 @@ export function AppSettings({
             </Button>
             <Button onClick={onLog}>Журнал запроса</Button>
           </div>
+          <div className="form-divider" />
+          <Diagnostics snapshot={snapshot} actions={diagnostics} onSettings={onSettings} />
         </Tabs.Content>
         <Tabs.Content
           className="settings-form"
@@ -332,6 +340,62 @@ function GlobalInstructions({
       >
         Сохранить общие инструкции
       </Button>
+    </>
+  );
+}
+
+// Diagnostics controls the local session log; Go writes it, the renderer only toggles and opens it.
+function Diagnostics({
+  snapshot,
+  actions,
+  onSettings,
+}: {
+  snapshot: Snapshot;
+  actions: DiagnosticsActions;
+  onSettings: (config: Config) => void;
+}) {
+  const available = snapshot.diagnostics.available;
+  return (
+    <>
+      <h3>Диагностика</h3>
+      <p className="form-intro">
+        Каждый запуск пишет журнал в solveo-data/logs: этапы запуска, запросы и их длительность,
+        ошибки, сбои распознавания и окон. Хранятся последние 20 запусков. Журналы никуда не
+        отправляются; ключи и токены в них не записываются.
+      </p>
+      {!available && (
+        <p role="alert">Журнал этого запуска открыть не удалось: записи не сохраняются.</p>
+      )}
+      <label className="switch-row">
+        <span>Записывать тексты вопросов, ответов и расшифровок</span>
+        <input
+          type="checkbox"
+          aria-describedby="log-content-help"
+          checked={snapshot.settings.diagnostics.include_content}
+          onChange={(e) =>
+            onSettings({
+              ...snapshot.settings,
+              diagnostics: { ...snapshot.settings.diagnostics, include_content: e.target.checked },
+            })
+          }
+        />
+      </label>
+      <p id="log-content-help" className="form-intro">
+        Помогает разобрать неверный ответ или распознавание. Без этого в журнал попадают только
+        длины текстов. Уже записанные журналы не меняются.
+      </p>
+      <div className="button-row">
+        <Button disabled={!available} onClick={actions.onOpenLogs}>
+          Открыть папку журналов
+        </Button>
+        <Button disabled={!available} onClick={actions.onArchive}>
+          Собрать архив диагностики
+        </Button>
+      </div>
+      <p className="form-intro">
+        Архив с журналами последних 5 запусков появится в solveo-data/exports. Чаты, снимки,
+        инструкции и ключи в него не входят.
+      </p>
     </>
   );
 }

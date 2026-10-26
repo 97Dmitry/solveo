@@ -14,3 +14,5 @@
 - `audio.context_phrases` is additive in schema v1 (missing → empty, never null on the wire): the speech recognition dictionary. `Normalize` trims and drops empty/duplicate phrases; `Validate` allows ≤ 256 phrases, ≤ 128 code points each, no NUL/invalid UTF-8, ≤ 3800 bytes joined (the worker caps the full context, template included, at 4 KiB). Saving it never calls STT or the LLM; it applies at the next listening start.
 
 - audio.builder_model/builder_reasoning are additive schema-v1 model preferences, empty by default. Enabled/card/analysis state is never persisted in settings. Preserve these fields through Audio normalization and unrelated settings saves.
+
+- `diagnostics.include_content` is additive in schema v1, default false: it lets the session log (internal/diagnostics) record question, answer and transcript text. Saving it never touches existing logs.

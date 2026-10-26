@@ -37,6 +37,9 @@ func (c *Controller) registerHotkeys(set map[string]string) (map[string]string, 
 	return out, nil
 }
 func (c *Controller) setHotkeyState(errs map[string]string, suspended bool) {
+	for action, err := range errs {
+		c.logger.Warn("hotkey not registered", "action", action, "error", err)
+	}
 	c.mu.Lock()
 	c.hotkeyErrors = errs
 	c.hotkeysSuspended = suspended

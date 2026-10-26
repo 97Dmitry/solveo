@@ -204,6 +204,9 @@ export const audioSettingsSchema = z.object({
   provider: z.string().max(64),
   context_phrases: z.array(z.string().min(1).max(512)).max(256),
 } satisfies Shape<settings.Audio>);
+export const diagnosticsSettingsSchema = z.object({
+  include_content: z.boolean(),
+} satisfies Shape<settings.Diagnostics>);
 export const settingsSchema = z.object({
   global_instructions: globalInstructionsSchema,
   ui_scale: z.number().int().min(80).max(150),
@@ -212,6 +215,7 @@ export const settingsSchema = z.object({
   always_on_top: z.boolean(),
   hotkeys: hotkeysSchema,
   audio: audioSettingsSchema,
+  diagnostics: diagnosticsSettingsSchema,
 } satisfies Shape<settings.Config>);
 const capabilities = z.object({
   images: z.boolean(),
@@ -317,6 +321,10 @@ export const snapshotSchema = z.object({
   work_error: z.string(),
   recovered: z.array(streamBlockSchema).max(8),
   hotkey_errors: z.partialRecord(z.enum(hotkeyActions), z.string()),
+  diagnostics: z.object({
+    available: z.boolean(),
+    crash_notice: z.boolean(),
+  } satisfies Shape<app.DiagnosticsView>),
 } satisfies Shape<app.Snapshot>);
 export const streamSchema = z.object({
   revision,

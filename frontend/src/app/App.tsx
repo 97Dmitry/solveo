@@ -299,6 +299,26 @@ export default function App() {
           <span>{s.work_error}</span>
         </div>
       )}
+      {s.diagnostics.crash_notice && (
+        <div className="error-banner" role="alert">
+          <span>Прошлый запуск Solveo завершился аварийно. Трасса сбоя сохранена в журнале.</span>
+          <Button
+            onClick={() => {
+              void actions.diagnosticsArchive();
+            }}
+          >
+            Собрать архив
+          </Button>
+          <IconButton
+            label="Скрыть уведомление о сбое"
+            onClick={() => {
+              void actions.dismissCrashNotice();
+            }}
+          >
+            <X size={14} />
+          </IconButton>
+        </div>
+      )}
       {notice && (
         <div className="notice" role="status">
           {notice}
@@ -497,6 +517,14 @@ export default function App() {
               }}
               onLog={() => {
                 void actions.log();
+              }}
+              diagnostics={{
+                onOpenLogs: () => {
+                  void actions.openLogs();
+                },
+                onArchive: () => {
+                  void actions.diagnosticsArchive();
+                },
               }}
               onRetrySave={() => {
                 void actions.retrySave();

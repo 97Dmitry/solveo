@@ -330,6 +330,20 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class DiagnosticsView {
+	    available: boolean;
+	    crash_notice: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiagnosticsView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.crash_notice = source["crash_notice"];
+	    }
+	}
 	export class Draft {
 	    reply_to_id?: string;
 	    reply_to_kind?: string;
@@ -600,6 +614,24 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class RendererError {
+	    source: string;
+	    kind: string;
+	    message: string;
+	    stack: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RendererError(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	        this.kind = source["kind"];
+	        this.message = source["message"];
+	        this.stack = source["stack"];
+	    }
+	}
 	export class SearchHit {
 	    chat_id: string;
 	    title: string;
@@ -668,6 +700,7 @@ export namespace app {
 	    work_error: string;
 	    recovered: StreamBlock[];
 	    hotkey_errors: Record<string, string>;
+	    diagnostics: DiagnosticsView;
 	
 	    static createFrom(source: any = {}) {
 	        return new Snapshot(source);
@@ -698,6 +731,7 @@ export namespace app {
 	        this.work_error = source["work_error"];
 	        this.recovered = this.convertValues(source["recovered"], StreamBlock);
 	        this.hotkey_errors = source["hotkey_errors"];
+	        this.diagnostics = this.convertValues(source["diagnostics"], DiagnosticsView);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -848,6 +882,7 @@ export namespace audiowindow {
 	    text?: string;
 	    chat_id?: string;
 	    phrases?: string[];
+	    diagnostic?: app.RendererError;
 	
 	    static createFrom(source: any = {}) {
 	        return new Command(source);
@@ -863,6 +898,7 @@ export namespace audiowindow {
 	        this.text = source["text"];
 	        this.chat_id = source["chat_id"];
 	        this.phrases = source["phrases"];
+	        this.diagnostic = this.convertValues(source["diagnostic"], app.RendererError);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1312,6 +1348,18 @@ export namespace settings {
 	        this.context_phrases = source["context_phrases"];
 	    }
 	}
+	export class Diagnostics {
+	    include_content: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Diagnostics(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.include_content = source["include_content"];
+	    }
+	}
 	export class Config {
 	    global_instructions: string;
 	    ui_scale: number;
@@ -1320,6 +1368,7 @@ export namespace settings {
 	    always_on_top: boolean;
 	    hotkeys: Record<string, string>;
 	    audio: Audio;
+	    diagnostics: Diagnostics;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -1334,6 +1383,7 @@ export namespace settings {
 	        this.always_on_top = source["always_on_top"];
 	        this.hotkeys = source["hotkeys"];
 	        this.audio = this.convertValues(source["audio"], Audio);
+	        this.diagnostics = this.convertValues(source["diagnostics"], Diagnostics);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

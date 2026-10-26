@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"image"
+	"log/slog"
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
@@ -115,6 +116,9 @@ type Dependencies struct {
 	Emit          func(string, interface{})
 	Now           func() time.Time
 	Audio         AudioDeps
+	// Log is the session log; nil discards records.
+	Log         *slog.Logger
+	Diagnostics Diagnostics
 }
 type Draft struct {
 	ReplyToID   string `json:"reply_to_id,omitempty"`
@@ -238,6 +242,7 @@ type Snapshot struct {
 	Recovered []StreamBlock `json:"recovered"`
 	// HotkeyErrors names actions whose current shortcut is not registered.
 	HotkeyErrors map[string]string `json:"hotkey_errors"`
+	Diagnostics  DiagnosticsView   `json:"diagnostics"`
 }
 type queued struct{ ID, Path, Label string }
 type pendingSave struct {
@@ -249,6 +254,7 @@ type pendingSave struct {
 }
 type operation struct {
 	Operation
-	chatID string
-	cancel context.CancelFunc
+	chatID  string
+	cancel  context.CancelFunc
+	started time.Time
 }

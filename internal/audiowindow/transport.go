@@ -23,6 +23,9 @@ import (
 
 const maxBody = 1 << 20
 
+// maxDiagnostic bounds one renderer error report; the controller truncates further.
+const maxDiagnostic = 16 << 10
+
 type Config struct {
 	ParentWindow uint64 `json:"parent_window"`
 	ParentPID    uint32 `json:"parent_pid"`
@@ -56,6 +59,8 @@ type Command struct {
 	Text     string                `json:"text,omitempty"`
 	ChatID   string                `json:"chat_id,omitempty"`
 	Phrases  []string              `json:"phrases,omitempty"`
+	// Diagnostic is an uncaught renderer error of the audio window.
+	Diagnostic *core.RendererError `json:"diagnostic,omitempty"`
 }
 type Insert struct {
 	ExpiresAt int64  `json:"expires_at"`
@@ -127,6 +132,10 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 				http.Error(w, "too many phrases", http.StatusBadRequest)
 				return
 			}
+			if d := cmd.Diagnostic; d != nil && len(d.Kind)+len(d.Message)+len(d.Stack) > maxDiagnostic {
+				http.Error(w, "diagnostic too large", http.StatusBadRequest)
+				return
+			}
 			if err := execute(r.Context(), cmd); err != nil {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 				return
@@ -142,7 +151,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "sendUnsent", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary":
+	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "sendUnsent", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary", "diagnostic":
 		return true
 	}
 	return false

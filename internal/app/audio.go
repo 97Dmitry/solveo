@@ -313,6 +313,7 @@ func (c *Controller) SetAudioProvider(id string) error {
 	a.busy = ""
 	if err == nil {
 		a.providerID, a.checks, a.err, a.model = id, nil, "", audioModelStopped
+		c.logger.Info("speech provider selected", "provider", id)
 	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
@@ -434,6 +435,7 @@ func (c *Controller) beginAudio(busy string) (stt.Provider, error) {
 }
 
 func (c *Controller) setAudioError(err error) {
+	c.logger.Warn("speech provider error", "error", err)
 	c.appendLog(err.Error() + "\n")
 	c.audio.mu.Lock()
 	c.audio.err = uiText(err.Error())
@@ -477,14 +479,19 @@ func (c *Controller) StartAudioModel() error {
 		return errors.New("модель уже запущена")
 	}
 	provider := c.audioProvider()
+	c.logger.Info("speech model starting", "provider", provider.Describe().ID)
 	// The view describes the provider being started, whatever the selection does meanwhile.
 	a.busy, a.model, a.err, a.provider = audioBusyStarting, audioModelStarting, "", provider
 	c.audioChangedLocked()
 	a.mu.Unlock()
 	return c.goAudio(func(ctx context.Context) {
+		started := time.Now()
 		session, err := provider.Start(ctx, c.audioProgress)
 		if err != nil {
+			c.logger.Error("speech model failed to start", "provider", provider.Describe().ID, "error", err, "duration", time.Since(started).Round(time.Millisecond).String())
 			c.appendLog(err.Error() + "\n")
+		} else {
+			c.logger.Info("speech model ready", "provider", provider.Describe().ID, "duration", time.Since(started).Round(time.Millisecond).String())
 		}
 		a.mu.Lock()
 		if err != nil {
@@ -538,6 +545,7 @@ func (c *Controller) audioSessionEnded(session stt.SessionAPI, lost error) {
 		lost = errors.New("распознаватель закрыл соединение")
 	}
 	provider := a.provider
+	c.logger.Error("speech session lost", "provider", provider.Describe().ID, "error", lost)
 	c.recordAudioErrorLocked("", lost.Error())
 	c.endAudioHistoryLocked()
 	a.session, a.provider, a.model, a.err, a.listening = nil, nil, audioModelFailed, uiText(lost.Error()), false
@@ -619,6 +627,7 @@ func (c *Controller) StopAudioModel() error {
 			_ = session.Close()
 		}
 		err := provider.Stop(ctx)
+		c.logger.Info("speech model stopped", "provider", provider.Describe().ID, "error", err)
 		a.mu.Lock()
 		a.model = audioModelStopped
 		if err != nil {
@@ -714,6 +723,7 @@ func (c *Controller) StartListening() error {
 		if source.view.Error != "" {
 			c.recordAudioErrorLocked(source.stream, source.view.Error)
 		}
+		c.logger.Info("listening source", "track", source.view.Track, "device", source.view.Device, "active", source.view.Active)
 	}
 	if !listening {
 		c.endAudioHistoryLocked()
@@ -738,6 +748,7 @@ func (c *Controller) audioSink(session stt.SessionAPI, stream string) func(audio
 		if err := session.Push(stream, f.Rate, f.Channels, f.Samples); errors.Is(err, stt.ErrBackpressure) {
 			c.audio.mu.Lock()
 			if !c.audio.gap {
+				c.logger.Warn("speech backpressure: audio dropped", "track", c.audio.tracks[stream])
 				c.audio.gap, c.audio.err = true, gapMessage
 				c.audioChangedLocked()
 			}
@@ -780,6 +791,9 @@ func (c *Controller) StopListening() error {
 	}
 	stops := a.stopSourcesLocked()
 	wasListening := a.listening
+	if wasListening {
+		c.logger.Info("listening stopped")
+	}
 	a.listening = false
 	c.endAudioHistoryLocked()
 	c.audioChangedLocked()
