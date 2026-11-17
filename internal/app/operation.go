@@ -21,6 +21,10 @@ type submitOrigin struct {
 	kind      int
 	question  *QuestionCommand
 	captureID string // capture operation that may submit while it still owns the slot
+	// segments are the live transcript phrases sent by originTranscript; consume also removes them
+	// from the question builder's input (sending every new phrase supersedes the card built from them).
+	segments []string
+	consume  bool
 }
 
 const (
@@ -173,9 +177,23 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	opID := chat.ID()
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel, started: time.Now()}
-	if origin.kind == originQuestion {
+	var sentSegments []string
+	switch origin.kind {
+	case originQuestion:
+		for _, s := range questionCard.Sources {
+			sentSegments = append(sentSegments, s.ID)
+		}
 		c.question.builders[in.ChatID].Sent(turn.ID)
 		c.scheduleQuestionLocked()
+	case originTranscript:
+		sentSegments = origin.segments
+		if b := c.question.builders[in.ChatID]; origin.consume && b != nil {
+			b.Consumed(turn.ID, turn.Text, origin.segments)
+			if c.question.cancel != nil && c.question.runChatID == in.ChatID {
+				c.question.cancel()
+			}
+			c.scheduleQuestionLocked()
+		}
 	}
 	c.requests[in.RequestID] = true
 	if origin.kind == originComposer && in.RetryMessageID == "" {
@@ -202,6 +220,7 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 	c.logger.Info("request started", "op", opID, "chat", doc.ID, "message", turn.ID, "origin", originNames[origin.kind], "retry", in.RetryMessageID != "",
 		"model", cfg.Model, "reasoning", cfg.Reasoning, "parallel", cfg.ParallelAnswers, "images", len(ids), "chars", utf8.RuneCountInString(turn.Text),
 		"reply_to", turn.ReplyToKind, c.content("question", turn.Text))
+	c.markTranscriptSent(sentSegments)
 	c.publish()
 	go c.runSubmit(ctx, opID, doc, turn, sources, ids, draft, clearDraft)
 	return opID, nil

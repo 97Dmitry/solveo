@@ -44,6 +44,8 @@ vi.mock("../bridge/wails", async () => {
     },
     loadAccount: async () => ({ signed_in: true, kind: "fake" }),
     loadModels: async () => [],
+    defaultHotkeys: async () => snapshotFixture().settings.hotkeys,
+    suspendHotkeys: async () => {},
   };
 });
 import { snapshotFixture } from "../bridge/test-fixture";
@@ -190,4 +192,16 @@ it("offers full-screen capture from the snapshot menu", async () => {
   await user.click(screen.getByRole("menuitem", { name: "Весь экран и ответ" }));
   expect(transport.capture).toHaveBeenCalledWith("quick-full");
   expect(screen.queryByRole("menuitem")).toBeNull();
+});
+
+it("opens help from the header and edits shortcuts on the settings tab", async () => {
+  Element.prototype.scrollTo = vi.fn();
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Справка и горячие клавиши" }));
+  expect(screen.getByRole("heading", { name: "Справка и горячие клавиши" })).toBeTruthy();
+  expect(screen.getByText("Отправить новые реплики собеседника")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Изменить сочетания" }));
+  expect(screen.getByRole("heading", { name: "Настройки Solveo" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Клавиши" }).getAttribute("aria-selected")).toBe("true");
 });

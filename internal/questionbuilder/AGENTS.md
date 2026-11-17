@@ -8,3 +8,5 @@
 - Card.Origin is automatic after an accepted analysis, manual after an edit; it persists with accepted submissions. Empty origin is legacy/unknown. ValidateSources caps cumulative evidence at 80 rows / 16000 Unicode code points; reject over-budget updates before advancing processed, preserving old card and the unprocessed tail. Manual salvage remains available.
 
 - Draft is a completed analysis result awaiting continuation or explicit review, not a running request. CanConfirm requires a nonempty fresh ready=false card with no system partial/pending final, analysis, edit, error or gap. Confirm freezes exactly that version with manual readiness semantics, without changing Origin: unedited automatic text must retain source grounding. Late speech remains a tail; no timeout may invent readiness.
+
+- Consumed(messageID, text, ids) records a question sent directly from transcript phrases: recent gets the text (for follow-ups), processed advances to the last consumed phrase and later speech stays a tail. Manual/editing cards survive untouched; an automatic card or running analysis is invalidated.

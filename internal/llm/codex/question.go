@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/llm"
 	"github.com/97Dmitry/solveo/internal/questionbuilder"
 )
 
@@ -42,7 +43,40 @@ source_ids содержит только ID реально использова�
 
 var questionSchema = json.RawMessage(`{"type":"object","properties":{"has_question":{"type":"boolean"},"ready":{"type":"boolean"},"text":{"type":"string"},"source_ids":{"type":"array","items":{"type":"string"}},"follow_up":{"type":"boolean"}},"required":["has_question","ready","text","source_ids","follow_up"],"additionalProperties":false}`)
 
-func (c *Client) AnalyzeQuestion(ctx context.Context, in questionbuilder.Input, cfg chat.Config) (questionbuilder.Result, error) {
+var _ llm.QuestionPreparer = (*Client)(nil)
+
+// analysisPreparation never equals a local ChatID, so lastSubmittedChat cannot suppress it.
+const analysisPreparation = "\x00question-analysis"
+
+func analysisKey(cfg chat.Config) preparationKey {
+	return preparationKey{chatID: analysisPreparation, model: cfg.Model, reasoning: cfg.Reasoning}
+}
+
+// analysisThreadParams are shared by a prepared and an immediate analysis thread.
+func (a *appServer) analysisThreadParams(cfg chat.Config) map[string]any {
+	params := threadParams(a.work, cfg)
+	params["ephemeral"] = true
+	params["baseInstructions"] = questionInstructions
+	params["developerInstructions"] = questionInstructions
+	return params
+}
+
+// PrepareQuestionAnalysis keeps one empty ephemeral analysis thread for the next
+// AnalyzeQuestion with the same model/effort. It starts no turn and sends no transcript.
+func (c *Client) PrepareQuestionAnalysis(ctx context.Context, cfg chat.Config) error {
+	return c.analysis.prepare(ctx, analysisKey(cfg), c.analysis.analysisThreadParams(cfg))
+}
+
+// AnalyzeQuestion emits only content-free progress (timing) events.
+func (c *Client) AnalyzeQuestion(ctx context.Context, in questionbuilder.Input, cfg chat.Config, emit func(llm.Event)) (questionbuilder.Result, error) {
+	if emit != nil {
+		inner := emit
+		emit = func(e llm.Event) {
+			if e.Kind == llm.EventProgress {
+				inner(e)
+			}
+		}
+	}
 	wire := in
 	wire.Current.Sources = slices.Clone(in.Current.Sources)
 	for i := range wire.Current.Sources {
@@ -53,7 +87,7 @@ func (c *Client) AnalyzeQuestion(ctx context.Context, in questionbuilder.Input, 
 		return questionbuilder.Result{}, err
 	}
 	analysis := &Client{app: c.analysis}
-	out, err := analysis.run(ctx, turnSpec{purpose: "question-analysis", config: cfg, prompt: string(data), instructions: questionInstructions, ephemeral: true, timeout: 15 * time.Second, analysis: true, outputSchema: questionSchema}, nil)
+	out, err := analysis.run(ctx, turnSpec{purpose: "question-analysis", config: cfg, prompt: string(data), instructions: questionInstructions, ephemeral: true, timeout: 15 * time.Second, analysis: true, outputSchema: questionSchema}, emit)
 	if err != nil {
 		return questionbuilder.Result{}, err
 	}

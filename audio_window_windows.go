@@ -109,7 +109,7 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 	var server *audiowindow.Server
 	view := func() audiowindow.View {
 		s := controller.AudioWindowTarget()
-		return audiowindow.View{Meetings: controller.MeetingState(), Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary}
+		return audiowindow.View{Meetings: controller.MeetingState(), Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary, SendHotkey: s.SendHotkey}
 	}
 	execute := func(ctx context.Context, cmd audiowindow.Command) error {
 		switch cmd.Name {
@@ -156,6 +156,12 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 			return controller.ReportRendererError(d)
 		case "send":
 			_, err := controller.SubmitTranscript(core.SubmitTranscriptInput{ChatID: cmd.ChatID, RequestID: chat.ID(), SegmentIDs: cmd.IDs})
+			if err == nil {
+				window.Show()
+			}
+			return err
+		case "sendUnsent":
+			err := controller.SendUnsentTranscript(cmd.ChatID)
 			if err == nil {
 				window.Show()
 			}

@@ -47,7 +47,7 @@ func TestNormalizeDetectsConflictsAndGaps(t *testing.T) {
 	set = Defaults()
 	set[QuickFull], set[Toggle] = "", ""
 	got, err = Normalize(set)
-	if err != nil || len(Bindings(got)) != 3 {
+	if err != nil || len(Bindings(got)) != 4 {
 		t.Fatal("disabled actions must not conflict", got, err)
 	}
 	set = Defaults()

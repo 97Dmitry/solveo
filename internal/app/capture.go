@@ -83,6 +83,20 @@ func (c *Controller) HandleNativeEvent(e platform.Event) {
 	case "submit":
 		_, err := c.RequestSubmit()
 		c.ReportError(err)
+	case "send-transcript":
+		c.mu.Lock()
+		chatID := c.active.ID
+		c.mu.Unlock()
+		c.ReportError(c.SendUnsentTranscript(chatID))
+	case "toggle-listening":
+		c.audio.mu.Lock()
+		listening := c.audio.listening
+		c.audio.mu.Unlock()
+		if listening {
+			c.ReportError(c.StopListening())
+		} else {
+			c.ReportError(c.StartListening())
+		}
 	case "log":
 		c.ReportError(c.ShowLog())
 	case "pin":

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Eraser, Send, X } from "lucide-react";
+import { Eraser, MessageSquareShare, Send, X } from "lucide-react";
 import type { AudioState } from "../bridge/state";
 import { Button, IconButton } from "../ui/Button";
-import type { AudioActions } from "./actions";
+import { unsentCount, type AudioActions } from "./actions";
 import { TranscriptList } from "./TranscriptList";
 
 // LiveTranscript keeps only the phrase selection locally; selections of vanished or still-partial
@@ -11,13 +11,16 @@ export function LiveTranscript({
   audio,
   disabled,
   canSend,
+  sendHotkey,
   actions,
 }: {
   audio: AudioState;
   disabled: boolean;
   canSend: boolean;
+  sendHotkey: string;
   actions: AudioActions;
 }) {
+  const unsent = unsentCount(audio.segments);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const finals = new Set(audio.segments.filter((s) => s.final).map((s) => s.id));
   const selected = new Set([...picked].filter((id) => finals.has(id)));
@@ -53,7 +56,18 @@ export function LiveTranscript({
             </span>
           )}
           <Button
-            className="primary"
+            className={chosen.length === 0 ? "primary" : ""}
+            disabled={unsent === 0 || !canSend || audio.sending_unsent}
+            title={`Отправить все реплики собеседника после последней отправленной${sendHotkey ? ` (${sendHotkey})` : ""}`}
+            onClick={actions.sendUnsent}
+          >
+            <MessageSquareShare size={14} />
+            {audio.sending_unsent
+              ? "Жду конец фразы…"
+              : `Новые реплики${unsent ? ` (${unsent})` : ""}`}
+          </Button>
+          <Button
+            className={chosen.length > 0 ? "primary" : ""}
             disabled={chosen.length === 0 || !canSend}
             onClick={() => {
               actions.send(chosen.map((s) => s.id));

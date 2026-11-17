@@ -285,6 +285,11 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 					}
 					continue
 				}
+				// The speech window belongs to the root application, not the controller.
+				if ev.Kind == "audio-window" {
+					controller.ReportError(app.ShowAudioWindow())
+					continue
+				}
 
 				controller.HandleNativeEvent(ev)
 			}

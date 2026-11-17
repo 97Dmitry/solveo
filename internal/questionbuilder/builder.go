@@ -405,6 +405,36 @@ func (b *Builder) Sent(messageID string) {
 	// A saved manual version consumes only analyzed input; later speech survives.
 	b.Skip()
 }
+
+// Consumed records a question sent directly from transcript phrases rather than from this card.
+// Those phrases are consumed like a sent card and the text joins recent questions; later speech
+// stays an unprocessed tail. A manual or edited card belongs to the user and survives; an automatic
+// card or running analysis, built from the same speech, is dropped.
+func (b *Builder) Consumed(messageID, text string, ids []string) {
+	b.recent = append(b.recent, Card{ID: messageID, Text: text, Sources: []Segment{}})
+	if len(b.recent) > 3 {
+		b.recent = b.recent[len(b.recent)-3:]
+	}
+	b.revision++
+	end := b.processed
+	for _, s := range b.window {
+		if s.Seq > end && slices.Contains(ids, s.ID) {
+			end = s.Seq
+		}
+	}
+	if b.manual || b.editing || (end == b.processed && b.current.ID == "" && b.running == nil) {
+		return
+	}
+	b.invalidate()
+	b.processed = end
+	b.covered = 0
+	b.overflow = false
+	b.current = Card{Sources: []Segment{}}
+	b.ready = false
+	b.err = ""
+	b.pausedStale = false
+	b.window = slices.DeleteFunc(b.window, func(s Segment) bool { return s.Seq <= end })
+}
 func (b *Builder) RestoreRecent(cards []Card) {
 	b.recent = nil
 	for _, c := range cards {

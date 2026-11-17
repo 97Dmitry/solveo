@@ -14,5 +14,5 @@
 Проверка: make check завершён успешно, frontend 117/117, Go/worker tests, host+Windows lint, Windows vet и Solveo.exe. Affected race suite пройден. После исправления boundary case независимое ревью не обнаружило оставшихся Important/Critical.
 На временной копии проверенной записи: 12 → 9 сегментов, system 9, mic 0, ASR calls 0, revision 6 → 8. SHA-256 исходного manifest до/после совпадает; исходник не переписывался.
 
-Доставка: C:\Users\dts97\Downloads\Solveo-updated.exe (основной Solveo.exe занят работающим процессом). SHA-256 совпадает с build/bin/Solveo.exe. Приложение не останавливалось.
+Доставка: C:\Users\<user>\Downloads\Solveo-updated.exe (основной Solveo.exe занят работающим процессом). SHA-256 совпадает с build/bin/Solveo.exe. Приложение не останавливалось.
 Дополнительный офлайн прогон go run CLI@version потребовал deprecation lookup; обход для проверки без сети: собрать закреплённый Wails v2.17.0 из локального module cache и выполнить GOPROXY=off make check WAILS=<path-to-cached-wails>. Этот итоговый прогон также завершился exit 0.
