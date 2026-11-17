@@ -16,9 +16,16 @@ import { RecognitionSettings } from "./RecognitionSettings";
 import { needsSetup } from "./readiness";
 import { SessionControls } from "./SessionControls";
 
-type Tab = "live" | "history" | "dictionary" | "settings";
+import { Meetings } from "./Meetings";
+import { emptyMeetingState } from "../bridge/meeting-state";
+
+type Tab = "live" | "history" | "dictionary" | "settings" | "meetings";
 const isTab = (value: string): value is Tab =>
-  value === "live" || value === "history" || value === "dictionary" || value === "settings";
+  value === "meetings" ||
+  value === "live" ||
+  value === "history" ||
+  value === "dictionary" ||
+  value === "settings";
 
 export function AudioWindow() {
   const [tab, setTab] = useState<Tab>("live");
@@ -143,7 +150,7 @@ export function AudioWindow() {
         </div>
         <SessionControls
           audio={view.audio}
-          disabled={disabled}
+          disabled={disabled || Boolean(view.meetings?.recording_id)}
           actions={actions}
           onSetup={() => open("settings")}
         />
@@ -160,6 +167,12 @@ export function AudioWindow() {
           <Tabs.Trigger className="audio-tab" value="live">
             Эфир
             {view.audio.listening && <span className="tab-dot listening" aria-hidden="true" />}
+          </Tabs.Trigger>
+          <Tabs.Trigger className="audio-tab" value="meetings">
+            Встречи
+            {view.meetings?.recording_id && (
+              <span className="tab-dot listening" aria-label="идёт запись встречи" />
+            )}
           </Tabs.Trigger>
           {history && (
             <Tabs.Trigger className="audio-tab" value="history">
@@ -198,6 +211,18 @@ export function AudioWindow() {
             canSend={!disabled && view.can_send}
             sendHotkey={view.send_hotkey}
             actions={actions}
+          />
+        </Tabs.Content>
+        <Tabs.Content
+          className="audio-tab-panel settings"
+          value="meetings"
+          forceMount
+          hidden={active !== "meetings"}
+        >
+          <Meetings
+            state={view.meetings ?? emptyMeetingState}
+            listening={view.audio.listening}
+            active={active === "meetings"}
           />
         </Tabs.Content>
         {history && (

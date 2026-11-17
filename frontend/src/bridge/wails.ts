@@ -1,3 +1,9 @@
+import {
+  meetingDocumentSchema,
+  meetingInfoSchema,
+  meetingStateSchema,
+  type MeetingCommand,
+} from "./meeting-state";
 import * as api from "../../wailsjs/go/main/App";
 import * as audioWindowAPI from "../../wailsjs/go/main/AudioWindowApp";
 import { audiowindow } from "../../wailsjs/go/models";
@@ -144,6 +150,7 @@ export async function defaultHotkeys() {
 }
 
 const audioWindowSchema = z.object({
+  meetings: meetingStateSchema,
   question: questionSchema,
   docked: z.boolean(),
   window_error: z.string().max(8192),
@@ -237,4 +244,17 @@ export const audioHistory = {
   forChat: async (chatID: string) =>
     audioHistoryDocumentSchema.parse(await audioWindowAPI.HistoryForChat(chatID)),
   deleteChat: audioWindowAPI.DeleteChatHistory,
+};
+
+export const meetingBridge = {
+  list: async () =>
+    z
+      .object({ items: z.array(meetingInfoSchema), notice: z.string() })
+      .parse(await audioWindowAPI.Meetings()),
+  detail: async (id: string) => meetingDocumentSchema.parse(await audioWindowAPI.Meeting(id)),
+  command: (meeting: MeetingCommand) =>
+    audioWindowAPI.Execute(
+      new audiowindow.Command({ name: "meeting", meeting: new app.MeetingCommand(meeting) }),
+    ),
+  copy: async (text: string) => ClipboardSetText(text),
 };

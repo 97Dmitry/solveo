@@ -103,6 +103,7 @@ export function snapshotFixture(): Snapshot {
     login: { id: "", url: "", code: "", state: "", error: "" },
     work_error: "",
     recovered: [],
+    meeting_recording_id: "",
     hotkey_errors: {},
     diagnostics: { available: true, crash_notice: false },
   };

@@ -641,6 +641,11 @@ func (c *Controller) StopAudioModel() error {
 // StartListening opens one stream per source with the saved dictionary and starts capture.
 // A source that cannot start is shown with its error; listening needs at least one source.
 func (c *Controller) StartListening() error {
+	c.captureMu.Lock()
+	defer c.captureMu.Unlock()
+	if c.MeetingState().RecordingID != "" {
+		return errors.New("Сначала остановите запись встречи")
+	}
 	c.syncAudioHistoryChat()
 	a := &c.audio
 	a.mu.Lock()

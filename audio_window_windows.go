@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -110,10 +109,15 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 	var server *audiowindow.Server
 	view := func() audiowindow.View {
 		s := controller.AudioWindowTarget()
-		return audiowindow.View{Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary, SendHotkey: s.SendHotkey}
+		return audiowindow.View{Meetings: controller.MeetingState(), Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary, SendHotkey: s.SendHotkey}
 	}
 	execute := func(ctx context.Context, cmd audiowindow.Command) error {
 		switch cmd.Name {
+		case "meeting":
+			if cmd.Meeting == nil {
+				return errors.New("Не задана команда встречи")
+			}
+			return controller.MeetingCommand(*cmd.Meeting)
 		case "question":
 			if cmd.Question == nil {
 				return errors.New("Не задана команда сборщика")
@@ -287,7 +291,7 @@ func runAudioWindow() error {
 	return wails.Run(&options.App{
 		Title: "Solveo — Аудио", Width: 460, Height: 680, MinWidth: 380, MinHeight: 360, StartHidden: true, HideWindowOnClose: false,
 		Windows:     &windows.Options{ContentProtection: true, WindowClassName: "SolveoAudio", WebviewUserDataPath: filepath.Join(os.Getenv("LOCALAPPDATA"), "Solveo", "AudioWebView2"), Theme: windows.Dark},
-		AssetServer: &assetserver.Options{Assets: audiowindow.Assets(embedded), Handler: http.NotFoundHandler()},
+		AssetServer: &assetserver.Options{Assets: audiowindow.Assets(embedded), Handler: client.AudioHandler()},
 		Bind:        []interface{}{bridge},
 		OnStartup: func(ctx context.Context) {
 			mu.Lock()

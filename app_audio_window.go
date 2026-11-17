@@ -8,6 +8,7 @@ import (
 
 	core "github.com/97Dmitry/solveo/internal/app"
 	"github.com/97Dmitry/solveo/internal/audiowindow"
+	"github.com/97Dmitry/solveo/internal/meeting"
 )
 
 // AudioWindowApp exposes only the parent-owned audio operations to the auxiliary renderer.
@@ -105,4 +106,17 @@ func (a *AudioWindowApp) DeleteChatHistory(id string) error {
 		return errors.New("Окно аудио не подключено")
 	}
 	return a.client.Execute(audiowindow.Command{Name: "deleteChatHistory", ChatID: id})
+}
+
+func (a *AudioWindowApp) Meetings() (audiowindow.MeetingList, error) {
+	if a.client == nil {
+		return audiowindow.MeetingList{}, errors.New("Окно аудио не подключено")
+	}
+	return a.client.Meetings()
+}
+func (a *AudioWindowApp) Meeting(id string) (meeting.Document, error) {
+	if a.client == nil {
+		return meeting.Document{}, errors.New("Окно аудио не подключено")
+	}
+	return a.client.Meeting(id)
 }

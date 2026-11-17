@@ -32,6 +32,8 @@ import (
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/instance"
 	"github.com/97Dmitry/solveo/internal/llm/codex"
+	"github.com/97Dmitry/solveo/internal/meeting"
+	meetinggemini "github.com/97Dmitry/solveo/internal/meeting/gemini"
 	"github.com/97Dmitry/solveo/internal/platform"
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 	"github.com/97Dmitry/solveo/internal/profiles"
@@ -190,7 +192,11 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 		Capturer: audio.NewCapturer(),
 		Secrets:  keys,
 	}
+	meetingProcessor := meetinggemini.New(func() (string, bool, error) { return keys.Get(stt.KeyName("gemini")) })
+	meetingProcessor.JournalPath = filepath.Join(dir, "meetings", "google-files.json")
+	meetings := meeting.NewManager(meeting.NewStore(filepath.Join(dir, "meetings")), speech.Capturer, meetingProcessor)
 	controller, e := core.New(core.Dependencies{
+		Meetings:      meetings,
 		Store:         store,
 		SettingsStore: settings.Open(dir),
 		ProfilesStore: profiles.New(dir),

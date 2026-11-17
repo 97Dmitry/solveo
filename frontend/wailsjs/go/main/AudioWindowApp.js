@@ -14,6 +14,14 @@ export function HistoryForChat(arg1) {
   return window['go']['main']['AudioWindowApp']['HistoryForChat'](arg1);
 }
 
+export function Meeting(arg1) {
+  return window['go']['main']['AudioWindowApp']['Meeting'](arg1);
+}
+
+export function Meetings() {
+  return window['go']['main']['AudioWindowApp']['Meetings']();
+}
+
 export function Ready() {
   return window['go']['main']['AudioWindowApp']['Ready']();
 }

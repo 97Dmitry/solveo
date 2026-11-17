@@ -1,0 +1,62 @@
+.meetings {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.meetings label {
+  display: grid;
+  gap: 5px;
+  margin-block: 8px;
+}
+.meetings input:not([type="checkbox"]),
+.meetings select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.meeting-actions,
+.meeting-recording {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.meeting-actions label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.meeting-actions h2,
+.meeting-actions h3 {
+  margin: 0;
+  margin-right: auto;
+}
+.meeting-recording {
+  border-left: 3px solid #dc5050;
+  padding-left: 10px;
+}
+.meeting-summary,
+.meeting-segment {
+  overflow-wrap: anywhere;
+}
+.meeting-segment small {
+  display: block;
+  opacity: 0.7;
+  margin-bottom: 5px;
+}
+.meeting-segment:target {
+  outline: 1px solid currentColor;
+}
+.meeting-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block: 5px;
+}
+.meeting-evidence .button {
+  font-size: 0.75em;
+}
+.meetings audio {
+  width: 100%;
+  margin-top: 10px;
+}

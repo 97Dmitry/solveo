@@ -1,0 +1,11 @@
+# Meeting recordings
+
+- Owns independent meeting IDs, native-rate mono PCM16 WAV parts (5 minutes), versioned manifests, post-recording jobs and checkpoints. Never use audio-history for PCM or split meetings on chat navigation.
+- Capture callbacks enqueue owned frames without waiting; overflow/device/disk failure stops the recording visibly. Stop joins capture and drains writers. Keep I/O outside controller locks. One recording and one processing job may coexist for different meetings.
+- os.Root confines archive reads/writes. Never accept renderer paths. Recover unfinished WAV only on explicit command; no automatic recording or cloud resume. Native rate/source identity is preserved; speaker IDs are local to part/source.
+- Limits: 8 hours, 8 GiB, 192 kHz, 64 MiB documents, 100 buffered frames/source. Fail explicitly rather than truncate. Real devices and provider calls are never used in tests.
+- Validate: go test -race ./internal/meeting/...; full native acceptance remains Windows-only.
+- Transcription validates each canonical PCM16 part with bounded positioned reads. Entirely zero parts with zero boundary context skip ASR; words/saved segments are discarded only when their interval plus 250 ms on each side (including contiguous same-track neighbors) is exact digital zero. No amplitude threshold: ±1 LSB remains evidence. Read/header errors must never become silence.
+- Explicit repeat Transcribe rechecks completed parts locally, preserves surviving segment IDs, increments revision only on transcript changes and invalidates summary caches; loading/listing never rewrites recordings. Old summaries remain visibly stale until explicitly regenerated.
+- Processing Error belongs to ASR/summary/cancellation. Cleanup has its own stage and Notice, with a bounded fresh context and durable Google-file retry journal; cleanup failure must not turn a saved result into a failed transcription.
+- A primary RetryableError ends worker ownership as State.paused (immutable/cloned PausedOperation: original ID/kind/partial/retry_at/reason), not Error. Respect the server cooldown before explicit resume; clear pause on the next accepted job. No automatic cloud resume after restart; archive checkpoints support an explicit continuation. Cleanup cannot replace/erase the primary pause.
