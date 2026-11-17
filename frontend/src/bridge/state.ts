@@ -292,6 +292,7 @@ const streamBlockSchema = z.object({
   text: z.string(),
 } satisfies Shape<app.StreamBlock>);
 export const snapshotSchema = z.object({
+  meeting_recording_id: z.string().max(64),
   profiles: z.array(profileSchema).max(100),
   profiles_error: z.string(),
   revision,

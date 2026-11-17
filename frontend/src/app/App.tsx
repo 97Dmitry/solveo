@@ -214,9 +214,13 @@ export default function App() {
           </IconButton>
           <IconButton
             label={
-              state.audio.listening ? "Распознавание речи (идёт запись)" : "Распознавание речи"
+              s.meeting_recording_id
+                ? "Идёт запись встречи"
+                : state.audio.listening
+                  ? "Распознавание речи (идёт запись)"
+                  : "Распознавание речи"
             }
-            className={`audio-toggle ${state.audio.listening ? "recording" : ""}`}
+            className={`audio-toggle ${state.audio.listening || s.meeting_recording_id ? "recording" : ""}`}
             onClick={() => void actions.showAudioWindow()}
           >
             <Mic size={17} />

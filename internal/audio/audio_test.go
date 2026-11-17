@@ -97,3 +97,22 @@ func TestFramerKeepsFramesUnderTheProtocolLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestFramerPreservesSampleTimestamp(t *testing.T) {
+	var frames []Frame
+	f := &framer{rate: 16000, channels: 1, sink: func(frame Frame) { frames = append(frames, frame) }}
+	at := time.Now()
+	f.pushAt(make([]float32, 3200), at, false)
+	if len(frames) != 2 || !frames[0].At.Equal(at) || !frames[1].At.Equal(at.Add(100*time.Millisecond)) {
+		t.Fatalf("timestamps %+v", frames)
+	}
+}
+
+func TestSilenceFillerBoundsAllocationAfterLongPause(t *testing.T) {
+	s := &silenceFiller{rate: 48000, channels: 2}
+	at := time.Now()
+	s.packet(at)
+	if n := len(s.fill(at.Add(24 * time.Hour))); n > 4800*2 {
+		t.Fatalf("unbounded silence allocation: %d", n)
+	}
+}

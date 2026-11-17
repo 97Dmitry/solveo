@@ -12,6 +12,7 @@ import (
 	"github.com/97Dmitry/solveo/internal/history"
 	"github.com/97Dmitry/solveo/internal/hotkeys"
 	"github.com/97Dmitry/solveo/internal/llm"
+	"github.com/97Dmitry/solveo/internal/meeting"
 	"github.com/97Dmitry/solveo/internal/platform"
 	"github.com/97Dmitry/solveo/internal/profiles"
 	"github.com/97Dmitry/solveo/internal/settings"
@@ -115,6 +116,7 @@ type Dependencies struct {
 	Work          WorkStore
 	Emit          func(string, interface{})
 	Now           func() time.Time
+	Meetings      *meeting.Manager
 	Audio         AudioDeps
 	// Log is the session log; nil discards records.
 	Log         *slog.Logger
@@ -216,26 +218,27 @@ type SearchHit struct {
 	UpdatedAt string `json:"updated_at"`
 }
 type Snapshot struct {
-	Profiles       []ProfileView    `json:"profiles"`
-	ProfilesError  string           `json:"profiles_error"`
-	Revision       uint64           `json:"revision"`
-	ActiveChatID   string           `json:"active_chat_id"`
-	Title          string           `json:"title"`
-	ProviderID     string           `json:"provider_id"`
-	Config         chat.Config      `json:"config"`
-	ConfigRevision uint64           `json:"config_revision"`
-	Messages       []chat.Message   `json:"messages"`
-	Queue          []AttachmentView `json:"queue"`
-	Images         []AttachmentView `json:"images"`
-	Draft          Draft            `json:"draft"`
-	Operation      Operation        `json:"operation"`
-	Controls       Controls         `json:"controls"`
-	Settings       settings.Config  `json:"settings"`
-	Provider       llm.Descriptor   `json:"provider"`
-	History        []HistorySummary `json:"history"`
-	Error          string           `json:"error"`
-	Uncertain      bool             `json:"uncertain"`
-	Login          LoginView        `json:"login"`
+	MeetingRecordingID string           `json:"meeting_recording_id"`
+	Profiles           []ProfileView    `json:"profiles"`
+	ProfilesError      string           `json:"profiles_error"`
+	Revision           uint64           `json:"revision"`
+	ActiveChatID       string           `json:"active_chat_id"`
+	Title              string           `json:"title"`
+	ProviderID         string           `json:"provider_id"`
+	Config             chat.Config      `json:"config"`
+	ConfigRevision     uint64           `json:"config_revision"`
+	Messages           []chat.Message   `json:"messages"`
+	Queue              []AttachmentView `json:"queue"`
+	Images             []AttachmentView `json:"images"`
+	Draft              Draft            `json:"draft"`
+	Operation          Operation        `json:"operation"`
+	Controls           Controls         `json:"controls"`
+	Settings           settings.Config  `json:"settings"`
+	Provider           llm.Descriptor   `json:"provider"`
+	History            []HistorySummary `json:"history"`
+	Error              string           `json:"error"`
+	Uncertain          bool             `json:"uncertain"`
+	Login              LoginView        `json:"login"`
 	// WorkError is set while drafts, the queue or answer checkpoints cannot be written.
 	WorkError string `json:"work_error"`
 	// Recovered is text received before a crash for interrupted attempts of this chat.

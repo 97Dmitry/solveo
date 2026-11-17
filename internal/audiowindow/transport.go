@@ -19,6 +19,7 @@ import (
 	"time"
 
 	core "github.com/97Dmitry/solveo/internal/app"
+	"github.com/97Dmitry/solveo/internal/meeting"
 )
 
 const maxBody = 1 << 20
@@ -35,6 +36,7 @@ type Config struct {
 	Y            int    `json:"y"`
 }
 type View struct {
+	Meetings    meeting.State     `json:"meetings"`
 	Question    core.QuestionView `json:"question"`
 	Docked      bool              `json:"docked"`
 	WindowError string            `json:"window_error"`
@@ -50,6 +52,7 @@ type View struct {
 	Dictionary  []string          `json:"dictionary"`
 }
 type Command struct {
+	Meeting  *core.MeetingCommand  `json:"meeting,omitempty"`
 	Question *core.QuestionCommand `json:"question,omitempty"`
 	Name     string                `json:"name"`
 	Provider string                `json:"provider,omitempty"`
@@ -96,6 +99,11 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 		if r.Header.Get("Origin") != "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.config.Token)) != 1 {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
+		}
+		if len(readers) > 0 {
+			if reader, ok := readers[0].(MeetingReader); ok && serveMeetings(w, r, reader) {
+				return
+			}
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/health":
@@ -150,7 +158,7 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary", "diagnostic":
+	case "meeting", "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary", "diagnostic":
 		return true
 	}
 	return false
@@ -246,7 +254,7 @@ func (c *Client) request(path string, cmd *Command, target any) error {
 		return errors.New("Основное окно отклонило команду аудио")
 	}
 	limit := int64(4 * maxBody)
-	if strings.HasPrefix(path, "/chat-history/") {
+	if strings.HasPrefix(path, "/chat-history/") || strings.HasPrefix(path, "/meeting/") {
 		limit = 64 << 20
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(target); err != nil {

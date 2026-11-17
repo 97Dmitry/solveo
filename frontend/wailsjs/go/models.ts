@@ -418,6 +418,26 @@ export namespace app {
 	        this.error = source["error"];
 	    }
 	}
+	export class MeetingCommand {
+	    action: string;
+	    id: string;
+	    title: string;
+	    tracks: string[];
+	    partial: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MeetingCommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.action = source["action"];
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.tracks = source["tracks"];
+	        this.partial = source["partial"];
+	    }
+	}
 	export class Operation {
 	    id: string;
 	    kind: string;
@@ -671,6 +691,7 @@ export namespace app {
 	    }
 	}
 	export class Snapshot {
+	    meeting_recording_id: string;
 	    profiles: ProfileView[];
 	    profiles_error: string;
 	    revision: number;
@@ -702,6 +723,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.meeting_recording_id = source["meeting_recording_id"];
 	        this.profiles = this.convertValues(source["profiles"], ProfileView);
 	        this.profiles_error = source["profiles_error"];
 	        this.revision = source["revision"];
@@ -868,6 +890,7 @@ export namespace audiohistory {
 export namespace audiowindow {
 	
 	export class Command {
+	    meeting?: app.MeetingCommand;
 	    question?: app.QuestionCommand;
 	    name: string;
 	    provider?: string;
@@ -884,6 +907,7 @@ export namespace audiowindow {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.meeting = this.convertValues(source["meeting"], app.MeetingCommand);
 	        this.question = this.convertValues(source["question"], app.QuestionCommand);
 	        this.name = source["name"];
 	        this.provider = source["provider"];
@@ -913,7 +937,40 @@ export namespace audiowindow {
 		    return a;
 		}
 	}
+	export class MeetingList {
+	    items: meeting.Info[];
+	    notice: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MeetingList(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], meeting.Info);
+	        this.notice = source["notice"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class View {
+	    meetings: meeting.State;
 	    question: app.QuestionView;
 	    docked: boolean;
 	    window_error: string;
@@ -934,6 +991,7 @@ export namespace audiowindow {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.meetings = this.convertValues(source["meetings"], meeting.State);
 	        this.question = this.convertValues(source["question"], app.QuestionView);
 	        this.docked = source["docked"];
 	        this.window_error = source["window_error"];
@@ -1230,6 +1288,302 @@ export namespace llm {
 	        this.is_default = source["is_default"];
 	        this.default_reasoning = source["default_reasoning"];
 	        this.reasoning_efforts = this.convertValues(source["reasoning_efforts"], ReasoningEffort);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace meeting {
+	
+	export class Item {
+	    text: string;
+	    owner: string;
+	    deadline: string;
+	    sources: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Item(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.text = source["text"];
+	        this.owner = source["owner"];
+	        this.deadline = source["deadline"];
+	        this.sources = source["sources"];
+	    }
+	}
+	export class Summary {
+	    overview: string;
+	    topics: string[];
+	    decisions: Item[];
+	    tasks: Item[];
+	    questions: string[];
+	    partial: boolean;
+	    revision: number;
+	    model: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Summary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.overview = source["overview"];
+	        this.topics = source["topics"];
+	        this.decisions = this.convertValues(source["decisions"], Item);
+	        this.tasks = this.convertValues(source["tasks"], Item);
+	        this.questions = source["questions"];
+	        this.partial = source["partial"];
+	        this.revision = source["revision"];
+	        this.model = source["model"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Segment {
+	    id: string;
+	    track: string;
+	    part: string;
+	    speaker: string;
+	    start: number;
+	    end: number;
+	    text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Segment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.track = source["track"];
+	        this.part = source["part"];
+	        this.speaker = source["speaker"];
+	        this.start = source["start"];
+	        this.end = source["end"];
+	        this.text = source["text"];
+	    }
+	}
+	export class Part {
+	    file: string;
+	    track: string;
+	    rate: number;
+	    offset: number;
+	    samples: number;
+	    complete: boolean;
+	    transcribed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Part(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.file = source["file"];
+	        this.track = source["track"];
+	        this.rate = source["rate"];
+	        this.offset = source["offset"];
+	        this.samples = source["samples"];
+	        this.complete = source["complete"];
+	        this.transcribed = source["transcribed"];
+	    }
+	}
+	export class Document {
+	    id: string;
+	    chat_id: string;
+	    title: string;
+	    // Go type: time
+	    started_at: any;
+	    // Go type: time
+	    ended_at: any;
+	    status: string;
+	    error: string;
+	    duration: number;
+	    bytes: number;
+	    revision: number;
+	    version: number;
+	    tracks: string[];
+	    parts: Part[];
+	    segments: Segment[];
+	    summary?: Summary;
+	    leaves: Record<string, Summary>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Document(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.chat_id = source["chat_id"];
+	        this.title = source["title"];
+	        this.started_at = this.convertValues(source["started_at"], null);
+	        this.ended_at = this.convertValues(source["ended_at"], null);
+	        this.status = source["status"];
+	        this.error = source["error"];
+	        this.duration = source["duration"];
+	        this.bytes = source["bytes"];
+	        this.revision = source["revision"];
+	        this.version = source["version"];
+	        this.tracks = source["tracks"];
+	        this.parts = this.convertValues(source["parts"], Part);
+	        this.segments = this.convertValues(source["segments"], Segment);
+	        this.summary = this.convertValues(source["summary"], Summary);
+	        this.leaves = this.convertValues(source["leaves"], Summary, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Info {
+	    id: string;
+	    chat_id: string;
+	    title: string;
+	    // Go type: time
+	    started_at: any;
+	    // Go type: time
+	    ended_at: any;
+	    status: string;
+	    error: string;
+	    duration: number;
+	    bytes: number;
+	    revision: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.chat_id = source["chat_id"];
+	        this.title = source["title"];
+	        this.started_at = this.convertValues(source["started_at"], null);
+	        this.ended_at = this.convertValues(source["ended_at"], null);
+	        this.status = source["status"];
+	        this.error = source["error"];
+	        this.duration = source["duration"];
+	        this.bytes = source["bytes"];
+	        this.revision = source["revision"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	export class PausedOperation {
+	    id: string;
+	    kind: string;
+	    partial: boolean;
+	    retry_at: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PausedOperation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.partial = source["partial"];
+	        this.retry_at = source["retry_at"];
+	        this.reason = source["reason"];
+	    }
+	}
+	
+	export class State {
+	    paused?: PausedOperation;
+	    recording_id: string;
+	    processing_id: string;
+	    stage: string;
+	    completed: number;
+	    total: number;
+	    error: string;
+	    notice: string;
+	    revision: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new State(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.paused = this.convertValues(source["paused"], PausedOperation);
+	        this.recording_id = source["recording_id"];
+	        this.processing_id = source["processing_id"];
+	        this.stage = source["stage"];
+	        this.completed = source["completed"];
+	        this.total = source["total"];
+	        this.error = source["error"];
+	        this.notice = source["notice"];
+	        this.revision = source["revision"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

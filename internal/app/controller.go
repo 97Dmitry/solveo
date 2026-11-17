@@ -24,6 +24,7 @@ import (
 type Controller struct {
 	profiles          []profiles.Profile
 	profilesErr       string
+	captureMu         sync.Mutex
 	settingsMu        sync.Mutex
 	mu                sync.Mutex
 	deps              Dependencies
@@ -139,6 +140,9 @@ func New(d Dependencies) (*Controller, error) {
 	c.active = doc
 	c.rememberLocked(doc)
 	c.initAudioHistory()
+	if d.Meetings != nil {
+		d.Meetings.SetNotify(func() { c.mu.Lock(); c.changedLocked(); c.mu.Unlock(); c.publish() })
+	}
 	c.statePersist.resume()
 	c.streamPersist.resume()
 	c.prepareConnection()
@@ -261,15 +265,16 @@ func (c *Controller) Snapshot() Snapshot {
 		},
 		Settings: c.settings,
 
-		HotkeyErrors: c.hotkeyErrorsLocked(),
-		Diagnostics:  c.diagnosticsViewLocked(),
-		Provider:     c.deps.Provider.Describe(),
-		History:      summaries,
-		Error:        c.err,
-		Uncertain:    uncertain,
-		Login:        c.login,
-		WorkError:    workErr,
-		Recovered:    c.recoveredLocked(doc),
+		HotkeyErrors:       c.hotkeyErrorsLocked(),
+		Diagnostics:        c.diagnosticsViewLocked(),
+		MeetingRecordingID: c.MeetingState().RecordingID,
+		Provider:           c.deps.Provider.Describe(),
+		History:            summaries,
+		Error:              c.err,
+		Uncertain:          uncertain,
+		Login:              c.login,
+		WorkError:          workErr,
+		Recovered:          c.recoveredLocked(doc),
 	}
 }
 func (c *Controller) SetDraft(in DraftInput) error {
@@ -494,13 +499,22 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	// Capture, the worker session and Solveo's container never outlive the application.
+	c.captureMu.Lock()
+	var meetingErr error
+	if c.deps.Meetings != nil {
+		meetingErr = c.deps.Meetings.Close()
+	}
 	c.shutdownAudio(ctx)
+	c.captureMu.Unlock()
 	done := make(chan struct{})
 	go func() { c.workers.Wait(); close(done) }()
 	select {
 	case <-ctx.Done():
 		c.mu.Lock()
 		c.closed = false
+		if c.deps.Meetings != nil {
+			c.deps.Meetings.Reopen()
+		}
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.prepareChatLocked()
 		c.mu.Unlock()
@@ -510,6 +524,9 @@ func (c *Controller) Close(ctx context.Context) error {
 	c.mu.Lock()
 	if c.pending != nil {
 		c.closed = false
+		if c.deps.Meetings != nil {
+			c.deps.Meetings.Reopen()
+		}
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.prepareChatLocked()
 		c.mu.Unlock()
@@ -517,11 +534,14 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	// Unfinished work stays on disk for the next start; write its final state.
-	if err := errors.Join(c.statePersist.flush(), c.streamPersist.flush(), c.flushAudioHistory()); err != nil {
+	if err := errors.Join(meetingErr, c.statePersist.flush(), c.streamPersist.flush(), c.flushAudioHistory()); err != nil {
 		// Keep persisters and the provider usable so disk recovery and another
 		// explicit exit can save the data instead of silently discarding it.
 		c.mu.Lock()
 		c.closed = false
+		if c.deps.Meetings != nil {
+			c.deps.Meetings.Reopen()
+		}
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.prepareChatLocked()
 		c.changedLocked()

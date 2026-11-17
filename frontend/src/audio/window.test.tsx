@@ -151,6 +151,7 @@ it("hides the history tab when history is disabled", async () => {
   expect(await screen.findByText("Чат: Новый чат")).toBeTruthy();
   expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
     "Эфир",
+    "Встречи",
     "Словарь",
     "Настройки",
   ]);

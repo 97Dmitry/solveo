@@ -16,6 +16,9 @@ import (
 // the endpoint's mix format, polled every 10 ms on a locked, COM-initialized thread.
 
 var (
+	kernel32              = windows.NewLazySystemDLL("kernel32.dll")
+	queryCounter          = kernel32.NewProc("QueryPerformanceCounter")
+	queryFrequency        = kernel32.NewProc("QueryPerformanceFrequency")
 	ole32                 = windows.NewLazySystemDLL("ole32.dll")
 	procCoCreateInstance  = ole32.NewProc("CoCreateInstance")
 	procPropVariantClear  = ole32.NewProc("PropVariantClear")
@@ -122,15 +125,18 @@ type wasapi struct{}
 func NewCapturer() Capturer { return wasapi{} }
 
 type session struct {
-	src      Source
-	enum     unsafe.Pointer
-	device   unsafe.Pointer
-	client   unsafe.Pointer
-	capture  unsafe.Pointer
-	format   sampleFormat
-	rate     int
-	channels int
-	block    int
+	clockBase  time.Time
+	qpcBase    int64
+	packetSeen bool
+	src        Source
+	enum       unsafe.Pointer
+	device     unsafe.Pointer
+	client     unsafe.Pointer
+	capture    unsafe.Pointer
+	format     sampleFormat
+	rate       int
+	channels   int
+	block      int
 }
 
 func (s *session) close() {
@@ -235,7 +241,8 @@ func (s *session) drain(out *framer, filler *silenceFiller) error {
 		}
 		var data *byte
 		var flags uint32
-		if err := hresult(call(s.capture, captureGetBuffer, uintptr(unsafe.Pointer(&data)), uintptr(unsafe.Pointer(&frames)), uintptr(unsafe.Pointer(&flags)), 0, 0), "GetBuffer"); err != nil {
+		var qpc uint64
+		if err := hresult(call(s.capture, captureGetBuffer, uintptr(unsafe.Pointer(&data)), uintptr(unsafe.Pointer(&frames)), uintptr(unsafe.Pointer(&flags)), 0, uintptr(unsafe.Pointer(&qpc))), "GetBuffer"); err != nil {
 			return err
 		}
 		var samples []float32
@@ -252,7 +259,14 @@ func (s *session) drain(out *framer, filler *silenceFiller) error {
 			return convErr
 		}
 		filler.packet(time.Now())
-		out.push(samples)
+		at := s.clockBase.Add(time.Duration(int64(qpc)-s.qpcBase) * 100 * time.Nanosecond)
+		if flags&4 != 0 || qpc == 0 {
+			at = time.Now().Add(-time.Duration(frames) * time.Second / time.Duration(s.rate))
+		}
+		discontinuity := s.packetSeen && flags&(1|4) != 0
+		s.packetSeen = true
+		out.discontinuity = discontinuity
+		out.pushAt(samples, at, false)
 	}
 }
 
@@ -273,7 +287,15 @@ func (wasapi) Start(ctx context.Context, src Source, sink func(Frame), fail func
 			return
 		}
 		defer windows.CoUninitialize()
-		s := &session{src: src}
+		var counter, frequency int64
+		counterOK, _, _ := queryCounter.Call(uintptr(unsafe.Pointer(&counter)))
+		clockBase := time.Now()
+		freqOK, _, _ := queryFrequency.Call(uintptr(unsafe.Pointer(&frequency)))
+		if counterOK == 0 || freqOK == 0 || frequency <= 0 {
+			ready <- opened{err: errors.New("Не удалось получить часы аудиоустройства")}
+			return
+		}
+		s := &session{src: src, clockBase: clockBase, qpcBase: counter/frequency*10000000 + (counter%frequency)*10000000/frequency}
 		defer s.close()
 		dev, err := s.open()
 		ready <- opened{dev, err}
@@ -283,6 +305,7 @@ func (wasapi) Start(ctx context.Context, src Source, sink func(Frame), fail func
 		out := &framer{rate: s.rate, channels: s.channels, sink: sink}
 		filler := &silenceFiller{rate: s.rate, channels: s.channels}
 		filler.packet(time.Now())
+		lastPoll := time.Now()
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 		for {
@@ -291,13 +314,20 @@ func (wasapi) Start(ctx context.Context, src Source, sink func(Frame), fail func
 				return
 			case <-ticker.C:
 			}
+			now := time.Now()
+			if now.Sub(lastPoll) > 2*time.Second {
+				fail(errors.New("Захват звука прерван после длительной остановки системы"))
+				return
+			}
+			lastPoll = now
 			if err := s.drain(out, filler); err != nil {
 				fail(err)
 				return
 			}
 			if src == System {
+				at := filler.covered
 				if zeros := filler.fill(time.Now()); len(zeros) > 0 {
-					out.push(zeros)
+					out.pushAt(zeros, at, true)
 				}
 			}
 		}

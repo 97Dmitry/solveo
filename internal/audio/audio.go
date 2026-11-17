@@ -19,6 +19,10 @@ const (
 
 // Frame is up to 100 ms of interleaved float32 samples owned by the receiver.
 type Frame struct {
+	// At is the monotonic time of the first sample; zero for untimed sources.
+	At             time.Time
+	Synthetic      bool // Loopback silence filler, not an endpoint packet.
+	Discontinuity  bool // Endpoint reported lost or invalid-timestamp audio.
 	Rate, Channels int
 	Samples        []float32
 }
@@ -68,15 +72,21 @@ const MaxFrameBytes = 60 << 10
 
 // framer splits captured packets into frames of at most 100 ms and MaxFrameBytes.
 type framer struct {
+	discontinuity  bool
 	rate, channels int
 	sink           func(Frame)
 }
 
-func (f *framer) push(samples []float32) {
+func (f *framer) push(samples []float32) { f.pushAt(samples, time.Time{}, false) }
+func (f *framer) pushAt(samples []float32, at time.Time, synthetic bool) {
 	limit := min(f.rate/10, MaxFrameBytes/4/f.channels) * f.channels
 	for len(samples) > 0 {
 		n := min(limit, len(samples))
-		f.sink(Frame{Rate: f.rate, Channels: f.channels, Samples: append([]float32(nil), samples[:n]...)})
+		f.sink(Frame{At: at, Synthetic: synthetic, Discontinuity: f.discontinuity, Rate: f.rate, Channels: f.channels, Samples: append([]float32(nil), samples[:n]...)})
+		f.discontinuity = false
+		if !at.IsZero() {
+			at = at.Add(time.Duration(n/f.channels) * time.Second / time.Duration(f.rate))
+		}
 		samples = samples[n:]
 	}
 }
@@ -97,7 +107,7 @@ func (s *silenceFiller) fill(now time.Time) []float32 {
 	if s.covered.IsZero() || gap <= packetJitter {
 		return nil
 	}
-	frames := int(gap * time.Duration(s.rate) / time.Second)
+	frames := min(s.rate/10, int(gap*time.Duration(s.rate)/time.Second))
 	s.covered = s.covered.Add(time.Duration(frames) * time.Second / time.Duration(s.rate))
 	return make([]float32, frames*s.channels)
 }
