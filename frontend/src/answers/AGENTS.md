@@ -1,0 +1,6 @@
+# Auto answers window
+
+- `answers.html` loads a detached renderer. Use `answersWindow` from `bridge/wails.ts` and its minimal view. Go owns the active session, player state, work and errors. The single player action follows that state and can open audio settings for prerequisites. The renderer owns the expanded card and scroll position. Closing the window leaves the session intact.
+- Items arrive chronologically. Render newest first and keep the open card by ID across polling and revisions. Preserve its viewport offset when questions arrive above it. The jump button explicitly returns focus and scroll to the newest card.
+- Request the body only for the open card. Match replies against session, card, revision and status. Poll streaming bodies every 200 ms and fetch settled bodies once per revision/status. Retry failed reads after 1 s. Cache confirmed saved text while awaiting revision details; keep it copyable. Stream previews use provisional styling and have no copy actions.
+- Insert sends the session and card IDs. Go resolves the question and routes it to the live chat editor without submitting it. Retry applies to the latest failed answer or an older card with its own failed revision. Retry and discard also send the expected attempt ID. The discard confirmation resets when the pending attempt changes or ends. Pin is local to this child window.

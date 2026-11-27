@@ -344,3 +344,252 @@ func TestConfirmDraftCannotBypassFreshnessOrErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticQuestionRequiresFreshSubstantiveSystemEvidence(t *testing.T) {
+	old := seg("old", "system", "Какие есть типы данных?")
+	old.Seq = 1
+	filler := seg("filler", "system", "Э-э… Угу.")
+	filler.Seq = 2
+	mic := seg("mic", "mic", "Про числовые типы?")
+	mic.Seq = 3
+	no := seg("no", "system", "Нет.")
+	no.Seq = 4
+	in := Input{Automatic: true, ProcessedThrough: 1, Segments: []Segment{old, filler, mic, no}}
+	for _, tc := range []struct {
+		name string
+		ids  []string
+		ok   bool
+	}{
+		{name: "processed", ids: []string{"old"}},
+		{name: "hesitation", ids: []string{"filler"}},
+		{name: "mic with old system speech", ids: []string{"old", "mic"}},
+		{name: "meaningful short reply", ids: []string{"no"}, ok: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Result{HasQuestion: true, Ready: true, Text: "Какие есть типы данных?", SourceIDs: tc.ids}
+			if err := Validate(in, r); (err == nil) != tc.ok {
+				t.Fatalf("Validate = %v, accepted = %v", err, tc.ok)
+			}
+		})
+	}
+	in.Current = Card{ID: "draft", Text: old.Text, Sources: []Segment{old}}
+	in.DraftCheck = true
+	r := Result{HasQuestion: true, Ready: true, Text: old.Text, SourceIDs: []string{"old"}}
+	if err := Validate(in, r); err != nil {
+		t.Fatalf("draft check rejected its source: %v", err)
+	}
+}
+
+func TestIndependentAutomaticQuestionDiscardsPreviousDraftSources(t *testing.T) {
+	b := modelDraft(t)
+	b.Observe(seg("new", "system", "Как работает GC?"))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	in.Automatic = true
+	if err := b.Apply(in, Result{HasQuestion: true, Ready: true, Text: "Как работает GC?", SourceIDs: []string{"new"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if sources := b.View().Sources; len(sources) != 1 || sources[0].ID != "new" {
+		t.Fatal(sources)
+	}
+}
+
+func TestAutomaticFollowupUsesExplicitOlderTargetAndSentUpdatesItInPlace(t *testing.T) {
+	b := New("c")
+	b.RestoreRecent([]Card{{ID: "types", Text: "Какие есть типы данных?"}, {ID: "gc", Text: "Как работает GC?"}})
+	b.Enable(true)
+	b.Observe(seg("numbers", "system", "К первому вопросу: только числовые типы."))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	in.Automatic = true
+	r := Result{HasQuestion: true, Ready: true, Text: "Какие есть числовые типы данных?", SourceIDs: []string{"numbers"}, FollowUp: true, Refinement: true, TargetQuestionID: "types"}
+	if err := b.Apply(in, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if v := b.View(); !v.CanSend || v.PreviousQuestionID != "types" {
+		t.Fatal(v)
+	}
+	b.Sent("types")
+	b.Observe(seg("next", "system", "К первому вопросу о вашем опыте: только про Go."))
+	in, ok = b.Begin(time.Now())
+	if !ok || len(in.Recent) != 2 || in.Recent[0].ID != "types" || in.Recent[0].Text != r.Text || in.Recent[1].ID != "gc" {
+		t.Fatal(in.Recent)
+	}
+	in.Automatic = true
+	in.Recent = append([]Card{{ID: "intro", Text: "Расскажите о себе"}}, in.Recent...)
+	r.Text = "Расскажите о своём опыте работы с Go."
+	r.SourceIDs = []string{"next"}
+	r.TargetQuestionID = "intro"
+	if err := b.Apply(in, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if v := b.View(); !v.CanSend || v.PreviousQuestionID != "intro" {
+		t.Fatal(v)
+	}
+	b.Sent("intro")
+	b.Observe(seg("last", "system", "Следующий вопрос"))
+	in, ok = b.Begin(time.Now())
+	if !ok || len(in.Recent) != 2 || in.Recent[1].ID != "gc" {
+		t.Fatal(in.Recent)
+	}
+}
+
+func TestFollowupTargetMustBeExplicitInAutomaticMode(t *testing.T) {
+	s := seg("s", "system", "Только числовые типы.")
+	s.Seq = 1
+	in := Input{Automatic: true, Segments: []Segment{s}, Recent: []Card{{ID: "types"}}}
+	r := Result{HasQuestion: true, Ready: true, FollowUp: true, Text: "Какие есть числовые типы?", SourceIDs: []string{"s"}}
+	if err := Validate(in, r); err == nil {
+		t.Fatal("automatic follow-up chose a target implicitly")
+	}
+	r.TargetQuestionID = "other"
+	if err := Validate(in, r); err == nil {
+		t.Fatal("automatic follow-up accepted a foreign target")
+	}
+	in.Automatic = false
+	r.TargetQuestionID = ""
+	if err := Validate(in, r); err != nil {
+		t.Fatalf("manual follow-up rejected the latest-question fallback: %v", err)
+	}
+}
+
+func TestAutomaticContinuationKeepsPriorDraftSources(t *testing.T) {
+	b := modelDraft(t)
+	b.Observe(seg("new", "system", "В Go."))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	in.Automatic = true
+	r := Result{HasQuestion: true, Ready: true, Text: "Что такое map и как работает поиск в Go?", SourceIDs: []string{"new"}, ContinuesDraft: true}
+	if err := b.Apply(in, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if sources := b.View().Sources; len(sources) != 2 || sources[0].ID != "s" || sources[1].ID != "new" {
+		t.Fatal(sources)
+	}
+}
+
+func TestAutomaticContinuationRejectsUnrelatedProcessedEvidence(t *testing.T) {
+	old := seg("old", "system", "Как работает GC?")
+	old.Seq = 1
+	draft := seg("draft", "system", "Какие есть типы данных в…")
+	draft.Seq = 2
+	fresh := seg("fresh", "system", "в Go")
+	fresh.Seq = 3
+	in := Input{
+		Automatic: true, ProcessedThrough: 2, Segments: []Segment{old, draft, fresh},
+		Current: Card{ID: "pending", Text: draft.Text, Sources: []Segment{draft}},
+	}
+	r := Result{HasQuestion: true, Ready: true, ContinuesDraft: true, Text: "Какие есть типы данных в Go?", SourceIDs: []string{"old", "fresh"}}
+	if err := Validate(in, r); err == nil {
+		t.Fatal("accepted processed evidence from another question")
+	}
+	r.SourceIDs = []string{"draft", "fresh"}
+	if err := Validate(in, r); err != nil {
+		t.Fatalf("rejected prior draft evidence: %v", err)
+	}
+}
+
+func TestAdditionalAutomaticRefinementKeepsItsTargetAndPosition(t *testing.T) {
+	b := New("c")
+	b.RestoreRecent([]Card{{ID: "types", Text: "Какие есть типы данных?"}})
+	b.Enable(true)
+	b.Observe(seg("batch", "system", "Как работает GC? А в вопросе про типы данных только числовые."))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	in.Automatic = true
+	r := Result{
+		HasQuestion: true, Ready: true, Text: "Как работает GC?", SourceIDs: []string{"batch"},
+		Additional: []AdditionalQuestion{{
+			Text: "Какие есть числовые типы данных?", SourceIDs: []string{"batch"},
+			TargetQuestionID: "types", Refinement: true,
+		}},
+	}
+	withoutTarget := r
+	withoutTarget.Additional = []AdditionalQuestion{{Text: r.Additional[0].Text, SourceIDs: []string{"batch"}, Refinement: true}}
+	if err := Validate(in, withoutTarget); err == nil {
+		t.Fatal("accepted additional refinement with no target")
+	}
+	if err := b.Apply(in, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if v := b.View(); v.Text != r.Text || v.Refinement {
+		t.Fatal(v)
+	}
+	b.Sent("gc")
+	if v := b.View(); !v.CanSend || v.Text != r.Additional[0].Text || !v.Refinement || v.PreviousQuestionID != "types" {
+		t.Fatal(v)
+	}
+}
+
+func TestRepeatedRefinementDoesNotBlockAdditionalIndependentQuestion(t *testing.T) {
+	b := New("c")
+	b.RestoreRecent([]Card{{ID: "types", Text: "Какие есть типы данных?"}})
+	b.Enable(true)
+	b.Observe(seg("repeat", "system", "Какие есть типы данных?"))
+	b.Observe(seg("different", "system", "Как работает GC?"))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	in.Automatic = true
+	r := Result{
+		HasQuestion: true, Ready: true, Text: "Какие есть типы данных?", SourceIDs: []string{"repeat"},
+		FollowUp: true, Refinement: true, TargetQuestionID: "types",
+		Additional: []AdditionalQuestion{{Text: "Как работает GC?", SourceIDs: []string{"different"}}},
+	}
+	if err := b.Apply(in, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if v := b.View(); !v.CanSend || v.Refinement || v.Text != "Как работает GC?" {
+		t.Fatal(v)
+	}
+}
+
+func TestIsFillerPreservesShortMeaningfulSpeech(t *testing.T) {
+	for _, phrase := range []string{"", "…?!", "Э-э… Угу.", "[кашель] (пауза) Ага.", "[noise] um, okay"} {
+		if !IsFiller(phrase) {
+			t.Errorf("substantive: %q", phrase)
+		}
+	}
+	for _, phrase := range []string{"Да.", "Нет.", "42", "Go", "C++", "Угу, только на Linux", "[noise] 2", "[i]", "а…"} {
+		if IsFiller(phrase) {
+			t.Errorf("filler: %q", phrase)
+		}
+	}
+}
+
+func TestAnalysisRetryRequiresSubstantiveSystemFinalAfterFailedSnapshot(t *testing.T) {
+	b := New("c")
+	b.Enable(true)
+	b.Observe(seg("question", "system", "Что такое GC?"))
+	in, ok := b.Begin(time.Now())
+	if !ok {
+		t.Fatal("no input")
+	}
+	b.Observe(seg("mic", "mic", "Другой вопрос"))
+	b.Observe(seg("filler", "system", "Э-э… Угу."))
+	_ = b.Apply(in, Result{}, errors.New("analysis failed"))
+	if b.RetryIfNewSystemSpeech(in.End) || b.View().Error == "" {
+		t.Fatal("retried without substantive system speech")
+	}
+	b.Observe(seg("tail", "system", "А в Go?"))
+	if !b.RetryIfNewSystemSpeech(in.End) || b.View().Error != "" {
+		t.Fatal("did not retry after new system speech")
+	}
+	next, ok := b.Begin(time.Now())
+	if !ok || next.End <= in.End {
+		t.Fatal(next)
+	}
+	_ = b.Apply(next, Result{}, errors.New("analysis failed again"))
+	if b.RetryIfNewSystemSpeech(next.End) {
+		t.Fatal("retried the same snapshot")
+	}
+}

@@ -40,23 +40,38 @@ type Card struct {
 	Text               string    `json:"text"`
 	Sources            []Segment `json:"sources"`
 	PreviousQuestionID string    `json:"previous_question_id"`
+	Refinement         bool      `json:"refinement,omitempty"`
 }
 type Input struct {
-	ProcessedThrough uint64    `json:"processed_through"`
-	Token            uint64    `json:"-"`
-	End              uint64    `json:"-"`
-	ChatID           string    `json:"chat_id"`
-	Segments         []Segment `json:"segments"`
-	Current          Card      `json:"current"`
-	Recent           []Card    `json:"recent"`
-	Context          string    `json:"context"`
+	Automatic        bool              `json:"automatic,omitempty"`
+	DraftCheck       bool              `json:"draft_check,omitempty"`
+	ProcessedThrough uint64            `json:"processed_through"`
+	Token            uint64            `json:"-"`
+	End              uint64            `json:"-"`
+	ChatID           string            `json:"chat_id"`
+	Segments         []Segment         `json:"segments"`
+	Current          Card              `json:"current"`
+	Recent           []Card            `json:"recent"`
+	RecentAnswers    map[string]string `json:"recent_answers,omitempty"`
+	Context          string            `json:"context"`
 }
 type Result struct {
-	HasQuestion bool     `json:"has_question"`
-	Ready       bool     `json:"ready"`
-	Text        string   `json:"text"`
-	SourceIDs   []string `json:"source_ids"`
-	FollowUp    bool     `json:"follow_up"`
+	HasQuestion      bool                 `json:"has_question"`
+	Ready            bool                 `json:"ready"`
+	Text             string               `json:"text"`
+	SourceIDs        []string             `json:"source_ids"`
+	FollowUp         bool                 `json:"follow_up"`
+	Refinement       bool                 `json:"refinement"`
+	TargetQuestionID string               `json:"target_question_id"`
+	ContinuesDraft   bool                 `json:"continues_draft"`
+	Additional       []AdditionalQuestion `json:"additional_questions"`
+}
+
+type AdditionalQuestion struct {
+	Text             string   `json:"text"`
+	SourceIDs        []string `json:"source_ids"`
+	TargetQuestionID string   `json:"target_question_id"`
+	Refinement       bool     `json:"refinement"`
 }
 type View struct {
 	Card
@@ -85,6 +100,9 @@ type Builder struct {
 	seq, processed, token, revision              uint64
 	running                                      *Input
 	force                                        bool
+	needsDraftCheck                              bool
+	queued                                       []Card
+	frozen                                       bool
 }
 
 func New(chatID string) *Builder {
@@ -195,17 +213,33 @@ func (b *Builder) pendingSystem() bool {
 	return false
 }
 func (b *Builder) Begin(now time.Time) (Input, bool) {
-	if !b.enabled || b.running != nil || b.manual || b.editing || b.err != "" {
+	return b.begin(now, false)
+}
+
+// BeginDraftCheck lets an automatic caller reconsider one settled draft without
+// new speech. It cannot make the draft ready by itself.
+func (b *Builder) BeginDraftCheck(now time.Time) (Input, bool) {
+	if !b.needsDraftCheck || !b.View().CanConfirm {
+		return Input{}, false
+	}
+	return b.begin(now, true)
+}
+
+func (b *Builder) begin(now time.Time, draftCheck bool) (Input, bool) {
+	if !b.enabled || b.running != nil || b.manual || b.editing || b.frozen || b.err != "" {
 		return Input{}, false
 	}
 	b.trim(now)
-	if b.err != "" || (!b.force && !b.pendingSystem()) {
+	if b.err != "" || (!draftCheck && !b.force && !b.pendingSystem()) {
 		return Input{}, false
 	}
 	b.force = false
+	if draftCheck {
+		b.needsDraftCheck = false
+	}
 	b.token++
 	b.revision++
-	in := Input{ProcessedThrough: b.processed, Token: b.token, End: b.seq, ChatID: b.chatID, Segments: slices.Clone(b.window), Current: cloneCard(b.current), Recent: []Card{}}
+	in := Input{ProcessedThrough: b.processed, Token: b.token, End: b.seq, ChatID: b.chatID, Segments: slices.Clone(b.window), Current: cloneCard(b.current), Recent: []Card{}, DraftCheck: draftCheck}
 	for _, c := range b.recent {
 		in.Recent = append(in.Recent, cloneCard(c))
 	}
@@ -213,43 +247,142 @@ func (b *Builder) Begin(now time.Time) (Input, bool) {
 	b.running = &in
 	return in, true
 }
+
+// EvidenceError identifies a result whose source selection can be reconsidered
+// by the analyzer using the same snapshot. Messages contain no model text.
+type EvidenceError string
+
+func (e EvidenceError) Error() string { return string(e) }
+
 func Validate(in Input, r Result) error {
+	if len(r.Additional) > 0 && (!in.Automatic || in.DraftCheck || !r.HasQuestion || !r.Ready || len(r.Additional) > 5) {
+		return errors.New("некорректный список дополнительных вопросов")
+	}
+	if r.Refinement && !r.FollowUp {
+		return errors.New("исправление должно ссылаться на предыдущий вопрос")
+	}
+	if !r.FollowUp && r.TargetQuestionID != "" {
+		return errors.New("самостоятельный вопрос не может ссылаться на предыдущий")
+	}
+	if in.Automatic && r.FollowUp && r.TargetQuestionID == "" {
+		return errors.New("сборщик не указал ID предыдущего вопроса")
+	}
+	if r.ContinuesDraft && in.Current.ID == "" {
+		return errors.New("у продолжения нет текущего черновика")
+	}
 	if !utf8.ValidString(r.Text) || utf8.RuneCountInString(r.Text) > MaxCard || len(r.SourceIDs) > MaxSegments {
 		return errors.New("некорректный размер результата сборщика")
 	}
 	if !r.HasQuestion {
-		if r.Ready || strings.TrimSpace(r.Text) != "" || len(r.SourceIDs) > 0 || r.FollowUp {
+		if r.Ready || strings.TrimSpace(r.Text) != "" || len(r.SourceIDs) > 0 || r.FollowUp || r.ContinuesDraft {
 			return errors.New("противоречивый результат сборщика")
 		}
 		return nil
 	}
-	if strings.TrimSpace(r.Text) == "" || len(r.SourceIDs) == 0 {
+	if strings.TrimSpace(r.Text) == "" {
 		return errors.New("сборщик вернул вопрос без текста или оснований")
 	}
+	if len(r.SourceIDs) == 0 {
+		return EvidenceError("сборщик вернул вопрос без оснований")
+	}
+	requireFresh := in.Automatic && !in.DraftCheck
 	allowed := map[string]Segment{}
-	for _, s := range in.Segments {
-		allowed[s.ID] = s
+	if !requireFresh || r.ContinuesDraft {
+		for _, s := range in.Current.Sources {
+			allowed[s.ID] = s
+		}
 	}
-	for _, s := range in.Current.Sources {
-		allowed[s.ID] = s
+	if !in.DraftCheck {
+		for _, s := range in.Segments {
+			allowed[s.ID] = s
+		}
 	}
+	checkSubstance := in.Automatic || in.DraftCheck
 	system := false
 	seen := map[string]bool{}
 	for _, id := range r.SourceIDs {
 		s, ok := allowed[id]
 		if !ok || seen[id] {
+			if in.Automatic {
+				return EvidenceError("сборщик указал недоступный или повторный ID реплики")
+			}
 			return fmt.Errorf("некорректное основание вопроса: %s", id)
 		}
 		seen[id] = true
-		system = system || s.Track == "system"
+		if requireFresh && s.Seq <= in.ProcessedThrough && (!r.ContinuesDraft || !slices.ContainsFunc(in.Current.Sources, func(prior Segment) bool {
+			return prior.ID == id
+		})) {
+			return EvidenceError("для вопроса допустимы новые реплики и источники продолженного черновика")
+		}
+		system = system || (s.Track == "system" && !checkSubstance) || substantiveSystemFinal(s)
 	}
 	if !system {
-		return errors.New("вопрос не опирается на системную речь")
+		return EvidenceError("вопрос не опирается на системную речь")
 	}
-	if r.FollowUp && len(in.Recent) == 0 {
+	if requireFresh && !slices.ContainsFunc(in.Segments, func(s Segment) bool {
+		return seen[s.ID] && s.Seq > in.ProcessedThrough && substantiveSystemFinal(s)
+	}) {
+		return EvidenceError("вопрос не опирается на новую содержательную системную реплику")
+	}
+	if r.FollowUp && targetQuestion(in, r).ID == "" {
 		return errors.New("у уточнения нет предыдущего вопроса")
 	}
+	for _, extra := range r.Additional {
+		if _, err := additionalCard(in, extra); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func targetQuestion(in Input, r Result) Card {
+	if !r.FollowUp || len(in.Recent) == 0 {
+		return Card{}
+	}
+	if r.TargetQuestionID == "" {
+		return in.Recent[len(in.Recent)-1]
+	}
+	return findRecentQuestion(in.Recent, r.TargetQuestionID)
+}
+
+func findRecentQuestion(recent []Card, id string) Card {
+	for _, c := range recent {
+		if c.ID == id {
+			return c
+		}
+	}
+	return Card{}
+}
+
+func additionalCard(in Input, extra AdditionalQuestion) (Card, error) {
+	if strings.TrimSpace(extra.Text) == "" || !utf8.ValidString(extra.Text) || utf8.RuneCountInString(extra.Text) > MaxCard || len(extra.SourceIDs) > MaxSegments {
+		return Card{}, errors.New("некорректный дополнительный вопрос")
+	}
+	if extra.Refinement && extra.TargetQuestionID == "" {
+		return Card{}, errors.New("у дополнительного уточнения не указан предыдущий вопрос")
+	}
+	if extra.TargetQuestionID != "" && findRecentQuestion(in.Recent, extra.TargetQuestionID).ID == "" {
+		return Card{}, errors.New("дополнительное уточнение ссылается на неизвестный вопрос")
+	}
+	if len(extra.SourceIDs) == 0 {
+		return Card{}, EvidenceError("сборщик вернул дополнительный вопрос без оснований")
+	}
+	card := Card{
+		Text: extra.Text, Origin: OriginAutomatic, Version: 1,
+		PreviousQuestionID: extra.TargetQuestionID, Refinement: extra.Refinement,
+	}
+	seen := map[string]bool{}
+	for _, id := range extra.SourceIDs {
+		i := slices.IndexFunc(in.Segments, func(s Segment) bool {
+			return s.ID == id && s.Seq > in.ProcessedThrough && substantiveSystemFinal(s)
+		})
+		if i < 0 || seen[id] {
+			return Card{}, EvidenceError("дополнительный вопрос должен опираться на новые системные реплики")
+		}
+		seen[id] = true
+		card.Sources = append(card.Sources, in.Segments[i])
+	}
+	return card, ValidateSources(card.Sources)
 }
 func (b *Builder) Apply(in Input, r Result, err error) error {
 	if b.running == nil || in.Token != b.token {
@@ -264,8 +397,23 @@ func (b *Builder) Apply(in Input, r Result, err error) error {
 		b.err = err.Error()
 		return err
 	}
+	if repeatedRefinement(in, r) {
+		if len(r.Additional) == 0 {
+			r = Result{}
+		} else {
+			first := r.Additional[0]
+			r = Result{
+				HasQuestion: true, Ready: true, Text: first.Text, SourceIDs: first.SourceIDs,
+				FollowUp: first.TargetQuestionID != "", Refinement: first.Refinement,
+				TargetQuestionID: first.TargetQuestionID, Additional: r.Additional[1:],
+			}
+		}
+	}
 	if r.HasQuestion {
-		sources := slices.Clone(in.Current.Sources)
+		var sources []Segment
+		if !in.Automatic || in.DraftCheck || r.ContinuesDraft {
+			sources = slices.Clone(in.Current.Sources)
+		}
 		seen := map[string]bool{}
 		for _, s := range sources {
 			seen[s.ID] = true
@@ -294,15 +442,38 @@ func (b *Builder) Apply(in Input, r Result, err error) error {
 		b.current.Origin = OriginAutomatic
 		b.current.Text = r.Text
 		b.current.Sources = sources
+		b.current.Refinement = r.Refinement
+		b.current.PreviousQuestionID = targetQuestion(in, r).ID
 		b.ready = r.Ready
-		if r.FollowUp {
-			b.current.PreviousQuestionID = b.recent[len(b.recent)-1].ID
+		b.needsDraftCheck = !r.Ready && !in.DraftCheck
+		for _, extra := range r.Additional {
+			card, _ := additionalCard(in, extra) // sources were validated before applying any changes
+			card.ID = rand.Text()
+			b.queued = append(b.queued, card)
 		}
+		b.frozen = len(b.queued) > 0
 	}
 	b.processed = in.End
 	b.trim(time.Now())
 	return nil
 }
+
+func repeatedRefinement(in Input, r Result) bool {
+	if !in.Automatic || in.DraftCheck || !r.Refinement || r.ContinuesDraft {
+		return false
+	}
+	prior := strings.TrimSpace(targetQuestion(in, r).Text)
+	if strings.TrimSpace(r.Text) != prior {
+		return false
+	}
+	for _, s := range in.Segments {
+		if slices.Contains(r.SourceIDs, s.ID) && strings.TrimSpace(s.Text) != prior {
+			return false
+		}
+	}
+	return true
+}
+
 func (b *Builder) Edit(text string) error {
 	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > MaxCard {
 		return errors.New("вопрос длиннее 8000 символов")
@@ -374,6 +545,23 @@ func (b *Builder) Retry() {
 	b.force = true
 	b.revision++
 }
+
+// RetryIfNewSystemSpeech clears an analysis error when newer speech was already
+// observed while that analysis was running.
+func (b *Builder) RetryIfNewSystemSpeech(after uint64) bool {
+	if !b.enabled || b.overflow || b.err == "" || !slices.ContainsFunc(b.window, func(s Segment) bool {
+		return s.Seq > after && substantiveSystemFinal(s)
+	}) {
+		return false
+	}
+	b.Retry()
+	return true
+}
+
+func substantiveSystemFinal(s Segment) bool {
+	return s.Track == "system" && s.Final && !IsFiller(s.Text)
+}
+
 func (b *Builder) Skip() {
 	end := b.covered
 	if b.running != nil {
@@ -387,6 +575,9 @@ func (b *Builder) Skip() {
 	b.covered = 0
 	b.overflow = false
 	b.current = Card{Sources: []Segment{}}
+	b.needsDraftCheck = false
+	b.queued = nil
+	b.frozen = false
 	b.manual = false
 	b.editing = false
 	b.ready = false
@@ -398,12 +589,25 @@ func (b *Builder) Sent(messageID string) {
 	c := cloneCard(b.current)
 	c.ID = messageID
 	c.Sources = []Segment{}
-	b.recent = append(b.recent, c)
+	if i := slices.IndexFunc(b.recent, func(old Card) bool { return old.ID == messageID }); i >= 0 {
+		c.PreviousQuestionID = b.recent[i].PreviousQuestionID
+		b.recent[i] = c
+	} else if !c.Refinement || c.PreviousQuestionID != messageID {
+		b.recent = append(b.recent, c)
+	}
 	if len(b.recent) > 3 {
 		b.recent = b.recent[len(b.recent)-3:]
 	}
 	// A saved manual version consumes only analyzed input; later speech survives.
+	queued := b.queued
 	b.Skip()
+	if len(queued) > 0 {
+		b.current = queued[0]
+		b.queued = queued[1:]
+		b.covered = b.processed
+		b.frozen = true
+		b.ready = true
+	}
 }
 
 // Consumed records a question sent directly from transcript phrases rather than from this card.
@@ -430,6 +634,9 @@ func (b *Builder) Consumed(messageID, text string, ids []string) {
 	b.covered = 0
 	b.overflow = false
 	b.current = Card{Sources: []Segment{}}
+	b.needsDraftCheck = false
+	b.queued = nil
+	b.frozen = false
 	b.ready = false
 	b.err = ""
 	b.pausedStale = false
@@ -438,9 +645,13 @@ func (b *Builder) Consumed(messageID, text string, ids []string) {
 func (b *Builder) RestoreRecent(cards []Card) {
 	b.recent = nil
 	for _, c := range cards {
+		for _, source := range c.Sources {
+			b.seq = max(b.seq, source.Seq)
+		}
 		c.Sources = []Segment{}
 		b.recent = append(b.recent, cloneCard(c))
 	}
+	b.processed = b.seq
 	if len(b.recent) > 3 {
 		b.recent = b.recent[len(b.recent)-3:]
 	}
@@ -452,7 +663,7 @@ func (b *Builder) View() View {
 	}
 	v.Unincluded = b.seq > b.processed || len(b.partial) > 0 || b.pausedStale
 	hasText := b.current.ID != "" && strings.TrimSpace(b.current.Text) != ""
-	fresh := b.err == "" && b.running == nil && !b.pendingSystem() && len(b.partial) == 0 && !b.pausedStale
+	fresh := b.err == "" && b.running == nil && !b.pausedStale && (b.frozen || (!b.pendingSystem() && len(b.partial) == 0))
 	v.CanSend = b.ready && hasText && !b.editing && (b.manual || fresh)
 	v.CanConfirm = hasText && !b.ready && !b.manual && !b.editing && fresh
 	switch {

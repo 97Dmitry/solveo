@@ -2,8 +2,10 @@ package history
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/97Dmitry/solveo/internal/chat"
+	"github.com/97Dmitry/solveo/internal/questionbuilder"
 )
 
 func validStatus(status string) bool {
@@ -76,6 +78,17 @@ func validateDocument(c chat.Chat) error {
 			}
 			attempts[a.ID] = true
 		}
+	}
+	for id, revision := range c.AnswerRevisions {
+		target := messages[id]
+		a := revision.Attempt
+		q := revision.Question
+		if target.Role != chat.RoleUser || target.Question == nil || !idPattern.MatchString(a.ID) || attempts[a.ID] ||
+			!validStatus(a.Status) || a.Status == chat.StatusComplete || !q.Refinement || q.Origin != questionbuilder.OriginAutomatic ||
+			(revision.Superseded && a.Status != chat.StatusCanceled) || strings.TrimSpace(q.Text) == "" || questionbuilder.ValidateSources(q.Sources) != nil {
+			return errors.New("в архиве некорректная попытка пересмотра ответа")
+		}
+		attempts[a.ID] = true
 	}
 	return nil
 }

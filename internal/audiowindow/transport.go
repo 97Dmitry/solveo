@@ -36,32 +36,36 @@ type Config struct {
 	Y            int    `json:"y"`
 }
 type View struct {
-	Meetings    meeting.State     `json:"meetings"`
-	Question    core.QuestionView `json:"question"`
-	Docked      bool              `json:"docked"`
-	WindowError string            `json:"window_error"`
-	Pinned      bool              `json:"pinned"`
-	Audio       core.AudioView    `json:"audio"`
-	ChatID      string            `json:"chat_id"`
-	ChatTitle   string            `json:"chat_title"`
-	CanSend     bool              `json:"can_send"`
-	Disabled    bool              `json:"disabled"`
-	Theme       string            `json:"theme"`
-	UIScale     int               `json:"ui_scale"`
-	ShowVersion uint64            `json:"show_version"`
-	Dictionary  []string          `json:"dictionary"`
-	SendHotkey  string            `json:"send_hotkey"`
+	Answers          *core.AutoAnswersView `json:"answers,omitempty"`
+	Meetings         meeting.State         `json:"meetings"`
+	Question         core.QuestionView     `json:"question"`
+	Docked           bool                  `json:"docked"`
+	WindowError      string                `json:"window_error"`
+	Pinned           bool                  `json:"pinned"`
+	Audio            core.AudioView        `json:"audio"`
+	ChatID           string                `json:"chat_id"`
+	ChatTitle        string                `json:"chat_title"`
+	CanSend          bool                  `json:"can_send"`
+	Disabled         bool                  `json:"disabled"`
+	Theme            string                `json:"theme"`
+	UIScale          int                   `json:"ui_scale"`
+	ShowVersion      uint64                `json:"show_version"`
+	SettingsVersion  uint64                `json:"settings_version,omitempty"`
+	AutoAnswersState string                `json:"auto_answers_state,omitempty"`
+	Dictionary       []string              `json:"dictionary"`
+	SendHotkey       string                `json:"send_hotkey"`
 }
 type Command struct {
-	Meeting  *core.MeetingCommand  `json:"meeting,omitempty"`
-	Question *core.QuestionCommand `json:"question,omitempty"`
-	Name     string                `json:"name"`
-	Provider string                `json:"provider,omitempty"`
-	Key      string                `json:"key,omitempty"`
-	IDs      []string              `json:"ids,omitempty"`
-	Text     string                `json:"text,omitempty"`
-	ChatID   string                `json:"chat_id,omitempty"`
-	Phrases  []string              `json:"phrases,omitempty"`
+	Meeting        *core.MeetingCommand  `json:"meeting,omitempty"`
+	Question       *core.QuestionCommand `json:"question,omitempty"`
+	Name           string                `json:"name"`
+	Provider       string                `json:"provider,omitempty"`
+	Key            string                `json:"key,omitempty"`
+	IDs            []string              `json:"ids,omitempty"`
+	Text           string                `json:"text,omitempty"`
+	ChatID         string                `json:"chat_id,omitempty"`
+	Phrases        []string              `json:"phrases,omitempty"`
+	AnswerRevision string                `json:"answer_revision,omitempty"`
 	// Diagnostic is an uncaught renderer error of the audio window.
 	Diagnostic *core.RendererError `json:"diagnostic,omitempty"`
 }
@@ -72,11 +76,12 @@ type Insert struct {
 	Text      string `json:"text"`
 }
 type Server struct {
-	config  Config
-	http    *http.Server
-	show    atomic.Uint64
-	mu      sync.Mutex
-	pending map[string]chan string
+	config   Config
+	http     *http.Server
+	show     atomic.Uint64
+	settings atomic.Uint64
+	mu       sync.Mutex
+	pending  map[string]chan string
 }
 
 type HistoryReader interface {
@@ -84,6 +89,14 @@ type HistoryReader interface {
 }
 
 func New(view func() View, execute func(context.Context, Command) error, readers ...HistoryReader) (*Server, error) {
+	var reader HistoryReader
+	if len(readers) > 0 {
+		reader = readers[0]
+	}
+	return newServer(view, execute, reader, nil)
+}
+
+func newServer(view func() View, execute func(context.Context, Command) error, reader HistoryReader, answers AnswerReader) (*Server, error) {
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
 		return nil, err
@@ -101,24 +114,29 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if len(readers) > 0 {
-			if reader, ok := readers[0].(MeetingReader); ok && serveMeetings(w, r, reader) {
-				return
-			}
+		if meetings, ok := reader.(MeetingReader); ok && serveMeetings(w, r, meetings) {
+			return
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/health":
 			_ = json.NewEncoder(w).Encode(map[string]uint64{"show_version": s.show.Load()})
-		case r.Method == http.MethodGet && len(readers) > 0 && strings.HasPrefix(r.URL.Path, "/chat-history/"):
-			result, err := readers[0].LoadChatAudioHistory(strings.TrimPrefix(r.URL.Path, "/chat-history/"))
+		case r.Method == http.MethodGet && reader != nil && strings.HasPrefix(r.URL.Path, "/chat-history/"):
+			result, err := reader.LoadChatAudioHistory(strings.TrimPrefix(r.URL.Path, "/chat-history/"))
 			if err != nil {
 				http.Error(w, "history unavailable", http.StatusBadRequest)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(result)
+		case r.Method == http.MethodGet && answers != nil && strings.HasPrefix(r.URL.Path, "/answer/"):
+			serveAnswer(w, r, answers)
 		case r.Method == http.MethodGet && r.URL.Path == "/state":
 			v := view()
 			v.ShowVersion = s.show.Load()
+			if answers != nil {
+				_ = json.NewEncoder(w).Encode(answersState{Theme: v.Theme, UIScale: v.UIScale, ShowVersion: v.ShowVersion, Answers: v.Answers})
+				return
+			}
+			v.SettingsVersion = s.settings.Load()
 			_ = json.NewEncoder(w).Encode(v)
 		case r.Method == http.MethodPost && r.URL.Path == "/command":
 			var cmd Command
@@ -128,8 +146,16 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 				http.Error(w, "invalid command", http.StatusBadRequest)
 				return
 			}
-			if !allowed(cmd.Name) {
+			allowedCommand := allowed
+			if answers != nil {
+				allowedCommand = allowedAnswer
+			}
+			if !allowedCommand(cmd.Name) {
 				http.Error(w, "unknown command", http.StatusBadRequest)
+				return
+			}
+			if answers != nil && !validAnswerTarget(cmd) {
+				http.Error(w, "invalid answer target", http.StatusBadRequest)
 				return
 			}
 			if len(cmd.IDs) > 300 {
@@ -159,14 +185,15 @@ func New(view func() View, execute func(context.Context, Command) error, readers
 }
 func allowed(name string) bool {
 	switch name {
-	case "meeting", "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "sendUnsent", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary", "diagnostic":
+	case "meeting", "question", "refresh", "prepare", "startModel", "stopModel", "startListening", "stopListening", "clear", "send", "sendUnsent", "insert", "deleteChatHistory", "selectProvider", "setKey", "deleteKey", "setDictionary", "diagnostic", "showAnswers":
 		return true
 	}
 	return false
 }
-func (s *Server) Config() Config { return s.config }
-func (s *Server) Show()          { s.show.Add(1) }
-func (s *Server) Close()         { _ = s.http.Close() }
+func (s *Server) Config() Config  { return s.config }
+func (s *Server) Show()           { s.show.Add(1) }
+func (s *Server) SelectSettings() { s.settings.Add(1) }
+func (s *Server) Close()          { _ = s.http.Close() }
 func (s *Server) RequestInsert(ctx context.Context, chatID, text string, emit func(Insert)) error {
 	if ctx.Err() != nil {
 		return errors.New("Вставка отменена")
@@ -252,10 +279,13 @@ func (c *Client) request(path string, cmd *Command, target any) error {
 		if strings.HasPrefix(path, "/chat-history/") {
 			return errors.New("Не удалось прочитать историю аудио: файл недоступен, повреждён или имеет неподдерживаемую версию")
 		}
+		if strings.HasPrefix(path, "/answer/") {
+			return errors.New("Не удалось прочитать автоответ")
+		}
 		return errors.New("Основное окно отклонило команду аудио")
 	}
 	limit := int64(4 * maxBody)
-	if strings.HasPrefix(path, "/chat-history/") || strings.HasPrefix(path, "/meeting/") {
+	if strings.HasPrefix(path, "/chat-history/") || strings.HasPrefix(path, "/meeting/") || strings.HasPrefix(path, "/answer/") {
 		limit = 64 << 20
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(target); err != nil {

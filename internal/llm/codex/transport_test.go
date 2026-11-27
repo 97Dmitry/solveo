@@ -329,6 +329,30 @@ func TestCrashIsUnknownAndNextRequestRestartsWithoutResubmitting(t *testing.T) {
 	}
 }
 
+func TestAutomaticAnswerTransportCrashLeavesMainThreadRunning(t *testing.T) {
+	var env fakeEnv
+	c := fakeClient(t, &env)
+	ctx := context.Background()
+	main, err := c.Generate(ctx, request("manual"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := c.AutomaticAnswers()
+	if _, err := auto.Generate(ctx, request("[crash-after] automatic"), nil); !errors.Is(err, llm.ErrOutcomeUnknown) {
+		t.Fatal("automatic transport did not return its own crash outcome", err)
+	}
+	next := request("manual continuation")
+	next.State = main.State
+	out, err := c.Generate(ctx, next, nil)
+	if err != nil || decodeState(t, out.State).ThreadID != decodeState(t, main.State).ThreadID {
+		t.Fatal("main thread did not survive the automatic crash", out, err)
+	}
+	lines := readLog(t, env.log)
+	if count(lines, "start") != 2 || count(lines, "thread/resume") != 0 {
+		t.Fatal("automatic answer restarted the main transport", lines)
+	}
+}
+
 func TestLoginCompletionBeforeRegistrationIsNotLost(t *testing.T) {
 	var env fakeEnv
 	c := fakeClient(t, &env)

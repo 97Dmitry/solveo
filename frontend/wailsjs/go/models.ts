@@ -222,6 +222,114 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class AutoAnswerDetail {
+	    session_id: string;
+	    id: string;
+	    question: string;
+	    text: string;
+	    error: string;
+	    status: string;
+	    revision: string;
+	    saved_answer: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoAnswerDetail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.id = source["id"];
+	        this.question = source["question"];
+	        this.text = source["text"];
+	        this.error = source["error"];
+	        this.status = source["status"];
+	        this.revision = source["revision"];
+	        this.saved_answer = source["saved_answer"];
+	    }
+	}
+	export class AutoAnswerItem {
+	    id: string;
+	    question: string;
+	    status: string;
+	    revised: boolean;
+	    revision: string;
+	    revision_attempt: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoAnswerItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.question = source["question"];
+	        this.status = source["status"];
+	        this.revised = source["revised"];
+	        this.revision = source["revision"];
+	        this.revision_attempt = source["revision_attempt"];
+	    }
+	}
+	export class AutoAnswerSession {
+	    id: string;
+	    title: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoAnswerSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	    }
+	}
+	export class AutoAnswersView {
+	    session_id: string;
+	    running: boolean;
+	    state: string;
+	    setup_hint?: string;
+	    available: boolean;
+	    busy: boolean;
+	    error: string;
+	    items: AutoAnswerItem[];
+	    sessions: AutoAnswerSession[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoAnswersView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.running = source["running"];
+	        this.state = source["state"];
+	        this.setup_hint = source["setup_hint"];
+	        this.available = source["available"];
+	        this.busy = source["busy"];
+	        this.error = source["error"];
+	        this.items = this.convertValues(source["items"], AutoAnswerItem);
+	        this.sessions = this.convertValues(source["sessions"], AutoAnswerSession);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ConfigInput {
 	    chat_id: string;
 	    title: string;
@@ -573,6 +681,7 @@ export namespace app {
 	    text: string;
 	    sources: questionbuilder.Segment[];
 	    previous_question_id: string;
+	    refinement?: boolean;
 	    chat_id: string;
 	    enabled: boolean;
 	    status: string;
@@ -583,6 +692,7 @@ export namespace app {
 	    editing: boolean;
 	    unincluded: boolean;
 	    revision: number;
+	    automatic: boolean;
 	    available: boolean;
 	    model: string;
 	    reasoning: string;
@@ -600,6 +710,7 @@ export namespace app {
 	        this.text = source["text"];
 	        this.sources = this.convertValues(source["sources"], questionbuilder.Segment);
 	        this.previous_question_id = source["previous_question_id"];
+	        this.refinement = source["refinement"];
 	        this.chat_id = source["chat_id"];
 	        this.enabled = source["enabled"];
 	        this.status = source["status"];
@@ -610,6 +721,7 @@ export namespace app {
 	        this.editing = source["editing"];
 	        this.unincluded = source["unincluded"];
 	        this.revision = source["revision"];
+	        this.automatic = source["automatic"];
 	        this.available = source["available"];
 	        this.model = source["model"];
 	        this.reasoning = source["reasoning"];
@@ -905,6 +1017,7 @@ export namespace audiowindow {
 	    text?: string;
 	    chat_id?: string;
 	    phrases?: string[];
+	    answer_revision?: string;
 	    diagnostic?: app.RendererError;
 	
 	    static createFrom(source: any = {}) {
@@ -922,6 +1035,7 @@ export namespace audiowindow {
 	        this.text = source["text"];
 	        this.chat_id = source["chat_id"];
 	        this.phrases = source["phrases"];
+	        this.answer_revision = source["answer_revision"];
 	        this.diagnostic = this.convertValues(source["diagnostic"], app.RendererError);
 	    }
 	
@@ -976,6 +1090,7 @@ export namespace audiowindow {
 		}
 	}
 	export class View {
+	    answers?: app.AutoAnswersView;
 	    meetings: meeting.State;
 	    question: app.QuestionView;
 	    docked: boolean;
@@ -989,6 +1104,8 @@ export namespace audiowindow {
 	    theme: string;
 	    ui_scale: number;
 	    show_version: number;
+	    settings_version?: number;
+	    auto_answers_state?: string;
 	    dictionary: string[];
 	    send_hotkey: string;
 	
@@ -998,6 +1115,7 @@ export namespace audiowindow {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.answers = this.convertValues(source["answers"], app.AutoAnswersView);
 	        this.meetings = this.convertValues(source["meetings"], meeting.State);
 	        this.question = this.convertValues(source["question"], app.QuestionView);
 	        this.docked = source["docked"];
@@ -1011,6 +1129,8 @@ export namespace audiowindow {
 	        this.theme = source["theme"];
 	        this.ui_scale = source["ui_scale"];
 	        this.show_version = source["show_version"];
+	        this.settings_version = source["settings_version"];
+	        this.auto_answers_state = source["auto_answers_state"];
 	        this.dictionary = source["dictionary"];
 	        this.send_hotkey = source["send_hotkey"];
 	    }
@@ -1646,6 +1766,7 @@ export namespace questionbuilder {
 	    text: string;
 	    sources: Segment[];
 	    previous_question_id: string;
+	    refinement?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Card(source);
@@ -1659,6 +1780,7 @@ export namespace questionbuilder {
 	        this.text = source["text"];
 	        this.sources = this.convertValues(source["sources"], Segment);
 	        this.previous_question_id = source["previous_question_id"];
+	        this.refinement = source["refinement"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

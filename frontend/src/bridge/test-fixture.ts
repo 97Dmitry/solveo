@@ -118,6 +118,7 @@ export function questionFixture(): import("./state").QuestionState {
     previous_question_id: "",
     chat_id: "chat",
     enabled: false,
+    automatic: false,
     status: "waiting",
     error: "",
     can_send: false,

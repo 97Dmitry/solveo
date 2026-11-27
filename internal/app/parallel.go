@@ -176,6 +176,11 @@ func (c *Controller) runParallel(ctx context.Context, opID string, doc chat.Chat
 		remaining--
 		answer := &doc.Messages[last].Answers[out.index]
 		c.closeStream(opID, attemptID, answer.Kind)
+		c.mu.Lock()
+		superseded := c.op.ID == opID && c.op.superseded
+		if superseded && out.err == nil {
+			out.err = context.Canceled
+		}
 		answer.ElapsedMS = out.elapsed
 		if out.index == 0 && mainComplete {
 			// Do not display an obsolete approach arriving after the finished solution.
@@ -200,14 +205,13 @@ func (c *Controller) runParallel(ctx context.Context, opID string, doc chat.Chat
 			mainComplete = out.err == nil
 			if mainComplete {
 				// A late preliminary approach must not appear after the solution.
-				c.closeStream(opID, attemptID, chat.AnswerApproach)
+				c.closeStreamLocked(streamKey{opID, attemptID, chat.AnswerApproach})
 				cancelFast()
 			}
 		}
-		c.mu.Lock()
 		if c.op.ID == opID {
 			c.active = chat.Clone(doc)
-			if out.index == 1 && out.err != nil {
+			if out.index == 1 && out.err != nil && !c.op.supersededCancellation(answer.Status) {
 				c.err = out.err.Error()
 			}
 			c.changedLocked()

@@ -120,21 +120,23 @@ type audioSource struct {
 }
 
 type audioState struct {
-	history  audioHistoryState
-	mu       sync.Mutex
-	revision uint64
-	checks   []stt.Check
-	busy     string
-	progress string
-	model    string
-	err      string
-	gap      bool
-	session  stt.SessionAPI
+	history   audioHistoryState
+	mu        sync.Mutex
+	revision  uint64
+	checks    []stt.Check
+	busy      string
+	disposing bool
+	progress  string
+	model     string
+	err       string
+	gap       bool
+	session   stt.SessionAPI
 	// provider started the current session; Stop always goes to it.
 	provider  stt.Provider
 	listening bool
 	sources   []*audioSource
 	tracks    map[string]string // stream ID → track, kept after stop for late finals
+	opening   map[string]string // source failures before the open batch is published
 	segments  []TranscriptSegment
 	revisions map[string]int
 	emitTimer *time.Timer
@@ -167,7 +169,7 @@ func (c *Controller) audioViewLocked() AudioView {
 		Providers: []AudioProviderOption{},
 		Revision:  a.revision,
 		Checks:    append([]stt.Check{}, a.checks...),
-		Busy:      a.busy,
+		Busy:      a.busyState(),
 		Progress:  a.progress,
 		Model:     a.model,
 		Listening: a.listening,
@@ -294,7 +296,7 @@ func (c *Controller) SetAudioProvider(id string) error {
 	}
 	a := &c.audio
 	a.mu.Lock()
-	if a.busy != "" || a.listening || a.model == audioModelReady || a.model == audioModelStarting {
+	if a.busyState() != "" || a.listening || a.model == audioModelReady || a.model == audioModelStarting {
 		a.mu.Unlock()
 		return errors.New("Сначала остановите распознавание")
 	}
@@ -345,7 +347,7 @@ func (c *Controller) audioReadyLocked() error {
 	if len(c.deps.Audio.Providers) == 0 {
 		return errors.New("распознавание речи недоступно")
 	}
-	switch a.busy {
+	switch a.busyState() {
 	case "":
 		return nil
 	case audioBusyPreparing:
@@ -359,6 +361,13 @@ func (c *Controller) audioReadyLocked() error {
 	default:
 		return errors.New("Подождите завершения предыдущей команды")
 	}
+}
+
+func (a *audioState) busyState() string {
+	if a.disposing {
+		return audioBusyStopping
+	}
+	return a.busy
 }
 
 // goAudio runs fn as a controller worker and clears busy afterwards. busy is set by the caller.
@@ -549,9 +558,11 @@ func (c *Controller) audioSessionEnded(session stt.SessionAPI, lost error) {
 	c.recordAudioErrorLocked("", lost.Error())
 	c.endAudioHistoryLocked()
 	a.session, a.provider, a.model, a.err, a.listening = nil, nil, audioModelFailed, uiText(lost.Error()), false
+	a.disposing = true
 	stops := a.stopSourcesLocked()
 	c.audioChangedLocked()
 	a.mu.Unlock()
+	c.automaticAudioLost(lost.Error())
 	for _, stop := range stops {
 		stop()
 	}
@@ -559,6 +570,10 @@ func (c *Controller) audioSessionEnded(session stt.SessionAPI, lost error) {
 	ctx, cancel := context.WithTimeout(context.Background(), audioStopTimeout)
 	defer cancel()
 	_ = provider.Stop(ctx) // free the GPU or the connection; a restart is an explicit user action
+	a.mu.Lock()
+	a.disposing = false
+	c.audioChangedLocked()
+	a.mu.Unlock()
 }
 
 // stopSourcesLocked marks all sources inactive and returns their stop functions.
@@ -580,11 +595,17 @@ func (c *Controller) audioStreamFailed(e stt.StreamError) {
 	}
 	a := &c.audio
 	a.mu.Lock()
+	if _, opening := a.opening[e.StreamID]; opening {
+		a.opening[e.StreamID] = uiText(e.Message)
+		a.mu.Unlock()
+		return
+	}
 	c.recordAudioErrorLocked(e.StreamID, e.Message)
 	var stop func()
-	active := false
+	active, systemFailed := false, false
 	for _, s := range a.sources {
 		if s.stream == e.StreamID {
+			systemFailed = s.view.Active && s.view.Track == "system"
 			stop, s.stop = s.stop, nil
 			s.view.Active, s.view.Error = false, uiText(e.Message)
 		}
@@ -598,6 +619,9 @@ func (c *Controller) audioStreamFailed(e stt.StreamError) {
 	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
+	if systemFailed {
+		c.automaticAudioLost(e.Message)
+	}
 	if stop != nil {
 		stop()
 	}
@@ -641,8 +665,20 @@ func (c *Controller) StopAudioModel() error {
 // StartListening opens one stream per source with the saved dictionary and starts capture.
 // A source that cannot start is shown with its error; listening needs at least one source.
 func (c *Controller) StartListening() error {
+	c.mu.Lock()
+	ctx := c.ctx
+	c.mu.Unlock()
+	return c.startListening(ctx, false)
+}
+
+// An automatic start requires system sound. If only the microphone is live,
+// retry the missing system stream within the existing capture session.
+func (c *Controller) startListening(startCtx context.Context, requireSystem bool) error {
 	c.captureMu.Lock()
 	defer c.captureMu.Unlock()
+	if err := startCtx.Err(); err != nil {
+		return err
+	}
 	if c.MeetingState().RecordingID != "" {
 		return errors.New("Сначала остановите запись встречи")
 	}
@@ -657,42 +693,70 @@ func (c *Controller) StartListening() error {
 		a.mu.Unlock()
 		return err
 	}
-	if a.listening {
+	retrySystem := a.listening
+	if retrySystem && (!requireSystem || c.autoAudioLocked().systemActive) {
 		a.mu.Unlock()
 		return nil
 	}
 	session := a.session
+	var retiredStream string
+	var retiredCapture func()
+	if retrySystem {
+		for _, source := range a.sources {
+			if source.view.Track == "system" {
+				retiredStream, retiredCapture = source.stream, source.stop
+				source.stop = nil
+				break
+			}
+		}
+	}
 	a.busy, a.err, a.gap = audioBusyOpening, "", false
+	a.opening = map[string]string{}
 	c.audioChangedLocked()
 	a.mu.Unlock()
+	if retiredCapture != nil {
+		retiredCapture()
+	}
+	if retiredStream != "" {
+		_ = session.CloseStream(retiredStream)
+	}
 
 	c.mu.Lock()
 	phrases := slices.Clone(c.settings.Audio.ContextPhrases)
 	ctx := c.ctx
 	c.mu.Unlock()
 	var sources []*audioSource
-	var firstErr error
+	var firstErr, systemErr error
 	a.mu.Lock()
 	historyProvider := a.provider
 	if historyProvider == nil {
 		historyProvider = c.audioProvider()
 	}
 	description := historyProvider.Describe()
-	a.history.runID = chat.ID()
-	historyID := c.beginAudioHistoryLocked(description.ID, description.Label, phrases)
+	historyID := a.history.current
+	tracks := []audio.Source{audio.System}
+	if !retrySystem {
+		a.history.runID = chat.ID()
+		historyID = c.beginAudioHistoryLocked(description.ID, description.Label, phrases)
+		tracks = append(tracks, audio.Mic)
+	}
 	a.mu.Unlock()
-	for _, src := range []audio.Source{audio.System, audio.Mic} {
+	for _, src := range tracks {
+		if startCtx.Err() != nil {
+			break
+		}
 		s := &audioSource{view: AudioSourceView{Track: string(src)}, stream: chat.ID()}
 		sources = append(sources, s)
 		a.mu.Lock()
 		a.tracks[s.stream] = string(src)
+		a.opening[s.stream] = ""
 		if historyID != "" {
 			a.history.streams[s.stream] = a.history.current
 			a.history.streamRuns[s.stream] = a.history.runID
 			a.history.streamChats[s.stream] = a.history.chatID
 		}
 		a.mu.Unlock()
-		err := session.Open(ctx, s.stream, string(src), phrases)
+		err := session.Open(startCtx, s.stream, string(src), phrases)
 		if err == nil {
 			var dev audio.Device
 			dev, s.stop, err = c.deps.Audio.Capturer.Start(ctx, src, c.audioSink(session, s.stream), c.audioCaptureFailed(s.stream))
@@ -704,20 +768,70 @@ func (c *Controller) StartListening() error {
 		if err != nil {
 			s.view.Error = uiText(err.Error())
 			firstErr = cmpErr(firstErr, err)
+			if src == audio.System {
+				systemErr = err
+			}
 			continue
 		}
 		s.view.Active = true
 	}
 	a.mu.Lock()
-	a.busy, a.sources = "", sources
-	for _, s := range sources {
+	a.busy = ""
+	opening := a.opening
+	a.opening = nil
+	if startCtx.Err() != nil || a.session != session {
+		if !a.listening {
+			c.endAudioHistoryLocked()
+		}
+		c.audioChangedLocked()
+		a.mu.Unlock()
+		for _, s := range sources {
+			if s.stop != nil {
+				s.stop()
+			}
+			_ = session.CloseStream(s.stream)
+		}
+		if err := startCtx.Err(); err != nil {
+			return err
+		}
+		return errors.New("Соединение с распознавателем потеряно")
+	}
+	type failedOpen struct {
+		stream string
+		stop   func()
+	}
+	var failed []failedOpen
+	for _, source := range sources {
+		if msg := opening[source.stream]; msg != "" {
+			source.view.Active, source.view.Error = false, msg
+			failed = append(failed, failedOpen{stream: source.stream, stop: source.stop})
+			source.stop = nil
+			err := errors.New(msg)
+			firstErr = cmpErr(firstErr, err)
+			if source.view.Track == "system" {
+				systemErr = err
+			}
+		}
+	}
+	previousSources := a.sources
+	a.sources = slices.Clone(sources)
+	if retrySystem {
+		// The existing microphone session remains live.
+		for _, source := range previousSources {
+			if source.view.Track != "system" {
+				a.sources = append(a.sources, source)
+			}
+		}
+	}
+	a.listening = false
+	for _, s := range a.sources {
 		a.listening = a.listening || s.view.Active
 	}
 	listening := a.listening
 	for _, doc := range a.history.docs {
 		if doc.runID == a.history.runID {
 			doc.session.Sources = nil
-			for _, source := range sources {
+			for _, source := range a.sources {
 				doc.session.Sources = append(doc.session.Sources, audiohistory.Source{StreamID: source.stream, Track: source.view.Track, Device: source.view.Device})
 			}
 			doc.revision++
@@ -735,6 +849,15 @@ func (c *Controller) StartListening() error {
 	}
 	c.audioChangedLocked()
 	a.mu.Unlock()
+	for _, source := range failed {
+		if source.stop != nil {
+			source.stop()
+		}
+		_ = session.CloseStream(source.stream)
+	}
+	if requireSystem && systemErr != nil {
+		return systemErr
+	}
 	if !listening {
 		return firstErr
 	}
@@ -766,11 +889,16 @@ func (c *Controller) audioCaptureFailed(stream string) func(error) {
 	return func(err error) {
 		a := &c.audio
 		a.mu.Lock()
-		defer a.mu.Unlock()
+		if _, opening := a.opening[stream]; opening {
+			a.opening[stream] = uiText(err.Error())
+			a.mu.Unlock()
+			return
+		}
 		c.recordAudioErrorLocked(stream, err.Error())
-		active := false
+		active, systemFailed := false, false
 		for _, s := range a.sources {
 			if s.stream == stream {
+				systemFailed = s.view.Active && s.view.Track == "system"
 				s.view.Active, s.view.Error = false, uiText(err.Error())
 			}
 			active = active || s.view.Active
@@ -782,11 +910,18 @@ func (c *Controller) audioCaptureFailed(stream string) func(error) {
 			}
 		}
 		c.audioChangedLocked()
+		a.mu.Unlock()
+		if systemFailed {
+			c.automaticAudioLost(err.Error())
+		}
 	}
 }
 
 // StopListening stops capture at once; the worker finishes the last phrase of each stream in the background.
 func (c *Controller) StopListening() error {
+	c.stopAutomaticQuestion()
+	c.captureMu.Lock()
+	defer c.captureMu.Unlock()
 	a := &c.audio
 	a.mu.Lock()
 	session := a.session

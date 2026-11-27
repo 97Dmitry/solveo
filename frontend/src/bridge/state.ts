@@ -120,6 +120,7 @@ export const questionSourceSchema = z.object({
 } satisfies Shape<questionbuilder.Segment>);
 export const questionCardSchema = z.object({
   origin: z.enum(["automatic", "manual"]).optional(),
+  refinement: z.boolean().optional(),
   id: z.string().max(256),
   version: revision,
   text: z.string().max(32000),
@@ -129,6 +130,7 @@ export const questionCardSchema = z.object({
 export const questionSchema = questionCardSchema.extend({
   chat_id: z.string().max(256),
   enabled: z.boolean(),
+  automatic: z.boolean(),
   status: z.enum(["waiting", "draft", "analyzing", "ready", "editing", "error"]),
   error: z.string().max(8192),
   can_send: z.boolean(),

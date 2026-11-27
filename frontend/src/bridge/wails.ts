@@ -126,6 +126,11 @@ export const reportAudioError = createReporter((report) =>
     new audiowindow.Command({ name: "diagnostic", diagnostic: { source: "audio", ...report } }),
   ),
 );
+export const reportAnswersError = createReporter((report) =>
+  audioWindowAPI.Execute(
+    new audiowindow.Command({ name: "diagnostic", diagnostic: { source: "answers", ...report } }),
+  ),
+);
 
 export async function loadAccount() {
   return accountSchema.parse(await api.Account());
@@ -149,6 +154,20 @@ export async function defaultHotkeys() {
   return hotkeysSchema.parse(await api.DefaultHotkeys());
 }
 
+const autoAnswersStateSchema = z.enum([
+  "unavailable",
+  "setup",
+  "paused",
+  "starting_model",
+  "starting_capture",
+  "listening",
+  "analyzing",
+  "awaiting_continuation",
+  "answering",
+  "error",
+]);
+export type AutoAnswersState = z.infer<typeof autoAnswersStateSchema>;
+
 const audioWindowSchema = z.object({
   meetings: meetingStateSchema,
   question: questionSchema,
@@ -165,6 +184,8 @@ const audioWindowSchema = z.object({
   show_version: z.number().int().nonnegative(),
   dictionary: z.array(z.string().max(512)).max(256),
   send_hotkey: z.string().max(64).default(""),
+  auto_answers_state: autoAnswersStateSchema.optional(),
+  settings_version: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<Wire<audiowindow.View>>;
 export type AudioWindowView = z.infer<typeof audioWindowSchema>;
 export const audioWindow = {
@@ -173,6 +194,80 @@ export const audioWindow = {
   execute: (command: Wire<audiowindow.Command>) =>
     audioWindowAPI.Execute(new audiowindow.Command(command)),
 };
+
+const autoAnswersViewSchema = z.object({
+  session_id: z.string().max(256),
+  state: autoAnswersStateSchema,
+  setup_hint: z.string().max(8192).optional(),
+  running: z.boolean(),
+  available: z.boolean(),
+  busy: z.boolean(),
+  error: z.string(),
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(256),
+        question: z.string(),
+        status: z.string().max(64),
+        revised: z.boolean(),
+        revision: z.string().max(256),
+        revision_attempt: z.boolean(),
+      }),
+    )
+    .nullable()
+    .transform((items) => items ?? []),
+  sessions: z
+    .array(z.object({ id: z.string().min(1).max(256), title: z.string() }))
+    .nullable()
+    .transform((sessions) => sessions ?? []),
+}) satisfies z.ZodType<Wire<app.AutoAnswersView>>;
+
+const autoAnswerDetailSchema = z.object({
+  session_id: z.string().min(1).max(256),
+  id: z.string().min(1).max(256),
+  question: z.string(),
+  text: z.string(),
+  error: z.string(),
+  status: z.string().max(64),
+  revision: z.string().max(256),
+  saved_answer: z.boolean(),
+}) satisfies z.ZodType<Wire<app.AutoAnswerDetail>>;
+
+const answersWindowSchema = audioWindowSchema
+  .pick({ theme: true, ui_scale: true, pinned: true })
+  .extend({ answers: autoAnswersViewSchema }) satisfies z.ZodType<
+  Pick<Wire<audiowindow.View>, "theme" | "ui_scale" | "pinned" | "answers">
+>;
+
+export type AutoAnswerDetail = z.infer<typeof autoAnswerDetailSchema>;
+export type AnswersWindowView = z.infer<typeof answersWindowSchema>;
+export type AnswersCommand =
+  | "pinAnswers"
+  | "pauseAnswers"
+  | "startAnswers"
+  | "openAudioSettings"
+  | "newAnswers"
+  | "openAnswers"
+  | "retryAnswer"
+  | "discardAnswer"
+  | "insertAnswer";
+
+export const answersWindow = {
+  state: async () => answersWindowSchema.parse(await audioWindowAPI.State()),
+  ready: audioWindowAPI.Ready,
+  answer: async (sessionID: string, cardID: string) =>
+    autoAnswerDetailSchema.parse(await audioWindowAPI.Answer(sessionID, cardID)),
+  command: (name: AnswersCommand, sessionID: string, cardID?: string, revision?: string) =>
+    audioWindow.execute({
+      name,
+      chat_id: sessionID,
+      ids: cardID === undefined ? undefined : [cardID],
+      answer_revision: revision,
+    }),
+  copy: actions.copy,
+  openLink: actions.openLink,
+};
+
 const audioInsertSchema = z.object({
   expires_at: z.number().int().positive(),
   id: z.string().min(1).max(64),

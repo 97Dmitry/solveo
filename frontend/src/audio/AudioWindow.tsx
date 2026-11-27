@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { audioWindow, type AudioWindowView } from "../bridge/wails";
-import type { QuestionCommand } from "../bridge/state";
-import { IconButton } from "../ui/Button";
+import type { QuestionCommand, QuestionState } from "../bridge/state";
+import { autoAnswersStatus } from "../ui/autoAnswersStatus";
+import { Button, IconButton } from "../ui/Button";
 import type { AudioActions } from "./actions";
 import { AudioAlerts } from "./AudioAlerts";
 import { AudioHistory } from "./AudioHistory";
@@ -32,15 +33,42 @@ export function AudioWindow() {
   const [view, setView] = useState<AudioWindowView | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const settingsTab = useRef<HTMLButtonElement>(null);
+  const focusSettings = useRef(false);
+  const question = useCallback(async (command: QuestionCommand) => {
+    setPending(true);
+    try {
+      await audioWindow.execute({ name: "question", question: command });
+    } finally {
+      setPending(false);
+    }
+  }, []);
+  const requestCatalog = useCallback(
+    (view: QuestionState) => {
+      if (view.available && view.models.length === 0)
+        void question(questionCommand(view, "models")).catch((error: unknown) =>
+          setError(String(error)),
+        );
+    },
+    [question],
+  );
   useEffect(() => {
     let stopped = false;
     let ready = false;
+    let settingsVersion = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
       try {
         const next = await audioWindow.state();
         if (stopped) return;
         setView(next);
+        const version = next.settings_version ?? 0;
+        if (version > settingsVersion) {
+          settingsVersion = version;
+          focusSettings.current = true;
+          setTab("settings");
+          requestCatalog(next.question);
+        }
         document.documentElement.dataset["theme"] = next.theme;
         document.documentElement.style.setProperty("--ui-scale", String(next.ui_scale / 100));
         if (!ready) {
@@ -62,7 +90,13 @@ export function AudioWindow() {
       stopped = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, []);
+  }, [requestCatalog]);
+  useLayoutEffect(() => {
+    if (tab === "settings" && focusSettings.current) {
+      focusSettings.current = false;
+      settingsTab.current?.focus({ preventScroll: true });
+    }
+  }, [tab, view?.settings_version]);
   const execute = useCallback(
     async (
       name: string,
@@ -87,14 +121,6 @@ export function AudioWindow() {
     },
     [],
   );
-  const question = useCallback(async (command: QuestionCommand) => {
-    setPending(true);
-    try {
-      await audioWindow.execute({ name: "question", question: command });
-    } finally {
-      setPending(false);
-    }
-  }, []);
   const refresh = useCallback(() => void execute("refresh"), [execute]);
   if (!view)
     return (
@@ -127,9 +153,7 @@ export function AudioWindow() {
   // Opening settings is the explicit action that requests the builder's model catalog.
   const open = (next: Tab) => {
     setTab(next);
-    const q = view.question;
-    if (next === "settings" && active !== "settings" && q.available && q.models.length === 0)
-      void question(questionCommand(q, "models")).catch((e: unknown) => setError(String(e)));
+    if (next === "settings" && active !== "settings") requestCatalog(view.question);
   };
   return (
     <main className="audio-window">
@@ -138,6 +162,20 @@ export function AudioWindow() {
           <p className="audio-window-chat" title={chatTitle}>
             Чат: {chatTitle}
           </p>
+          <div className="audio-answers-entry">
+            <Button
+              className="small"
+              disabled={pending}
+              onClick={() => void execute("showAnswers")}
+            >
+              Автоответы
+            </Button>
+            {view.auto_answers_state && (
+              <span className="audio-answers-state" role="status">
+                {autoAnswersStatus[view.auto_answers_state]}
+              </span>
+            )}
+          </div>
           <IconButton
             label={view.docked ? "Открепить" : "Прикрепить слева"}
             disabled={pending}
@@ -150,7 +188,10 @@ export function AudioWindow() {
         </div>
         <SessionControls
           audio={view.audio}
-          disabled={disabled || Boolean(view.meetings?.recording_id)}
+          disabled={
+            pending ||
+            (!view.audio.listening && (view.disabled || Boolean(view.meetings?.recording_id)))
+          }
           actions={actions}
           onSetup={() => open("settings")}
         />
@@ -182,7 +223,7 @@ export function AudioWindow() {
           <Tabs.Trigger className="audio-tab" value="dictionary">
             Словарь
           </Tabs.Trigger>
-          <Tabs.Trigger className="audio-tab" value="settings">
+          <Tabs.Trigger className="audio-tab" value="settings" ref={settingsTab}>
             Настройки
             {needsSetup(view.audio) && (
               <span className="tab-dot attention" aria-label="требуется настройка" />

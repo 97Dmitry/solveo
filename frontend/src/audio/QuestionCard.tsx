@@ -13,6 +13,11 @@ const statuses: Record<QuestionState["status"], string> = {
   editing: "Ручная правка",
   error: "Сборка остановлена",
 };
+
+function draftHint(view: QuestionState) {
+  if (!view.can_confirm) return "Ожидаю окончательных системных реплик или их анализа.";
+  return "Анализ завершён. Модель оставила вопрос черновиком: проверьте текст и подтвердите его либо дождитесь продолжения.";
+}
 // QuestionCard is the live part of the question builder: status, text and the per-card actions.
 // Model and enable settings live in QuestionSettings.
 export function QuestionCard({
@@ -122,13 +127,7 @@ export function QuestionCard({
           )}
         </div>
       </div>
-      {view.status === "draft" && (
-        <small className="question-hint">
-          {view.can_confirm
-            ? "Анализ завершён. Модель оставила вопрос черновиком: проверьте текст и подтвердите его либо дождитесь продолжения."
-            : "Ожидаю окончательных системных реплик или их анализа."}
-        </small>
-      )}
+      {view.status === "draft" && <small className="question-hint">{draftHint(view)}</small>}
       {(error || view.error) && (
         <p role="alert" className="audio-error">
           {error || view.error}

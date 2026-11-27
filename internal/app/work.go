@@ -251,6 +251,9 @@ func (c *Controller) recoveredLocked(doc chat.Chat) []StreamBlock {
 }
 
 func interruptedBlock(doc chat.Chat, b workstate.Block) bool {
+	if revision, ok := doc.AnswerRevisions[b.MessageID]; ok && revision.Attempt.ID == b.AttemptID {
+		return b.Block == blockMessage && revision.Attempt.Status == chat.StatusInterrupted
+	}
 	for _, m := range doc.Messages {
 		if m.ID != b.MessageID || m.Role != chat.RoleUser {
 			continue

@@ -38,5 +38,9 @@ export default defineConfig({
     ],
   },
   plugins: [react()],
-  build: { rolldownOptions: { input: { main: "index.html", audio: "audio.html" } } },
+  build: {
+    rolldownOptions: {
+      input: { main: "index.html", audio: "audio.html", answers: "answers.html" },
+    },
+  },
 });

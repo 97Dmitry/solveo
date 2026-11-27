@@ -8,6 +8,11 @@
 // [late] sends events of an older turn first, [split] writes lines in pieces,
 // [early] sends notifications before the turn/start response, [fail] fails the
 // turn, [big] exceeds the text limit and [stop-reading] stops reading stdin.
+// [question-evidence-once] cites a processed ID until validation feedback is
+// supplied, [question-evidence-always] always cites it, and
+// [question-unknown-target] returns a follow-up referencing an unknown question.
+// [question-draft-evidence] cites the current draft but omits continues_draft
+// until it receives validation feedback.
 package appservertest
 
 import (
@@ -19,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/97Dmitry/solveo/internal/questionbuilder"
 )
 
 const (
@@ -372,17 +379,37 @@ func (s *server) turn(id json.RawMessage, p map[string]any) {
 
 		if p["outputSchema"] != nil {
 			var input struct {
-				Segments []struct{ ID, Track, Text string }
+				questionbuilder.Input
+				EvidenceFeedback string `json:"evidence_feedback"`
 			}
 			_ = json.Unmarshal([]byte(text), &input)
-			answer = `{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false}`
-			for _, seg := range input.Segments {
-				if seg.Track == "system" {
-					data, _ := json.Marshal(map[string]any{"has_question": true, "ready": true, "text": seg.Text, "source_ids": []string{seg.ID}, "follow_up": false})
-					answer = string(data)
-					break
-				}
+			result := questionbuilder.Result{SourceIDs: []string{}, Additional: []questionbuilder.AdditionalQuestion{}}
+			segments := input.Segments
+			if input.DraftCheck {
+				segments = input.Current.Sources
 			}
+			for _, seg := range segments {
+				if seg.Track != "system" || (input.Automatic && !input.DraftCheck && seg.Seq <= input.ProcessedThrough) {
+					continue
+				}
+				result.HasQuestion = true
+				result.Ready = true
+				result.Text = seg.Text
+				result.SourceIDs = []string{seg.ID}
+				break
+			}
+			switch {
+			case has("question-evidence-always") || (has("question-evidence-once") && input.EvidenceFeedback == ""):
+				result.SourceIDs = []string{"processed"}
+			case has("question-draft-evidence") && len(input.Current.Sources) > 0:
+				result.SourceIDs = append([]string{input.Current.Sources[0].ID}, result.SourceIDs...)
+				result.ContinuesDraft = input.EvidenceFeedback != ""
+			case has("question-unknown-target"):
+				result.FollowUp = true
+				result.TargetQuestionID = "unknown"
+			}
+			data, _ := json.Marshal(result)
+			answer = string(data)
 		}
 		if has("show-instructions") {
 			answer = effective

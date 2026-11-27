@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -29,8 +30,25 @@ import (
 	native "github.com/97Dmitry/solveo/internal/platform/windows"
 )
 
+type detachedWindow struct {
+	flag, title, class, profile string
+	width, height               int
+	minWidth, minHeight         int
+}
+
+var detachedAudio = detachedWindow{
+	flag: "--audio-window", title: "Аудио", class: "SolveoAudio", profile: "AudioWebView2",
+	width: 460, height: 680, minWidth: 380, minHeight: 360,
+}
+
+var detachedAnswers = detachedWindow{
+	flag: "--answers-window", title: "Автоответы", class: "SolveoAnswers", profile: "AnswersWebView2",
+	width: 520, height: 680, minWidth: 380, minHeight: 360,
+}
+
 type audioProcess struct {
 	mu     sync.Mutex
+	mode   detachedWindow
 	server *audiowindow.Server
 	cmd    *exec.Cmd
 	done   chan struct{}
@@ -60,7 +78,7 @@ func (p *audioProcess) Show(x, y int, parent uintptr) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--audio-window")
+	cmd := exec.Command(exe, p.mode.flag)
 	cmd.Stdin = bytes.NewReader(data)
 	cmd.Env = audiowindow.ChildEnvironment(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -68,18 +86,18 @@ func (p *audioProcess) Show(x, y int, parent uintptr) error {
 	stderr := &diagnostics.Tail{Limit: 16 << 10}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
-		diagLog.Error("audio window failed to start", "error", err)
-		return errors.New("Не удалось открыть окно аудио")
+		diagLog.Error("detached window failed to start", "window", p.mode.class, "error", err)
+		return fmt.Errorf("не удалось открыть окно «%s»", p.mode.title)
 	}
-	diagLog.Info("audio window started", "pid", cmd.Process.Pid)
+	diagLog.Info("detached window started", "window", p.mode.class, "pid", cmd.Process.Pid)
 	p.cmd = cmd
 	p.done = make(chan struct{})
 	done := p.done
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			diagLog.Error("audio window exited", "pid", cmd.Process.Pid, "error", err, "stderr", stderr.String())
+			diagLog.Error("detached window exited", "window", p.mode.class, "pid", cmd.Process.Pid, "error", err, "stderr", stderr.String())
 		} else {
-			diagLog.Info("audio window exited", "pid", cmd.Process.Pid)
+			diagLog.Info("detached window exited", "window", p.mode.class, "pid", cmd.Process.Pid)
 		}
 		p.mu.Lock()
 		if p.cmd == cmd {
@@ -105,14 +123,35 @@ func (p *audioProcess) Close() {
 		}
 	}
 }
-func configureAudioWindow(controller *core.Controller, window *desktopWindow, app *App) (*audioProcess, error) {
+func (p *audioProcess) showBeside(window *desktopWindow) error {
+	window.mu.Lock()
+	ctx, parent := window.ctx, window.hwnd
+	window.mu.Unlock()
+	if ctx == nil {
+		return errors.New("Основное окно ещё не готово")
+	}
+	if p.mode.flag == detachedAnswers.flag {
+		bounds, err := native.WindowBounds(parent)
+		if err != nil {
+			return err
+		}
+		return p.Show(bounds.Min.X-p.mode.width-8, bounds.Min.Y, 0)
+	}
+	x, y := wruntime.WindowGetPosition(ctx)
+	width, _ := wruntime.WindowGetSize(ctx)
+	return p.Show(x+width+8, y, parent)
+}
+
+func configureDetachedWindows(controller *core.Controller, window *desktopWindow, app *App) (audioUI, answersUI *audioProcess, err error) {
 	var server *audiowindow.Server
 	view := func() audiowindow.View {
 		s := controller.AudioWindowTarget()
-		return audiowindow.View{Meetings: controller.MeetingState(), Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary, SendHotkey: s.SendHotkey}
+		return audiowindow.View{Meetings: controller.MeetingState(), Question: s.Question, Pinned: s.Pinned, Audio: controller.AudioSnapshot(), ChatID: s.ChatID, ChatTitle: s.Title, CanSend: s.CanSend, Disabled: s.Disabled, Theme: s.Theme, UIScale: s.UIScale, Dictionary: s.Dictionary, SendHotkey: s.SendHotkey, AutoAnswersState: controller.AutoAnswersState()}
 	}
 	execute := func(ctx context.Context, cmd audiowindow.Command) error {
 		switch cmd.Name {
+		case "showAnswers":
+			return answersUI.showBeside(window)
 		case "meeting":
 			if cmd.Meeting == nil {
 				return errors.New("Не задана команда встречи")
@@ -167,53 +206,35 @@ func configureAudioWindow(controller *core.Controller, window *desktopWindow, ap
 			}
 			return err
 		case "insert":
-			if cmd.ChatID != controller.AudioWindowTarget().ChatID {
-				return errors.New("Активный чат изменился; повторите вставку")
-			}
-			err := server.RequestInsert(ctx, cmd.ChatID, cmd.Text, func(v audiowindow.Insert) {
-				window.mu.Lock()
-				runtimeCtx := window.ctx
-				window.mu.Unlock()
-				if runtimeCtx != nil {
-					wruntime.EventsEmit(runtimeCtx, "solveo:audio-insert", v)
-				}
-			})
-			if err == nil {
-				window.Show()
-			}
-			return err
+			return requestMainInsert(ctx, server, controller, window, cmd.ChatID, cmd.Text)
 		default:
 			return errors.New("Неизвестная команда аудио")
 		}
 	}
-	var err error
 	server, err = audiowindow.New(view, execute, controller)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	p := &audioProcess{server: server}
-	app.showAudio = func() error {
-		window.mu.Lock()
-		ctx := window.ctx
-		parent := window.hwnd
-		window.mu.Unlock()
-		if ctx == nil {
-			return errors.New("Основное окно ещё не готово")
-		}
-		x, y := wruntime.WindowGetPosition(ctx)
-		width, _ := wruntime.WindowGetSize(ctx)
-		return p.Show(x+width+8, y, parent)
+	audioUI = &audioProcess{mode: detachedAudio, server: server}
+	answersUI, err = configureAnswersWindow(controller, window, server, func() error {
+		server.SelectSettings()
+		return audioUI.showBeside(window)
+	})
+	if err != nil {
+		server.Close()
+		return nil, nil, err
 	}
+	app.showAudio = func() error { return audioUI.showBeside(window) }
 	app.audioInsertResult = server.CompleteInsert
-	return p, nil
+	return audioUI, answersUI, nil
 }
 
-func runAudioWindow() error {
+func runAudioWindow(mode detachedWindow) error {
 	// The mode has been consumed; Wails dev must not parse it as its own flag.
 	os.Args = os.Args[:1]
 	var config audiowindow.Config
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 4096)).Decode(&config); err != nil {
-		return errors.New("Не удалось прочитать канал окна аудио")
+		return fmt.Errorf("не удалось прочитать канал окна «%s»", mode.title)
 	}
 	client, err := audiowindow.NewClient(config)
 	if err != nil {
@@ -228,6 +249,7 @@ func runAudioWindow() error {
 	}
 	var mu sync.Mutex
 	var runtimeCtx context.Context
+	var childHWND uintptr
 	initialized := false
 	var lastTheme string
 	var lastPinned bool
@@ -237,8 +259,24 @@ func runAudioWindow() error {
 	var closePolicy audiowindow.ClosePolicy
 	quitChild := func(ctx context.Context) { closePolicy.BeginQuit(); wruntime.Quit(ctx) }
 
-	dock := &audioDock{parent: uintptr(config.ParentWindow), parentPID: config.ParentPID}
-	bridge := &AudioWindowApp{client: client, dockLeft: dock.attach, float: dock.detach, layout: dock.layout}
+	var dock *audioDock
+	bridge := &AudioWindowApp{client: client}
+	assetOptions := &assetserver.Options{Assets: audiowindow.Assets(embedded), Handler: client.AudioHandler()}
+	if mode.flag == detachedAnswers.flag {
+		assetOptions = &assetserver.Options{Assets: audiowindow.AnswersAssets(embedded)}
+		bridge.setPinned = func(pinned bool) error {
+			mu.Lock()
+			hwnd := childHWND
+			mu.Unlock()
+			if hwnd == 0 {
+				return errors.New("Окно автоответов ещё не готово")
+			}
+			return native.PinDetachedWindow(hwnd, pinned)
+		}
+	} else {
+		dock = &audioDock{parent: uintptr(config.ParentWindow), parentPID: config.ParentPID}
+		bridge.dockLeft, bridge.float, bridge.layout = dock.attach, dock.detach, dock.layout
+	}
 	bridge.changed = func(v audiowindow.View) {
 		mu.Lock()
 		ctx := runtimeCtx
@@ -256,7 +294,7 @@ func runAudioWindow() error {
 				wruntime.WindowSetDarkTheme(ctx)
 			}
 		}
-		if pinChanged {
+		if dock != nil && pinChanged {
 			wruntime.WindowSetAlwaysOnTop(ctx, v.Pinned)
 		}
 	}
@@ -267,7 +305,9 @@ func runAudioWindow() error {
 		ok := initialized
 		mu.Unlock()
 		if ctx != nil && ok {
-			dock.manualShow()
+			if dock != nil {
+				dock.manualShow()
+			}
 			wruntime.WindowUnminimise(ctx)
 			wruntime.WindowShow(ctx)
 		}
@@ -284,14 +324,14 @@ func runAudioWindow() error {
 		mu.Lock()
 		defer mu.Unlock()
 		if !initialized {
-			return errors.New("Окно аудио ещё не готово")
+			return fmt.Errorf("окно «%s» ещё не готово", mode.title)
 		}
 		return nil
 	}
 	return wails.Run(&options.App{
-		Title: "Solveo — Аудио", Width: 460, Height: 680, MinWidth: 380, MinHeight: 360, StartHidden: true, HideWindowOnClose: false,
-		Windows:     &windows.Options{ContentProtection: true, WindowClassName: "SolveoAudio", WebviewUserDataPath: filepath.Join(os.Getenv("LOCALAPPDATA"), "Solveo", "AudioWebView2"), Theme: windows.Dark},
-		AssetServer: &assetserver.Options{Assets: audiowindow.Assets(embedded), Handler: client.AudioHandler()},
+		Title: "Solveo — " + mode.title, Width: mode.width, Height: mode.height, MinWidth: mode.minWidth, MinHeight: mode.minHeight, StartHidden: true, HideWindowOnClose: false,
+		Windows:     &windows.Options{ContentProtection: true, WindowClassName: mode.class, WebviewUserDataPath: filepath.Join(os.Getenv("LOCALAPPDATA"), "Solveo", mode.profile), Theme: windows.Dark},
+		AssetServer: assetOptions,
 		Bind:        []interface{}{bridge},
 		OnStartup: func(ctx context.Context) {
 			mu.Lock()
@@ -311,18 +351,19 @@ func runAudioWindow() error {
 							return
 						}
 						bridge.reveal(version)
-						switch dock.follow() {
-						case audiowindow.DockHide:
-							wruntime.WindowHide(ctx)
-						case audiowindow.DockShow:
-							wruntime.WindowUnminimise(ctx)
-							wruntime.WindowShow(ctx)
-						case audiowindow.DockKeep:
-						}
-						attached, _ := dock.layout()
 						interval := 200 * time.Millisecond
-						if attached {
-							interval = 33 * time.Millisecond
+						if dock != nil {
+							switch dock.follow() {
+							case audiowindow.DockHide:
+								wruntime.WindowHide(ctx)
+							case audiowindow.DockShow:
+								wruntime.WindowUnminimise(ctx)
+								wruntime.WindowShow(ctx)
+							case audiowindow.DockKeep:
+							}
+							if attached, _ := dock.layout(); attached {
+								interval = 33 * time.Millisecond
+							}
 						}
 						timer.Reset(interval)
 					}
@@ -331,10 +372,15 @@ func runAudioWindow() error {
 		},
 		OnShutdown: func(context.Context) { stopWatch() },
 		OnBeforeClose: func(ctx context.Context) bool {
-			return closePolicy.BeforeClose(func() { dock.manualHide(); wruntime.WindowHide(ctx) })
+			return closePolicy.BeforeClose(func() {
+				if dock != nil {
+					dock.manualHide()
+				}
+				wruntime.WindowHide(ctx)
+			})
 		},
 		OnDomReady: func(ctx context.Context) {
-			hwnd, err := native.FindMainWindow("SolveoAudio", uint32(os.Getpid()))
+			hwnd, err := native.FindMainWindow(mode.class, uint32(os.Getpid()))
 			if err == nil {
 				err = native.EnsureExcluded(hwnd)
 			}
@@ -342,17 +388,20 @@ func runAudioWindow() error {
 				err = native.TrayOnly(hwnd)
 			}
 			if err == nil {
-				err = native.PlaceAudioWindow(hwnd, config.X, config.Y, 460, 680)
+				err = native.PlaceAudioWindow(hwnd, config.X, config.Y, mode.width, mode.height)
 			}
 			if err != nil {
-				startupError(errors.New("Не удалось безопасно подготовить окно аудио"))
+				startupError(fmt.Errorf("не удалось безопасно подготовить окно «%s»: %w", mode.title, err))
 				quitChild(ctx)
 				return
 			}
-			dock.mu.Lock()
-			dock.hwnd = hwnd
-			dock.mu.Unlock()
+			if dock != nil {
+				dock.mu.Lock()
+				dock.hwnd = hwnd
+				dock.mu.Unlock()
+			}
 			mu.Lock()
+			childHWND = hwnd
 			initialized = true
 			mu.Unlock()
 		},

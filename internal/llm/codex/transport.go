@@ -405,6 +405,8 @@ func (c *Client) StartLogin(ctx context.Context, done func(error)) (llm.LoginPro
 	next := &pendingLogin{id: r.LoginID, done: func(err error) {
 		if err == nil {
 			c.analysis.resetConnection()
+			c.answers.resetConnection()
+			c.answerAnalysis.resetConnection()
 		}
 		if done != nil {
 			done(err)
@@ -457,7 +459,7 @@ func (c *Client) Prepare(ctx context.Context) error {
 }
 
 func (c *Client) Close(ctx context.Context) error {
-	return errors.Join(c.app.close(ctx), c.analysis.close(ctx))
+	return errors.Join(c.app.close(ctx), c.analysis.close(ctx), c.answers.close(ctx), c.answerAnalysis.close(ctx))
 }
 
 func threadParams(cwd string, cfg chat.Config) map[string]any {
