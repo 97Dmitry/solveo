@@ -113,8 +113,13 @@ func startupError(err error) {
 	syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
 }
 func run() error {
-	if len(os.Args) == 2 && os.Args[1] == "--audio-window" {
-		return runAudioWindow()
+	if len(os.Args) == 2 {
+		switch os.Args[1] {
+		case detachedAudio.flag:
+			return runAudioWindow(detachedAudio)
+		case detachedAnswers.flag:
+			return runAudioWindow(detachedAnswers)
+		}
 	}
 	flags, e := config.Parse(os.Args[1:])
 	if e != nil {
@@ -160,6 +165,17 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 	if e != nil {
 		return e
 	}
+	autoStore, autoErr := history.Open(filepath.Join(dir, "auto-answers"))
+	var autoWork *workstate.Store
+	if autoErr == nil {
+		autoWork, autoErr = workstate.Open(filepath.Join(autoStore.Dir, "work"))
+	}
+	autoError := ""
+	if autoErr != nil {
+		diagLog.Warn("auto answers store unavailable", "error", autoErr)
+		autoStore = nil
+		autoError = "Не удалось открыть хранилище автоответов"
+	}
 	steps.done("history and work state")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -198,6 +214,9 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 	controller, e := core.New(core.Dependencies{
 		Meetings:      meetings,
 		Store:         store,
+		AutoStore:     autoStore,
+		AutoWork:      autoWork,
+		AutoError:     autoError,
 		SettingsStore: settings.Open(dir),
 		ProfilesStore: profiles.New(dir),
 		Provider:      provider,
@@ -229,11 +248,12 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 			panic("diagnostics test panic")
 		}()
 	}
-	audioUI, err := configureAudioWindow(controller, window, app)
+	audioUI, answersUI, err := configureDetachedWindows(controller, window, app)
 	if err != nil {
 		return err
 	}
 	defer audioUI.Close()
+	defer answersUI.Close()
 	app.exit = func() error {
 		window.mu.Lock()
 		runtimeCtx := window.ctx
@@ -358,6 +378,7 @@ func runSession(flags config.Options, dir string, session *diagnostics.Session) 
 		LogLevelProduction: logger.WARNING,
 		OnShutdown: func(context.Context) {
 			diagLog.Info("shutdown")
+			answersUI.Close()
 			audioUI.Close()
 			cancel()
 			shutdownCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)

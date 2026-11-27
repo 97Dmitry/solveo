@@ -114,6 +114,9 @@ type Dependencies struct {
 	NativeHost    NativeHost
 	Window        Window
 	Work          WorkStore
+	AutoStore     Archive
+	AutoWork      WorkStore
+	AutoError     string
 	Emit          func(string, interface{})
 	Now           func() time.Time
 	Meetings      *meeting.Manager
@@ -257,7 +260,16 @@ type pendingSave struct {
 }
 type operation struct {
 	Operation
-	chatID  string
-	cancel  context.CancelFunc
-	started time.Time
+	automaticQuestion bool
+	superseded        bool
+	answerID          string
+	messageID         string
+	revising          bool
+	chatID            string
+	cancel            context.CancelFunc
+	started           time.Time
+}
+
+func (o operation) supersededCancellation(status string) bool {
+	return o.superseded && status == chat.StatusCanceled
 }

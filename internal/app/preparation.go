@@ -10,6 +10,9 @@ import (
 // prepareChatLocked replaces the desired empty-chat snapshot without doing I/O
 // under c.mu. Cancelled workers drain provider cleanup before Close completes.
 func (c *Controller) prepareChatLocked() {
+	if c.autoSession {
+		return
+	}
 	if c.preparationCancel != nil {
 		c.preparationCancel()
 		c.preparationCancel = nil

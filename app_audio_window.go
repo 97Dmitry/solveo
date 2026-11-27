@@ -11,19 +11,21 @@ import (
 	"github.com/97Dmitry/solveo/internal/meeting"
 )
 
-// AudioWindowApp exposes only the parent-owned audio operations to the auxiliary renderer.
+// AudioWindowApp bridges the detached renderers to their scoped parent channels.
 type AudioWindowApp struct {
-	client   *audiowindow.Client
-	dockLeft func() error
-	float    func() error
-	layout   func() (bool, string)
-	ready    func() error
-	show     func()
-	lost     func()
-	changed  func(audiowindow.View)
-	mu       sync.Mutex
-	version  uint64
-	isReady  bool
+	client    *audiowindow.Client
+	dockLeft  func() error
+	float     func() error
+	layout    func() (bool, string)
+	setPinned func(bool) error
+	ready     func() error
+	show      func()
+	lost      func()
+	changed   func(audiowindow.View)
+	mu        sync.Mutex
+	version   uint64
+	isReady   bool
+	pinned    bool
 }
 
 func (a *AudioWindowApp) State() (audiowindow.View, error) {
@@ -42,6 +44,11 @@ func (a *AudioWindowApp) State() (audiowindow.View, error) {
 	}
 	if a.layout != nil {
 		v.Docked, v.WindowError = a.layout()
+	}
+	if a.setPinned != nil {
+		a.mu.Lock()
+		v.Pinned = a.pinned
+		a.mu.Unlock()
 	}
 	a.reveal(v.ShowVersion)
 	return v, nil
@@ -77,6 +84,15 @@ func (a *AudioWindowApp) Execute(cmd audiowindow.Command) error {
 	}
 	if cmd.Name == "float" && a.float != nil {
 		return a.float()
+	}
+	if cmd.Name == "pinAnswers" && a.setPinned != nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if err := a.setPinned(!a.pinned); err != nil {
+			return err
+		}
+		a.pinned = !a.pinned
+		return nil
 	}
 	if a.client == nil {
 		return errors.New("Окно аудио не подключено")
@@ -119,4 +135,11 @@ func (a *AudioWindowApp) Meeting(id string) (meeting.Document, error) {
 		return meeting.Document{}, errors.New("Окно аудио не подключено")
 	}
 	return a.client.Meeting(id)
+}
+
+func (a *AudioWindowApp) Answer(sessionID, cardID string) (core.AutoAnswerDetail, error) {
+	if a.client == nil {
+		return core.AutoAnswerDetail{}, errors.New("Окно автоответов не подключено")
+	}
+	return a.client.Answer(sessionID, cardID)
 }

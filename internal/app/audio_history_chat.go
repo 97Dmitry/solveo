@@ -60,7 +60,7 @@ func (c *Controller) bindAudioHistoryUtterance(stream, id string) {
 	if session := h.streams[stream]; session != "" {
 		h.utterances[id] = session
 		h.utteranceChats[id] = h.streamChats[stream]
-		h.started[id] = c.deps.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
+		h.started[id] = c.deps.Now().UTC().Format(time.RFC3339Nano)
 	}
 }
 func (c *Controller) pinAudioHistoryUtterance(stream, id string) func() {

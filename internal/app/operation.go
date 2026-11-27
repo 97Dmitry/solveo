@@ -18,9 +18,11 @@ import (
 // submitOrigin tells which source a question comes from. Only the composer owns the draft:
 // quick capture and the transcript never read, acknowledge or clear it.
 type submitOrigin struct {
-	kind      int
-	question  *QuestionCommand
-	captureID string // capture operation that may submit while it still owns the slot
+	expectedAttempt string
+	kind            int
+	question        *QuestionCommand
+	automatic       bool
+	captureID       string // capture operation that may submit while it still owns the slot
 	// segments are the live transcript phrases sent by originTranscript; consume also removes them
 	// from the question builder's input (sending every new phrase supersedes the card built from them).
 	segments []string
@@ -45,6 +47,10 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 		c.mu.Unlock()
 		return "", e
 	}
+	if c.question.autoRefinement != nil && !origin.automatic && origin.kind != originCapture {
+		c.mu.Unlock()
+		return "", ErrBusy
+	}
 	if in.ChatID != c.active.ID || in.RequestID == "" {
 		c.mu.Unlock()
 		return "", ErrStale
@@ -68,26 +74,64 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 		return "", errors.New("выбранный ответ недоступен для уточнения")
 	}
 	var questionCard *questionbuilder.Card
+	replacement := -1
+	doc := chat.Clone(c.active)
 	if origin.kind == originQuestion {
-		card, err := c.acceptQuestionLocked(*origin.question)
-		if err != nil {
-			c.mu.Unlock()
-			return "", err
+		var card questionbuilder.Card
+		var err error
+		if origin.automatic {
+			v, ok := c.automaticQuestionLocked()
+			if !ok || origin.question.ID != v.ID || origin.question.Version != v.Version {
+				c.mu.Unlock()
+				return "", ErrStale
+			}
+			card = v.Card
+		} else {
+			card, err = c.acceptQuestionLocked(*origin.question)
+			if err != nil {
+				c.mu.Unlock()
+				return "", err
+			}
+		}
+		if origin.automatic {
+			replacement = c.automaticReplacementIndex(doc, card)
+		}
+		if replacement >= 0 {
+			card, err = revisedQuestion(autoRevisionBase(doc, doc.Messages[replacement]), card)
+			if err != nil {
+				c.mu.Unlock()
+				return "", err
+			}
+			if cfg := doc.Messages[replacement].RequestConfig; cfg == nil || !cfg.ParallelAnswers {
+				c.requests[in.RequestID] = true
+				return c.startAutoRevisionLocked(doc, replacement, card, true), nil
+			}
+		} else {
+			card.Refinement = false
 		}
 		questionCard = &card
 		in.Text = card.Text
 	}
-	doc := chat.Clone(c.active)
 	var turn chat.Message
 	var sources []history.Source
 	ids := []string{}
-	if in.RetryMessageID != "" {
+	if replacement >= 0 {
+		turn = doc.Messages[replacement]
+		turn.Text = in.Text
+		turn.Question = questionCard
+		turn.Answers = nil
+		doc.Messages = doc.Messages[:replacement+1]
+	} else if in.RetryMessageID != "" {
 		if len(doc.Messages) == 0 {
 			c.mu.Unlock()
 			return "", ErrStale
 		}
 		last := doc.Messages[len(doc.Messages)-1]
 		if last.ID != in.RetryMessageID || last.Role != chat.RoleUser || last.Status == chat.StatusComplete {
+			c.mu.Unlock()
+			return "", ErrStale
+		}
+		if n := len(last.Attempts); origin.expectedAttempt != "" && (n == 0 || last.Attempts[n-1].ID != origin.expectedAttempt) {
 			c.mu.Unlock()
 			return "", ErrStale
 		}
@@ -169,14 +213,33 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 			turn.Answers[1] = chat.Answer{Kind: chat.AnswerSolution, Status: chat.StatusRequesting, AttemptID: attemptID, Model: cfg.Model, Reasoning: cfg.Reasoning}
 		}
 	}
-	if in.RetryMessageID != "" {
+	if in.RetryMessageID != "" || replacement >= 0 {
 		doc.Messages[len(doc.Messages)-1] = turn
 	} else {
 		doc.Messages = append(doc.Messages, turn)
 	}
 	opID := chat.ID()
 	ctx, cancel := context.WithCancel(c.ctx)
-	c.op = operation{Operation: Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"}, chatID: doc.ID, cancel: cancel, started: time.Now()}
+	if origin.automatic {
+		c.question.autoRefinement = nil
+		c.question.autoTurnID = turn.ID
+		if replacement < 0 {
+			c.question.autoAnswerID = chat.ID()
+		}
+	} else {
+		c.question.autoTurnID = ""
+		c.question.autoAnswerID = ""
+		c.question.autoRefinement = nil
+	}
+	c.op = operation{
+		Operation:         Operation{ID: opID, Kind: kindSubmit, Phase: phaseSaving, Message: "Сохраняю вопрос"},
+		chatID:            doc.ID,
+		cancel:            cancel,
+		started:           time.Now(),
+		automaticQuestion: origin.automatic,
+		answerID:          c.question.autoAnswerID,
+		messageID:         turn.ID,
+	}
 	var sentSegments []string
 	switch origin.kind {
 	case originQuestion:
@@ -202,7 +265,7 @@ func (c *Controller) submit(in SubmitInput, origin submitOrigin) (string, error)
 		c.statePersist.mark()
 	}
 	streamChanged := c.clearCheckpointsLocked("")
-	if in.RetryMessageID != "" && c.dropRecoveredLocked(func(b workstate.Block) bool { return b.MessageID == in.RetryMessageID }) {
+	if (in.RetryMessageID != "" || replacement >= 0) && c.dropRecoveredLocked(func(b workstate.Block) bool { return b.MessageID == turn.ID }) {
 		streamChanged = true
 	}
 	if streamChanged {
@@ -292,38 +355,42 @@ func (c *Controller) runSubmit(ctx context.Context, opID string, doc chat.Chat, 
 			State:              doc.ProviderState,
 			Images:             images,
 		}
+		if c.autoSession {
+			req.AutoAnswers = committedAutoAnswers(doc, turn.ID)
+		}
 		result, e = c.deps.Provider.Generate(ctx, req, c.streamSink(opID, doc.ID, turn.ID, attemptID, blockMessage))
 	}
 	c.closeStream(opID, attemptID, blockMessage)
 	if len(result.State) > 0 {
 		doc.ProviderState = result.State
 	}
-	last := len(doc.Messages) - 1
-	attempt := len(doc.Messages[last].Attempts) - 1
-	status := chat.StatusComplete
-	if e != nil {
-		status = chat.StatusFailed
-		if errors.Is(e, llm.ErrOutcomeUnknown) {
-			status = chat.StatusUnknown
-		} else if errors.Is(e, context.Canceled) {
-			status = chat.StatusCanceled
-		}
-		doc.Messages[last].Attempts[attempt].Error = e.Error()
-	}
-	doc.Messages[last].Status = status
-	doc.Messages[last].Attempts[attempt].Status = status
-	if e == nil {
-		doc.Messages = append(doc.Messages, chat.Message{ID: chat.ID(), Role: chat.RoleAssistant, Text: result.Text, Status: chat.StatusComplete, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: turn.ConfigRevision})
-	}
 	c.mu.Lock()
 	if c.op.ID != opID {
 		c.mu.Unlock()
 		return
 	}
+	if c.op.superseded && e == nil {
+		e = context.Canceled
+	}
+	last := len(doc.Messages) - 1
+	attempt := len(doc.Messages[last].Attempts) - 1
+	status := outcomeStatus(e)
+	if e != nil {
+		doc.Messages[last].Attempts[attempt].Error = e.Error()
+	}
+	doc.Messages[last].Status = status
+	doc.Messages[last].Attempts[attempt].Status = status
+	if e == nil {
+		answerID := c.op.answerID
+		if answerID == "" {
+			answerID = chat.ID()
+		}
+		doc.Messages = append(doc.Messages, chat.Message{ID: answerID, Role: chat.RoleAssistant, Text: result.Text, Status: chat.StatusComplete, AttachmentIDs: []string{}, Attempts: []chat.Attempt{}, ConfigRevision: turn.ConfigRevision})
+	}
 	c.active = chat.Clone(doc)
 	c.op.Phase = phaseSaving
 	c.op.Message = "Сохраняю результат"
-	if e != nil {
+	if e != nil && !c.op.supersededCancellation(status) {
 		c.err = e.Error()
 	}
 	c.changedLocked()
@@ -354,9 +421,16 @@ func (c *Controller) setPending(opID string, p pendingSave, e error) {
 		c.mu.Unlock()
 		return
 	}
-	c.active = chat.Clone(p.doc)
+	if !c.op.revising {
+		c.active = chat.Clone(p.doc)
+	}
 	c.pending = &p
+	if c.op.automaticQuestion {
+		c.pauseQuestionLocked()
+		c.scheduleQuestionLocked()
+	}
 	started := c.op.started
+	messageID := c.op.messageID
 	c.op.Phase = phaseSavePending
 	c.op.Message = "Результат пока не сохранён"
 	c.err = e.Error()
@@ -366,7 +440,7 @@ func (c *Controller) setPending(opID string, p pendingSave, e error) {
 	}
 	c.changedLocked()
 	c.mu.Unlock()
-	c.logTurn(opID, started, p.doc, e)
+	c.logTurn(opID, messageID, started, p.doc, e)
 	c.publish()
 }
 func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
@@ -376,9 +450,23 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 		return
 	}
 	c.active = chat.Clone(saved)
+	if c.op.automaticQuestion {
+		status := saved.Messages[len(saved.Messages)-1].Status
+		if c.op.revising {
+			status = chat.StatusComplete
+			if revision, ok := saved.AnswerRevisions[c.op.messageID]; ok {
+				status = revision.Attempt.Status
+			}
+		}
+		if status != chat.StatusComplete && !c.op.supersededCancellation(status) {
+			c.pauseQuestionLocked()
+			c.scheduleQuestionLocked()
+		}
+	}
 	c.rememberLocked(saved)
 	c.pending = nil
 	started := c.op.started
+	messageID := c.op.messageID
 	paths := []string{}
 	queued := map[string]string{}
 	if p.cleanupIDs != nil {
@@ -407,7 +495,7 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	c.op = operation{Operation: Operation{Phase: phaseIdle}}
 	c.changedLocked()
 	c.mu.Unlock()
-	c.logTurn(opID, started, saved, nil)
+	c.logTurn(opID, messageID, started, saved, nil)
 	if len(paths) > 0 && c.deps.NativeHost != nil {
 		archived := map[string]chat.Attachment{}
 		for _, a := range saved.Attachments {
@@ -431,7 +519,15 @@ func (c *Controller) finishSave(opID string, saved chat.Chat, p pendingSave) {
 	c.publish()
 }
 func (c *Controller) RetrySave() error {
+	return c.retrySave("", "", "")
+}
+
+func (c *Controller) retrySave(sessionID, cardID, revisionID string) error {
 	c.mu.Lock()
+	if sessionID != "" && !c.matchesPendingAutoAnswerLocked(sessionID, cardID, revisionID) {
+		c.mu.Unlock()
+		return ErrStale
+	}
 	if c.pending == nil {
 		c.mu.Unlock()
 		return nil
@@ -514,6 +610,10 @@ func (c *Controller) Cancel(id string) error {
 		return ErrStale
 	}
 	cancel := c.op.cancel
+	if c.op.automaticQuestion {
+		c.stopAutomaticQuestionLocked()
+		c.scheduleQuestionLocked()
+	}
 	c.mu.Unlock()
 	cancel()
 	return nil

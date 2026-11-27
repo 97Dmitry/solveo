@@ -40,3 +40,17 @@ func TestAudioDockCommandsStayInRenderer(t *testing.T) {
 		t.Fatal("layout callbacks were not invoked")
 	}
 }
+
+func TestAnswerPinStaysInRendererAndDoesNotRevealWindow(t *testing.T) {
+	var calls []bool
+	shown := false
+	app := &AudioWindowApp{setPinned: func(pinned bool) error { calls = append(calls, pinned); return nil }, show: func() { shown = true }}
+	for range 2 {
+		if err := app.Execute(audiowindow.Command{Name: "pinAnswers"}); err != nil {
+			t.Fatal("pin command reached missing parent client", err)
+		}
+	}
+	if len(calls) != 2 || !calls[0] || calls[1] || shown {
+		t.Fatal("wrong local pin or visibility", calls, shown)
+	}
+}

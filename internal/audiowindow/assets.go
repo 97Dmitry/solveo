@@ -5,17 +5,24 @@ import (
 	"strings"
 )
 
-type audioAssets struct{ fs.FS }
+type detachedAssets struct {
+	fs.FS
+	entry string
+}
 
-func (a audioAssets) Open(name string) (fs.File, error) {
+func (a detachedAssets) Open(name string) (fs.File, error) {
 	if name == "index.html" {
-		name = "audio.html"
+		name = a.entry
 	}
 	return a.FS.Open(name)
 }
 
 // Assets maps only the main entry to the detached UI; shared chunks remain unchanged.
-func Assets(source fs.FS) fs.FS { return audioAssets{source} }
+func Assets(source fs.FS) fs.FS { return detachedAssets{FS: source, entry: "audio.html"} }
+
+func AnswersAssets(source fs.FS) fs.FS {
+	return detachedAssets{FS: source, entry: "answers.html"}
+}
 
 // ChildEnvironment isolates the bundled renderer from the parent's development servers.
 // Even under wails dev the child uses its embedded production assets (no separate HMR server).

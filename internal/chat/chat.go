@@ -97,19 +97,26 @@ type Attachment struct {
 	ID   string `json:"id"`
 	Path string `json:"path"`
 }
+type AnswerRevision struct {
+	Question   questionbuilder.Card `json:"question"`
+	Attempt    Attempt              `json:"attempt"`
+	Superseded bool                 `json:"superseded,omitempty"`
+}
+
 type Chat struct {
-	GlobalInstructions string          `json:"global_instructions"`
-	Version            int             `json:"version"`
-	ID                 string          `json:"id"`
-	ProviderID         string          `json:"provider_id"`
-	Title              string          `json:"title"`
-	ProviderState      json.RawMessage `json:"provider_state,omitempty"`
-	Config             Config          `json:"config"`
-	ConfigRevision     uint64          `json:"config_revision"`
-	Messages           []Message       `json:"messages"`
-	Attachments        []Attachment    `json:"attachments"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
+	GlobalInstructions string                    `json:"global_instructions"`
+	Version            int                       `json:"version"`
+	ID                 string                    `json:"id"`
+	ProviderID         string                    `json:"provider_id"`
+	Title              string                    `json:"title"`
+	ProviderState      json.RawMessage           `json:"provider_state,omitempty"`
+	Config             Config                    `json:"config"`
+	ConfigRevision     uint64                    `json:"config_revision"`
+	Messages           []Message                 `json:"messages"`
+	AnswerRevisions    map[string]AnswerRevision `json:"answer_revisions,omitempty"`
+	Attachments        []Attachment              `json:"attachments"`
+	CreatedAt          time.Time                 `json:"created_at"`
+	UpdatedAt          time.Time                 `json:"updated_at"`
 }
 
 // Now is the application clock. All persisted and displayed times are UTC.

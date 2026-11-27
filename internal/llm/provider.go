@@ -28,12 +28,20 @@ type Request struct {
 	// Purpose is empty for ordinary chat, or an answer kind for parallel requests.
 	Purpose        string
 	ContextText    string
+	Revision       *AnswerContext
+	AutoAnswers    []AnswerContext
 	History        []chat.Message
 	Turn           chat.Message
 	Config         chat.Config
 	ConfigRevision uint64
 	State          json.RawMessage
 	Images         []Image
+}
+
+type AnswerContext struct {
+	MessageID string `json:"message_id"`
+	Question  string `json:"question"`
+	Answer    string `json:"answer,omitempty"`
 }
 type Result struct {
 	Text  string

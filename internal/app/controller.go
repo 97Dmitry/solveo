@@ -69,8 +69,13 @@ type Controller struct {
 	streamErr     string
 
 	// Speech recognition (audio.go), guarded by audio.mu.
-	audio    audioState
-	question questionState
+	audio       audioState
+	question    questionState
+	autoAnswers *Controller
+	autoSession bool
+	autoSince   time.Time
+	autoError   string
+	autoStart   autoStart
 
 	// Session log (diagnostics.go); logContent mirrors settings.Diagnostics.IncludeContent.
 	logger     *slog.Logger
@@ -81,6 +86,10 @@ type Controller struct {
 var errNoConnection = errors.New("подключение LLM не поддерживает вход")
 
 func New(d Dependencies) (*Controller, error) {
+	return newScopedController(d, false)
+}
+
+func newScopedController(d Dependencies, autoSession bool) (*Controller, error) {
 	if d.Store == nil || d.SettingsStore == nil || d.Provider == nil || d.Work == nil {
 		return nil, errors.New("не заданы зависимости приложения")
 	}
@@ -97,16 +106,18 @@ func New(d Dependencies) (*Controller, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Controller{
-		deps:      d,
-		ctx:       ctx,
-		cancel:    cancel,
-		revision:  1,
-		settings:  cfg,
-		summaries: list,
-		drafts:    map[string]Draft{},
-		queues:    map[string][]queued{},
-		requests:  map[string]bool{},
-		op:        operation{Operation: Operation{Phase: phaseIdle}},
+		deps:        d,
+		ctx:         ctx,
+		cancel:      cancel,
+		revision:    1,
+		settings:    cfg,
+		summaries:   list,
+		drafts:      map[string]Draft{},
+		queues:      map[string][]queued{},
+		requests:    map[string]bool{},
+		op:          operation{Operation: Operation{Phase: phaseIdle}},
+		autoSession: autoSession,
+		autoError:   d.AutoError,
 
 		streams:     map[streamKey]StreamBlock{},
 		streamOpen:  map[streamKey]bool{},
@@ -139,12 +150,24 @@ func New(d Dependencies) (*Controller, error) {
 	}
 	c.active = doc
 	c.rememberLocked(doc)
+	if d.AutoStore != nil && d.AutoWork != nil {
+		c.autoAnswers, e = newScopedController(Dependencies{
+			Store: d.AutoStore, SettingsStore: d.SettingsStore, Work: d.AutoWork,
+			Provider: autoAnswerProvider(d.Provider), Now: d.Now, Log: d.Log,
+		}, true)
+		if e != nil {
+			c.autoError = "Не удалось открыть архив автоответов: " + e.Error()
+		}
+	}
 	c.initAudioHistory()
 	if d.Meetings != nil {
 		d.Meetings.SetNotify(func() { c.mu.Lock(); c.changedLocked(); c.mu.Unlock(); c.publish() })
 	}
 	c.statePersist.resume()
 	c.streamPersist.resume()
+	if autoSession {
+		return c, nil
+	}
 	c.prepareConnection()
 	// A shortcut taken by another application must not prevent startup;
 	// Snapshot.HotkeyErrors shows it in the settings instead.
@@ -180,7 +203,10 @@ func (c *Controller) availableLocked() error {
 	}
 	return nil
 }
-func (c *Controller) changedLocked() { c.revision++ }
+func (c *Controller) changedLocked() {
+	c.revision++
+	c.scheduleAutomaticQuestionLocked()
+}
 func (c *Controller) publish() {
 	c.logErrorChange()
 	c.syncAudioHistoryChat()
@@ -458,6 +484,9 @@ func (c *Controller) saveSettingsLocked(cfg settings.Config) (Snapshot, error) {
 	c.settings = cfg
 	c.changedLocked()
 	c.mu.Unlock()
+	if a := c.autoAnswers; a != nil {
+		a.logContent.Store(cfg.Diagnostics.IncludeContent)
+	}
 	if c.logContent.Swap(cfg.Diagnostics.IncludeContent) != cfg.Diagnostics.IncludeContent {
 		c.logger.Info("log content setting changed", "include_content", cfg.Diagnostics.IncludeContent)
 	}
@@ -492,6 +521,9 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.closed = true
 	c.pauseQuestionLocked()
+	if a := c.autoAnswers; a != nil {
+		a.pauseAutoAnswers("")
+	}
 	c.cancel()
 	c.intent = nil
 	if c.resumeTimer != nil {
@@ -534,7 +566,11 @@ func (c *Controller) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	// Unfinished work stays on disk for the next start; write its final state.
-	if err := errors.Join(meetingErr, c.statePersist.flush(), c.streamPersist.flush(), c.flushAudioHistory()); err != nil {
+	err := errors.Join(meetingErr, c.statePersist.flush(), c.streamPersist.flush(), c.flushAudioHistory())
+	if err == nil && c.autoAnswers != nil {
+		err = c.autoAnswers.Close(ctx)
+	}
+	if err != nil {
 		// Keep persisters and the provider usable so disk recovery and another
 		// explicit exit can save the data instead of silently discarding it.
 		c.mu.Lock()

@@ -28,6 +28,25 @@ func TestPromptSeparatesContextAndUserText(t *testing.T) {
 	}
 }
 
+func TestPromptIdentifiesTheOlderRevisionAndCommittedAnswers(t *testing.T) {
+	c := New("codex", "", time.Minute, "", "")
+	target := llm.AnswerContext{MessageID: "older", Question: "Какие есть типы?", Answer: "Сохранённый ответ"}
+	later := llm.AnswerContext{MessageID: "later", Question: "Что такое GC?", Answer: "Ответ о GC"}
+	prompt := c.prompt(llm.Request{
+		Turn: chat.Message{Text: "Какие есть числовые типы?"}, Revision: &target, AutoAnswers: []llm.AnswerContext{later},
+	})
+	var payload struct {
+		Revision  llm.AnswerContext   `json:"revision_target"`
+		Committed []llm.AnswerContext `json:"committed_auto_answers"`
+	}
+	if err := json.NewDecoder(strings.NewReader(prompt)).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Revision != target || len(payload.Committed) != 1 || payload.Committed[0] != later {
+		t.Fatal(payload)
+	}
+}
+
 func TestGenerateRejectsMissingImageBeforeLaunch(t *testing.T) {
 	c := New(filepath.Join(t.TempDir(), "codex-must-not-run"), "", time.Second, t.TempDir(), t.TempDir())
 	r := llm.Request{Turn: chat.Message{Text: "task"}, ConfigRevision: 1, Images: []llm.Image{{Path: filepath.Join(t.TempDir(), "missing.png")}}}

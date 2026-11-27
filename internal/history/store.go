@@ -239,6 +239,13 @@ func (s *Store) Load(id string) (chat.Chat, error) {
 	// Older archives may carry local offsets; the application works in UTC only.
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
 	// A process can die after a CLI turn was accepted. Never infer success/retry.
+	for id, revision := range c.AnswerRevisions {
+		if revision.Attempt.Status == chat.StatusRequesting {
+			revision.Attempt.Status = chat.StatusInterrupted
+			revision.Attempt.Error = "Приложение завершилось до сохранения уточнённого ответа"
+			c.AnswerRevisions[id] = revision
+		}
+	}
 	for i, m := range c.Messages {
 		for j, answer := range m.Answers {
 			if answer.Status == chat.StatusRequesting {

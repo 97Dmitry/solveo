@@ -1,4 +1,4 @@
-# Detached audio renderer transport
+# Detached renderer transport
 
 - Parent owns all business state. The child renderer uses only the loopback endpoint; never open history/settings/STT in the child.
 - Bind only 127.0.0.1, random per-session Bearer token via stdin; no tokens in argv/env/URLs/logs. Reject browser origins, limit bodies, allowlist commands. Client disables proxies and redirects and accepts loopback endpoints only.
@@ -21,3 +21,6 @@
 - The allowlisted `diagnostic` command carries an uncaught audio-renderer error (kind/message/stack ≤ 16 KiB at the transport); the parent forces source `audio` and passes it to Controller.ReportRendererError. The child process writes no log files: its stderr tail and exit code are logged by the parent.
 
 - Meetings: parent `MeetingReader` serves authenticated `/meetings`, `/meeting/<id>`, `/meeting-audio/<id>/<file>`; allowlisted `meeting` command carries a typed MeetingCommand. Child proxies WAV GET/HEAD/Range through its embedded asset handler, never accepts arbitrary filesystem paths or exposes the IPC Bearer token to JS. Meeting state polling contains metadata only; details are explicit bounded reads.
+
+- Auto answers use an independent `--answers-window` child, `answers.html`, loopback server, token and command allowlist. `/state` sends theme, UI scale, reveal version and answer summaries; authenticated `/answer/<sessionID>/<cardID>` returns one detail. Session ID is carried in `ChatID`; card ID uses one element of `IDs`. The audio channel exposes `showAnswers` as the window entry point. `pinAnswers` changes local native state without activation or docking.
+- Answer insertion loads the canonical question in the parent and shares the bounded main-renderer acknowledgement with audio insertion. The parent captures the main chat before reading answer detail and the renderer checks the live target and editor state before appending. Auto-answer rendering errors are reported to the parent's log with source `answers`.

@@ -53,7 +53,7 @@ func (c *Controller) streamSink(opID, chatID, messageID, attemptID, block string
 		switch v.Kind {
 		case llm.EventAnswerText:
 			c.mu.Lock()
-			if c.op.ID != opID || !c.streamOpen[key] {
+			if c.op.ID != opID || c.op.superseded || !c.streamOpen[key] {
 				c.mu.Unlock()
 				return
 			}
@@ -71,14 +71,17 @@ func (c *Controller) streamSink(opID, chatID, messageID, attemptID, block string
 
 // closeStream removes a block's preview and ignores its later updates.
 func (c *Controller) closeStream(opID, attemptID, block string) {
-	key := streamKey{opID, attemptID, block}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeStreamLocked(streamKey{opID, attemptID, block})
+}
+
+func (c *Controller) closeStreamLocked(key streamKey) {
 	delete(c.streamOpen, key)
 	if _, ok := c.streams[key]; ok {
 		delete(c.streams, key)
 		c.scheduleStreamLocked()
 	}
-	c.mu.Unlock()
 }
 
 func (c *Controller) scheduleStreamLocked() {

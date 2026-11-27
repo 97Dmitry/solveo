@@ -124,6 +124,22 @@ it("toggles listening and unloads the model only when not listening", async () =
   expect(b.stopListening).toHaveBeenCalled();
 });
 
+it("indicates microphone-only capture and keeps the stop action available", async () => {
+  const actions = renderPanel(
+    audio({
+      model: "ready",
+      listening: true,
+      sources: [
+        { track: "system", device: "Наушники", active: false, error: "" },
+        { track: "mic", device: "Микрофон", active: true, error: "" },
+      ],
+    }),
+  );
+  expect(header().getByText("Только микрофон")).toBeTruthy();
+  await userEvent.click(header().getByRole("button", { name: "Остановить" }));
+  expect(actions.stopListening).toHaveBeenCalled();
+});
+
 it("labels sources and lets only final phrases be selected", async () => {
   renderPanel(
     audio({
@@ -136,6 +152,7 @@ it("labels sources and lets only final phrases be selected", async () => {
       segments: [seg("a:1", "Готовая фраза"), seg("b:1", "Говорю сейчас", false, "mic")],
     }),
   );
+  expect(header().getByText("Только системный звук")).toBeTruthy();
   expect(screen.getByText(/Наушники/)).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("устройство звука не найдено");
   const partial = screen.getByRole("button", { name: /Говорю сейчас/ });

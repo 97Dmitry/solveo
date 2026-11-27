@@ -8,6 +8,30 @@ import (
 	"unsafe"
 )
 
+// WindowBounds returns physical screen coordinates for detached window placement.
+func WindowBounds(hwnd uintptr) (image.Rectangle, error) {
+	var bounds rect
+	if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+		return image.Rectangle{}, errors.New("Не удалось получить положение окна")
+	}
+	return image.Rect(int(bounds.left), int(bounds.top), int(bounds.right), int(bounds.bottom)), nil
+}
+
+// PinDetachedWindow changes the Z-order on the owning thread without activating the window.
+func PinDetachedWindow(hwnd uintptr, pinned bool) error {
+	const hwndTopmost = ^uintptr(0)                 // HWND_TOPMOST (-1)
+	const hwndNotTopmost = ^uintptr(1)              // HWND_NOTOPMOST (-2)
+	const flags = 0x4000 | 0x0010 | 0x0002 | 0x0001 // SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+	insertAfter := hwndNotTopmost
+	if pinned {
+		insertAfter = hwndTopmost
+	}
+	if ok, _, _ := user32.NewProc("SetWindowPos").Call(hwnd, insertAfter, 0, 0, 0, 0, flags); ok == 0 {
+		return errors.New("Не удалось изменить закрепление окна автоответов")
+	}
+	return nil
+}
+
 // PlaceAudioWindow keeps a new detached window within the nearest monitor's work area.
 func PlaceAudioWindow(hwnd uintptr, x, y, width, height int) error {
 	monitor, _, _ := user32.NewProc("MonitorFromWindow").Call(hwnd, 2)
@@ -51,15 +75,15 @@ func ReadAudioDockInfo(audio, parent uintptr, parentPID uint32) (AudioDockInfo, 
 	if thread == 0 || pid != parentPID {
 		return info, errors.New("Основное окно недоступно")
 	}
-	var mainRect, audioRect rect
-	if ok, _, _ := user32.NewProc("GetWindowRect").Call(parent, uintptr(unsafe.Pointer(&mainRect))); ok == 0 {
+	var err error
+	info.Parent, err = WindowBounds(parent)
+	if err != nil {
 		return info, errors.New("Не удалось получить положение основного окна")
 	}
-	if ok, _, _ := user32.NewProc("GetWindowRect").Call(audio, uintptr(unsafe.Pointer(&audioRect))); ok == 0 {
+	info.Audio, err = WindowBounds(audio)
+	if err != nil {
 		return info, errors.New("Не удалось получить положение окна аудио")
 	}
-	info.Parent = image.Rect(int(mainRect.left), int(mainRect.top), int(mainRect.right), int(mainRect.bottom))
-	info.Audio = image.Rect(int(audioRect.left), int(audioRect.top), int(audioRect.right), int(audioRect.bottom))
 	visible, _, _ := user32.NewProc("IsWindowVisible").Call(parent)
 	iconic, _, _ := user32.NewProc("IsIconic").Call(parent)
 	info.ParentVisible = visible != 0 && iconic == 0

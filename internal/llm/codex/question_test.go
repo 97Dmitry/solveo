@@ -3,6 +3,8 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -51,6 +53,139 @@ func TestQuestionAnalysisIsolatedFromMainConversation(t *testing.T) {
 		t.Fatal("answer instructions leaked")
 	}
 }
+
+func TestQuestionAnalysisSendsOnlyEvidenceEligibleForItsMode(t *testing.T) {
+	old := questionbuilder.Segment{ID: "old", Track: "system", Text: "Let me know when you are ready.", Final: true, Seq: 1}
+	draft := questionbuilder.Segment{ID: "draft", Track: "system", Text: "How does garbage collection work in...", Final: true, Seq: 2}
+	fresh := questionbuilder.Segment{ID: "fresh", Track: "system", Text: "How does a Go channel work?", Final: true, Seq: 3}
+	for _, tc := range []struct {
+		name, currentText     string
+		automatic, draftCheck bool
+		wantSegments          []questionbuilder.Segment
+	}{
+		{name: "automatic", automatic: true, currentText: draft.Text, wantSegments: []questionbuilder.Segment{fresh}},
+		{name: "draft check", automatic: true, draftCheck: true, currentText: draft.Text},
+		{name: "manual", wantSegments: []questionbuilder.Segment{old, draft, fresh}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := fakeEnv{}
+			c := fakeClient(t, &env)
+			in := questionbuilder.Input{
+				Automatic: tc.automatic, DraftCheck: tc.draftCheck, ProcessedThrough: draft.Seq,
+				Current:  questionbuilder.Card{ID: "c", Text: "How does GC work in...", Sources: []questionbuilder.Segment{draft}},
+				Segments: []questionbuilder.Segment{old, draft, fresh},
+			}
+			if _, err := c.AnalyzeQuestion(context.Background(), in, chat.Config{Model: "gpt-test"}, nil); err != nil {
+				t.Fatal(err)
+			}
+			got := analysisRequests(t, env.log)
+			if len(got) != 1 || !slices.Equal(got[0].Segments, tc.wantSegments) || len(got[0].Current.Sources) != 1 || got[0].Current.Sources[0].Text != tc.currentText {
+				t.Fatal(got)
+			}
+			if in.Current.Sources[0].Text != draft.Text || len(in.Segments) != 3 {
+				t.Fatal("analysis mutated its source snapshot")
+			}
+		})
+	}
+}
+
+type recordedAnalysisRequest struct {
+	questionbuilder.Input
+	EvidenceFeedback string `json:"evidence_feedback"`
+}
+
+func analysisRequests(t *testing.T, path string) []recordedAnalysisRequest {
+	t.Helper()
+	var requests []recordedAnalysisRequest
+	for _, line := range readLog(t, path) {
+		if line.Method != "turn/start" {
+			continue
+		}
+		var turn struct{ Input []struct{ Text string } }
+		if err := json.Unmarshal(line.Params, &turn); err != nil || len(turn.Input) != 1 {
+			t.Fatalf("invalid turn input: %v", err)
+		}
+		var req recordedAnalysisRequest
+		if err := json.Unmarshal([]byte(turn.Input[0].Text), &req); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, req)
+	}
+	return requests
+}
+
+func TestAutomaticQuestionRetriesRecoverableEvidenceOnlyOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker string
+		wantAttempts int
+		wantError    bool
+		wantContinue bool
+	}{
+		{name: "fixed evidence", marker: "[question-evidence-once]", wantAttempts: 2},
+		{name: "repeated invalid evidence", marker: "[question-evidence-always]", wantAttempts: 2, wantError: true},
+		{name: "missing continues draft", marker: "[question-draft-evidence]", wantAttempts: 2, wantContinue: true},
+		{name: "unknown older question", marker: "[question-unknown-target]", wantAttempts: 1, wantError: true},
+		{name: "transport failure", marker: "[fail]", wantAttempts: 1, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := fakeEnv{}
+			c := fakeClient(t, &env)
+			old := questionbuilder.Segment{ID: "processed", Track: "system", Text: "Let's start when you're ready.", Final: true, Seq: 1}
+			draft := questionbuilder.Segment{ID: "draft", Track: "system", Text: "How does buffering work with...", Final: true, Seq: 2}
+			fresh := questionbuilder.Segment{ID: "fresh", Track: "system", Text: "with Go channels?", Final: true, Seq: 3}
+			in := questionbuilder.Input{
+				Automatic: true, ChatID: "speech", Context: tc.marker, ProcessedThrough: draft.Seq,
+				Current:  questionbuilder.Card{ID: "draft-card", Text: draft.Text, Sources: []questionbuilder.Segment{draft}},
+				Segments: []questionbuilder.Segment{old, draft, fresh}, Recent: []questionbuilder.Card{{ID: "answered", Text: "Explain Go slices"}},
+			}
+			r, err := c.AnalyzeQuestion(context.Background(), in, chat.Config{Model: "gpt-test"}, nil)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("result=%+v error=%v", r, err)
+			}
+			wantIDs := []string{fresh.ID}
+			if tc.wantContinue {
+				wantIDs = []string{draft.ID, fresh.ID}
+			}
+			if !tc.wantError && (!r.Ready || r.ContinuesDraft != tc.wantContinue || !slices.Equal(r.SourceIDs, wantIDs)) {
+				t.Fatal(r)
+			}
+			reqs := analysisRequests(t, env.log)
+			if len(reqs) != tc.wantAttempts {
+				t.Fatalf("attempts=%d want=%d, result=%+v error=%v", len(reqs), tc.wantAttempts, r, err)
+			}
+			if len(reqs) == 2 {
+				if reqs[0].EvidenceFeedback != "" || reqs[1].EvidenceFeedback == "" {
+					t.Fatal(reqs)
+				}
+				if !reflect.DeepEqual(reqs[0].Input, reqs[1].Input) {
+					t.Fatal("retry changed the snapshot")
+				}
+				use := analysisThreads(t, env)
+				if use.starts != 2 || len(use.turns) != 2 || use.turns[0] == use.turns[1] || !slices.Equal(use.turns, use.released) {
+					t.Fatal(use)
+				}
+			}
+		})
+	}
+}
+
+func TestAutomaticQuestionDoesNotRetryEvidenceAfterCancellation(t *testing.T) {
+	env := fakeEnv{}
+	c := fakeClient(t, &env)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in := questionbuilder.Input{Automatic: true, Context: "[question-evidence-once]", Segments: []questionbuilder.Segment{
+		{ID: "fresh", Track: "system", Text: "Explain Go channels", Final: true, Seq: 1},
+	}}
+	_, err := c.AnalyzeQuestion(ctx, in, chat.Config{Model: "gpt-test"}, func(e llm.Event) {
+		if e.Kind == llm.EventProgress {
+			cancel()
+		}
+	})
+	if !errors.Is(err, context.Canceled) || count(readLog(t, env.log), "turn/start") != 1 {
+		t.Fatal(err)
+	}
+}
 func TestQuestionCancellationKeepsMainTransport(t *testing.T) {
 	c := fakeClient(t, &fakeEnv{})
 	_, err := c.Generate(context.Background(), request("main"), nil)
@@ -72,13 +207,47 @@ func TestQuestionCancellationKeepsMainTransport(t *testing.T) {
 }
 
 func TestQuestionResultRequiresAllFields(t *testing.T) {
-	for _, text := range []string{`{}`, `{"has_question":false,"ready":false,"text":"","source_ids":[],"extra":true}`, `{"has_question":false,"ready":false,"text":"","source_ids":null,"follow_up":false}`, `{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false} {}`} {
+	for _, text := range []string{
+		`{}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":[],"extra":true}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":null,"follow_up":false}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false} {}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false,"refinement":false,"continues_draft":false,"additional_questions":[]}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false,"refinement":false,"target_question_id":"","additional_questions":[]}`,
+		`{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false,"refinement":false,"target_question_id":null,"continues_draft":false,"additional_questions":[]}`,
+	} {
 		if _, err := decodeQuestionResult(text); err == nil {
 			t.Fatalf("accepted %s", text)
 		}
 	}
-	if _, err := decodeQuestionResult(`{"has_question":false,"ready":false,"text":"","source_ids":[],"follow_up":false}`); err != nil {
+}
+
+func TestQuestionResultDecodesFollowupTargetAndContinuation(t *testing.T) {
+	r, err := decodeQuestionResult(`{"has_question":true,"ready":true,"text":"Which numeric types?","source_ids":["s"],"follow_up":true,"refinement":true,"target_question_id":"older","continues_draft":true,"additional_questions":[]}`)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !r.ContinuesDraft || r.TargetQuestionID != "older" {
+		t.Fatal(r)
+	}
+}
+
+func TestQuestionResultRequiresAdditionalTargetAndRefinementFields(t *testing.T) {
+	prefix := `{"has_question":true,"ready":true,"text":"How does GC work?","source_ids":["s"],"follow_up":false,"refinement":false,"target_question_id":"","continues_draft":false,"additional_questions":[`
+	for _, extra := range []string{
+		`{"text":"Which numeric types?","source_ids":["s"],"refinement":true}`,
+		`{"text":"Which numeric types?","source_ids":["s"],"target_question_id":"older"}`,
+	} {
+		if _, err := decodeQuestionResult(prefix + extra + `]}`); err == nil {
+			t.Fatalf("accepted %s", extra)
+		}
+	}
+	r, err := decodeQuestionResult(prefix + `{"text":"Which numeric types?","source_ids":["s"],"refinement":true,"target_question_id":"older"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Additional) != 1 || !r.Additional[0].Refinement || r.Additional[0].TargetQuestionID != "older" {
+		t.Fatal(r.Additional)
 	}
 }
 

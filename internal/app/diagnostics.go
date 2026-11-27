@@ -98,8 +98,8 @@ func (c *Controller) logTimingLines(text string) {
 	}
 }
 
-// logTurn records how the last user turn of doc ended.
-func (c *Controller) logTurn(opID string, started time.Time, doc chat.Chat, pending error) {
+// logTurn records the outcome of the user turn owned by the operation.
+func (c *Controller) logTurn(opID, messageID string, started time.Time, doc chat.Chat, pending error) {
 	if len(doc.Messages) == 0 {
 		return
 	}
@@ -107,13 +107,17 @@ func (c *Controller) logTurn(opID string, started time.Time, doc chat.Chat, pend
 	var answer string
 	for i := len(doc.Messages) - 1; i >= 0; i-- {
 		m := doc.Messages[i]
-		if m.Role == chat.RoleUser {
+		if m.Role == chat.RoleUser && (messageID == "" || m.ID == messageID) {
 			turn = m
-			if i+1 < len(doc.Messages) {
+			if i+1 < len(doc.Messages) && doc.Messages[i+1].Role == chat.RoleAssistant {
 				answer = doc.Messages[i+1].Text
 			}
 			break
 		}
+	}
+	if revision, ok := doc.AnswerRevisions[turn.ID]; ok {
+		turn.Status = revision.Attempt.Status
+		turn.Attempts = []chat.Attempt{revision.Attempt}
 	}
 	attrs := []any{"op", opID, "chat", doc.ID, "message", turn.ID, "status", turn.Status}
 	if !started.IsZero() {
@@ -234,7 +238,7 @@ func (c *Controller) diagnosticsSummary() string {
 // bounded in size and rate; excess reports are counted, not stored.
 func (c *Controller) ReportRendererError(in RendererError) error {
 	switch in.Source {
-	case "main", "audio":
+	case "main", "audio", "answers":
 	default:
 		return errors.New("неизвестный источник диагностики")
 	}

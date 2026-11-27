@@ -15,6 +15,16 @@ func TestAssetsSelectAudioEntryAndPreserveSharedChunks(t *testing.T) {
 		}
 	}
 }
+
+func TestAnswersAssetsSelectAnswersEntryAndPreserveSharedChunks(t *testing.T) {
+	source := fstest.MapFS{"index.html": {Data: []byte("main")}, "audio.html": {Data: []byte("audio")}, "answers.html": {Data: []byte("answers")}, "assets/shared.js": {Data: []byte("chunk")}}
+	for path, want := range map[string]string{"index.html": "answers", "assets/shared.js": "chunk"} {
+		got, err := fs.ReadFile(AnswersAssets(source), path)
+		if err != nil || string(got) != want {
+			t.Fatal(path, string(got), err)
+		}
+	}
+}
 func TestChildEnvironmentDoesNotReuseWailsDevServers(t *testing.T) {
 	got := ChildEnvironment([]string{"Path=tools", "devserver=localhost:34115", "FRONTENDDEVSERVERURL=http://localhost:5173", "assetdir=frontend/dist", "LOCALAPPDATA=local"})
 	if len(got) != 2 || got[0] != "Path=tools" || got[1] != "LOCALAPPDATA=local" {

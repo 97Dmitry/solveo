@@ -161,6 +161,76 @@ it("hides the history tab when history is disabled", async () => {
   ]);
 });
 
+it("shows automatic answer status and can stop listening while an answer generates", async () => {
+  const base = {
+    question: { ...questionFixture(), model: "gpt-test" },
+    audio: { ...audioFixture(), listening: true },
+    auto_answers_state: "answering",
+    chat_id: "chat",
+    chat_title: "Интервью",
+    can_send: false,
+    disabled: true,
+    theme: "dark",
+    ui_scale: 100,
+    show_version: 1,
+    dictionary: [],
+    pinned: false,
+    docked: false,
+    window_error: "",
+  };
+  api.state.mockResolvedValue(base);
+  api.ready.mockResolvedValue(undefined);
+  api.execute.mockResolvedValue(undefined);
+  render(<AudioWindow />);
+  await userEvent.click(await screen.findByRole("button", { name: "Автоответы" }));
+  expect(api.execute).toHaveBeenCalledWith({ name: "showAnswers" });
+  expect(screen.getByText("Готовлю ответ")).toBeTruthy();
+  await userEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
+  expect(
+    screen.queryByRole("button", { name: /Включить автоответы|Выключить автоответы/ }),
+  ).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Включить сборщик" }));
+  expect(api.execute.mock.calls.some(([c]) => c.question?.action === "enable")).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "Остановить" }));
+  expect(api.execute).toHaveBeenCalledWith({ name: "stopListening" });
+});
+
+it("opens settings and loads models only on a new settings intent", async () => {
+  const base = {
+    question: questionFixture(),
+    audio: audioFixture(),
+    auto_answers_state: "setup",
+    chat_id: "chat",
+    chat_title: "Интервью",
+    can_send: false,
+    disabled: false,
+    theme: "dark",
+    ui_scale: 100,
+    show_version: 1,
+    dictionary: [],
+  };
+  api.state.mockResolvedValue(base);
+  api.ready.mockResolvedValue(undefined);
+  api.execute.mockResolvedValue(undefined);
+  render(<AudioWindow />);
+  const settings = await screen.findByRole("tab", { name: "Настройки" });
+  const modelLoads = () => api.execute.mock.calls.filter(([c]) => c.question?.action === "models");
+  expect(settings.getAttribute("aria-selected")).toBe("false");
+  expect(modelLoads()).toHaveLength(0);
+
+  api.state.mockResolvedValue({ ...base, settings_version: 1 });
+  await waitFor(() => expect(settings.getAttribute("aria-selected")).toBe("true"));
+  expect(document.activeElement).toBe(settings);
+  expect(modelLoads()).toHaveLength(1);
+
+  const dictionary = screen.getByRole("tab", { name: "Словарь" });
+  await userEvent.click(dictionary);
+  api.state.mockResolvedValue({ ...base, settings_version: 1, auto_answers_state: "paused" });
+  expect(await screen.findByText("На паузе")).toBeTruthy();
+  expect(dictionary.getAttribute("aria-selected")).toBe("true");
+  expect(modelLoads()).toHaveLength(1);
+});
+
 it("saves the dictionary from its tab and keeps unsaved text across polling", async () => {
   const base = {
     question: questionFixture(),

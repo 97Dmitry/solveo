@@ -16,13 +16,19 @@ import (
 
 // All question state is protected by c.mu; never acquire audio.mu from here.
 type questionState struct {
-	builders  map[string]*questionbuilder.Builder
-	timer     *time.Timer
-	cancel    context.CancelFunc
-	running   bool
-	runChatID string
-	lastStart time.Time
-	models    []llm.Model
+	builders     map[string]*questionbuilder.Builder
+	timer        *time.Timer
+	cancel       context.CancelFunc
+	running      bool
+	runChatID    string
+	lastStart    time.Time
+	models       []llm.Model
+	automatic    bool
+	autoQueued   bool
+	autoTurnID   string
+	autoAnswerID string
+	// Hold the accepted version while an interrupted generation and its save drain.
+	autoRefinement *QuestionCommand
 	// prepCancel stops the background analysis-session preparation for prepConfig;
 	// prepGen tells a finishing worker whether it is still the current one.
 	prepCancel context.CancelFunc
@@ -37,6 +43,7 @@ func (q *questionState) init() {
 
 type QuestionView struct {
 	questionbuilder.View
+	Automatic bool        `json:"automatic"`
 	Available bool        `json:"available"`
 	Model     string      `json:"model"`
 	Reasoning string      `json:"reasoning"`
@@ -79,9 +86,16 @@ func (c *Controller) QuestionSnapshot() QuestionView {
 }
 func (c *Controller) questionSnapshotLocked() QuestionView {
 	_, available := c.deps.Provider.(llm.QuestionAnalyzer)
-	return QuestionView{View: c.questionLocked().View(), Available: available, Model: c.settings.Audio.BuilderModel, Reasoning: c.settings.Audio.BuilderReasoning, Models: slices.Clone(c.question.models)}
+	automatic := c.question.automatic
+	if a := c.autoAnswers; a != nil {
+		a.mu.Lock()
+		automatic = a.question.automatic
+		a.mu.Unlock()
+	}
+	return QuestionView{View: c.questionLocked().View(), Automatic: automatic, Available: available, Model: c.settings.Audio.BuilderModel, Reasoning: c.settings.Audio.BuilderReasoning, Models: slices.Clone(c.question.models)}
 }
 func (c *Controller) pauseQuestionLocked() {
+	c.stopAutomaticQuestionLocked()
 	if c.question.timer != nil {
 		c.question.timer.Stop()
 		c.question.timer = nil
@@ -91,6 +105,9 @@ func (c *Controller) pauseQuestionLocked() {
 	}
 	if b := c.question.builders[c.active.ID]; b != nil {
 		b.Enable(false)
+		if c.autoSession {
+			b.Skip()
+		}
 	}
 	c.prepareQuestionLocked()
 }
@@ -132,7 +149,7 @@ func (c *Controller) prepareQuestionLocked() {
 }
 func (c *Controller) scheduleQuestionLocked() {
 	c.prepareQuestionLocked()
-	if c.closed || c.question.running {
+	if c.closed || c.question.running || c.question.autoRefinement != nil {
 		return
 	}
 	v := c.questionLocked().View()
@@ -150,26 +167,69 @@ func (c *Controller) scheduleQuestionLocked() {
 }
 func (c *Controller) observeQuestion(chatID string, s questionbuilder.Segment) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return
 	}
+	defer func() {
+		c.mu.Unlock()
+		if a := c.autoAnswers; a != nil && s.Track == "system" {
+			a.observeAutoQuestion(s)
+		}
+	}()
 	b := c.question.builders[chatID]
 	if b == nil {
 		return
 	}
 	b.Observe(s)
-	if b.View().Error != "" && c.question.cancel != nil && chatID == c.question.runChatID {
-		c.question.cancel()
+	if v := b.View(); v.Error != "" {
+		if c.question.cancel != nil && chatID == c.question.runChatID {
+			c.question.cancel()
+		}
+		if chatID == c.active.ID && !v.Enabled {
+			c.stopAutomaticQuestionLocked()
+		}
 	}
 	if chatID == c.active.ID && s.Final && s.Track == "system" {
 		c.scheduleQuestionLocked()
+		c.scheduleAutomaticQuestionLocked()
+	}
+}
+
+func (c *Controller) observeAutoQuestion(s questionbuilder.Segment) {
+	at, _ := time.Parse(time.RFC3339Nano, s.At)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed || !c.question.automatic || at.Before(c.autoSince) {
+		return
+	}
+	b := c.questionLocked()
+	substantive := s.Final && !questionbuilder.IsFiller(s.Text)
+	if s.Final && !substantive {
+		// Let a final clear its partial without turning noise into new evidence.
+		s.Text = ""
+	}
+	b.Observe(s)
+	v := b.View()
+	if !v.Enabled {
+		if c.question.cancel != nil {
+			c.question.cancel()
+		}
+		c.stopAutomaticQuestionLocked()
+		return
+	}
+	if substantive && v.Error != "" {
+		b.Retry()
+	}
+	if s.Final {
+		c.scheduleQuestionLocked()
+		c.scheduleAutomaticQuestionLocked()
 	}
 }
 func (c *Controller) analyzeQuestion() {
 	c.mu.Lock()
 	c.question.timer = nil
-	if c.closed || c.question.running {
+	if c.closed || c.question.running || c.question.autoRefinement != nil {
 		c.mu.Unlock()
 		return
 	}
@@ -179,13 +239,20 @@ func (c *Controller) analyzeQuestion() {
 		return
 	}
 	b := c.questionLocked()
-	in, ok := b.Begin(time.Now())
+	now := time.Now()
+	in, ok := b.Begin(now)
+	if !ok && c.question.automatic {
+		in, ok = b.BeginDraftCheck(now)
+	}
 	if !ok {
 		c.mu.Unlock()
 		return
 	}
+	in.Automatic = c.question.automatic
+	if c.autoSession && in.Automatic {
+		in.Recent, in.RecentAnswers = c.autoAnalysisContextLocked()
+	}
 	cfg := chat.Config{Model: c.settings.Audio.BuilderModel, Reasoning: c.settings.Audio.BuilderReasoning}
-	// Only interview facts, never answer-format/global instructions or full history.
 	contextText := strings.Join([]string{c.active.Config.Position, c.active.Config.Stack, c.active.Config.InterviewFormat, c.active.Config.Context}, "\n")
 	runes := []rune(contextText)
 	if len(runes) > 4000 {
@@ -213,12 +280,15 @@ func (c *Controller) analyzeQuestion() {
 				c.appendLog(e.Text)
 			}
 		})
-		attrs := []any{"chat", in.ChatID, "model", cfg.Model, "reasoning", cfg.Reasoning, "segments", len(in.Segments), "duration", time.Since(started).Round(time.Millisecond).String()}
+		attrs := []any{"chat", in.ChatID, "model", cfg.Model, "reasoning", cfg.Reasoning, "segments", len(in.Segments), "draft_check", in.DraftCheck, "duration", time.Since(started).Round(time.Millisecond).String()}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		applyErr := b.Apply(in, result, err)
 		if err != nil || applyErr != nil {
 			c.logger.Warn("question analysis failed", append(attrs, "error", err, "apply_error", applyErr)...)
+			if in.Automatic && c.question.automatic && c.active.ID == in.ChatID {
+				b.RetryIfNewSystemSpeech(in.End)
+			}
 		} else {
 			c.logger.Info("question analysis finished", append(attrs, "has_question", result.HasQuestion, "ready", result.Ready, "follow_up", result.FollowUp, "sources", len(result.SourceIDs), c.content("question", result.Text))...)
 		}
@@ -229,6 +299,7 @@ func (c *Controller) analyzeQuestion() {
 		c.question.cancel = nil
 		if !c.closed {
 			c.scheduleQuestionLocked()
+			c.scheduleAutomaticQuestionLocked()
 		}
 	}()
 }
@@ -246,6 +317,19 @@ func (c *Controller) SendQuestion(cmd QuestionCommand) (string, error) {
 	return c.submit(SubmitInput{ChatID: cmd.ChatID, RequestID: chat.ID()}, submitOrigin{kind: originQuestion, question: &cmd})
 }
 func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
+	if !c.autoSession && (cmd.Action == "auto-on" || cmd.Action == "auto-off") {
+		c.mu.Lock()
+		match := c.active.ID == cmd.ChatID && !c.closed
+		c.mu.Unlock()
+		if !match {
+			return ErrStale
+		}
+		view := c.AutoAnswersSnapshot()
+		if cmd.Action == "auto-off" {
+			return c.AutoAnswersCommand("pauseAnswers", view.SessionID, "", "")
+		}
+		return c.AutoAnswersCommand("startAnswers", view.SessionID, "", "")
+	}
 	if cmd.Action == "send" {
 		_, err := c.SendQuestion(cmd)
 		return err
@@ -264,7 +348,7 @@ func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
 		return c.configureQuestion(cmd)
 	}
 	var excluded []string
-	if cmd.Action == "enable" {
+	if cmd.Action == "enable" || cmd.Action == "auto-on" {
 		c.audio.mu.Lock()
 		for _, s := range c.audio.segments {
 			if !s.Final {
@@ -280,25 +364,33 @@ func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
 	}
 	b := c.questionLocked()
 	v := b.View()
-	if cmd.ID != v.ID || cmd.Revision != v.Revision {
+	if cmd.Action != "auto-on" && cmd.Action != "auto-off" && (cmd.ID != v.ID || cmd.Revision != v.Revision) {
 		return ErrStale
 	}
 	switch cmd.Action {
-	case "enable":
+	case "enable", "auto-on":
 		if _, ok := c.deps.Provider.(llm.QuestionAnalyzer); !ok {
 			return errors.New("Подключение не поддерживает сборку вопросов")
 		}
 		if c.settings.Audio.BuilderModel == "" {
 			return errors.New("Сначала выберите модель сборщика")
 		}
-		b.Exclude(excluded)
+		if !v.Enabled {
+			b.Exclude(excluded)
+		}
 		b.Enable(true)
+		if cmd.Action == "auto-on" {
+			c.question.automatic = true
+		}
+	case "auto-off":
+		c.stopAutomaticQuestionLocked()
 	case "disable":
 		c.pauseQuestionLocked()
 	case "edit":
 		if err := b.Edit(cmd.Text); err != nil {
 			return err
 		}
+		c.question.autoRefinement = nil
 		if c.question.cancel != nil {
 			c.question.cancel()
 		}
@@ -321,6 +413,7 @@ func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
 			return errors.New("Подтвердите замену ручной версии вопроса")
 		}
 		b.Rebuild()
+		c.question.autoRefinement = nil
 		if c.question.cancel != nil {
 			c.question.cancel()
 		}
@@ -331,6 +424,7 @@ func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
 			return errors.New("Нет вопроса для пропуска")
 		}
 		b.Skip()
+		c.question.autoRefinement = nil
 		if c.question.cancel != nil {
 			c.question.cancel()
 		}
@@ -338,6 +432,7 @@ func (c *Controller) QuestionCommand(cmd QuestionCommand) error {
 		return errors.New("Неизвестная команда сборщика")
 	}
 	c.scheduleQuestionLocked()
+	c.scheduleAutomaticQuestionLocked()
 	return nil
 }
 func (c *Controller) configureQuestion(cmd QuestionCommand) error {
@@ -373,5 +468,8 @@ func (c *Controller) configureQuestion(cmd QuestionCommand) error {
 	cfg.Audio.BuilderModel = cmd.Model
 	cfg.Audio.BuilderReasoning = cmd.Reasoning
 	_, err = c.saveSettingsLocked(cfg)
+	if err == nil && c.autoAnswers != nil {
+		c.autoAnswers.pauseAutoAnswers("")
+	}
 	return err
 }

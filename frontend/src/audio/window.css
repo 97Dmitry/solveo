@@ -31,6 +31,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.audio-answers-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 128px;
+}
+.audio-answers-state {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
 .session-bar {
   display: flex;
   align-items: center;

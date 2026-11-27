@@ -6,7 +6,14 @@ import type { AudioActions } from "./actions";
 import { checksPassed } from "./readiness";
 
 function stateLabel(audio: AudioState) {
-  if (audio.listening) return "Слушаю";
+  if (audio.listening) {
+    const mic = audio.sources.some((source) => source.track === "mic" && source.active);
+    const system = audio.sources.some((source) => source.track === "system" && source.active);
+    if (audio.sources.length === 0 || (mic && system)) return "Слушаю";
+    if (mic) return "Только микрофон";
+    if (system) return "Только системный звук";
+    return "Нет активных источников";
+  }
   if (audio.model === "ready") return "Готов";
   if (audio.model === "starting") return "Подключаю…";
   if (audio.model === "failed") return "Не удалось подключить";
